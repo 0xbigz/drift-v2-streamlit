@@ -46,6 +46,21 @@ trial = st.selectbox(
         "Choose trial", list(trials), 
     )
 
+user_selected = st.selectbox('user', options=['all'] + [str(x) for x in list(range(0,20))], index=0)
+
+if user_selected == 'all':
+    all_user_stats = pd.read_csv(
+        f"https://raw.githubusercontent.com/drift-labs/drift-sim/master/backtest/{experiment}/{trial}/all_user_stats.csv")
+    all_user_stats /= 1e6 #todo
+
+else:
+    all_user_stats = pd.read_csv(
+        f"https://raw.githubusercontent.com/drift-labs/drift-sim/master/backtest/{experiment}/{trial}/result_user_{user_selected}.csv")
+fig = px.line( all_user_stats, 
+        title='user tvl'+' ('+experiment+':'+trial+')'
+    )
+st.plotly_chart(fig)
+ 
 
 
 for ff in ['perp_market0', 'spot_market0']:
