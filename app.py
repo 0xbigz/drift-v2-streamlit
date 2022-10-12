@@ -7,6 +7,12 @@ import plotly.graph_objs as go
 import json
 from urllib.request import urlopen
 
+st.set_page_config(
+    'Drift v2 Simulations',
+    layout='wide',
+    
+)
+
 root = "https://raw.githubusercontent.com/drift-labs/drift-sim/master/backtest/"
 
 st.title('Drift v2 Simulations')
