@@ -178,7 +178,7 @@ for ff in ['perp_market0', 'spot_market0']:
             st.plotly_chart(fig)
 
 
-            mark_price = df['market.amm.base_asset_reserve']/df['market.amm.base_asset_reserve'] * df['market.amm.peg_multiplier']
+            mark_price = df['market.amm.base_asset_reserve']/df['market.amm.quote_asset_reserve'] * df['market.amm.peg_multiplier']
             fig = px.line(
                 pd.concat([df['market.amm.peg_multiplier'], mark_price],axis=1),
                 title=ff+' ('+experiment+':'+trial+')'
