@@ -13,14 +13,14 @@ st.set_page_config(
 
 )
 
-root = "https://raw.githubusercontent.com/drift-labs/drift-sim/master/backtest/"
-
 st.title('Drift v2 Simulations')
 st.markdown('[https://github.com/drift-labs/drift-sim](https://github.com/drift-labs/drift-sim) | [@driftprotocol](https://twitter.com/@driftprotocol)')
 
 st.subheader('Step 1 : simulate')
 st.text('simulate agent interactions based on oracle price action')
 
+default_root = "https://raw.githubusercontent.com/drift-labs/drift-sim/master/backtest/"
+root = st.text_input('root', value=default_root)
 experiments = ['lunaCrash']
 experiment = st.selectbox(
         "Choose experiment", list(experiments), 
@@ -29,6 +29,23 @@ experiment = st.selectbox(
 events_df = pd.read_csv(root+"/"+experiment+"/"+"events.csv")
 with st.expander(experiment+" events sequence"):
     st.table(events_df)
+
+chs_df = pd.read_csv(root+"/"+experiment+"/"+"chs.csv")
+with st.expander(experiment+" python protocol-v2 ch state"):
+    numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
+    newdf = chs_df.select_dtypes(include=numerics)
+    newdf = newdf[[x for x in newdf.columns if 'm0_' in x[:3]]]
+    fig = px.line( newdf, 
+        title='('+experiment+':'+"chs.csv"+')'
+    )
+    # fig.update_layout(legend=dict(
+    #         orientation="h",
+    #         yanchor="bottom",
+    #         y=-1,
+    #         xanchor="right",
+    #         x=1
+    #     ))
+    st.plotly_chart(fig)
 
 with st.expander(experiment+" run_info.json"):
     run_info_ff = root+"/"+experiment+"/"+"run_info.json"
