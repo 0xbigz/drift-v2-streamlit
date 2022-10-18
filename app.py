@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objs as go
 import json
 from urllib.request import urlopen
+import numpy as np
 
 st.set_page_config(
     'Drift v2 Simulations',
@@ -19,18 +20,23 @@ st.markdown('[https://github.com/drift-labs/drift-sim](https://github.com/drift-
 st.subheader('Step 1 : simulate')
 st.text('simulate agent interactions based on oracle price action')
 
+# other_root = "https://raw.githubusercontent.com/drift-labs/drift-sim/bigz/doge-moon-cycle/backtest/"
 default_root = "https://raw.githubusercontent.com/drift-labs/drift-sim/master/backtest/"
 root = st.text_input('root', value=default_root)
-experiments = ['lunaCrash']
+experiments = ['lunaCrash', 'dogeMoonCycle', 'tmp']
 experiment = st.selectbox(
         "Choose experiment", list(experiments), 
     )
 
 events_df = pd.read_csv(root+"/"+experiment+"/"+"events.csv")
-with st.expander(experiment+" events sequence"):
+with st.expander(experiment+" events sequence ("+str(len(events_df))+")"):
     st.table(events_df)
 
-chs_df = pd.read_csv(root+"/"+experiment+"/"+"chs.csv")
+chs_df = pd.DataFrame()
+try:
+    chs_df = pd.read_csv(root+"/"+experiment+"/"+"chs.csv")
+except:
+    pass
 with st.expander(experiment+" python protocol-v2 ch state"):
     numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
     newdf = chs_df.select_dtypes(include=numerics)
@@ -89,7 +95,7 @@ for ff in ['perp_market0', 'spot_market0']:
     df = pd.read_csv(root+"/"+experiment+"/"+trial+"/"+ff+".csv")
     df_types = df.dtypes.reset_index().groupby([0]).agg(list)
     df_types.index = [str(x) for x in df_types.index]
-    print(df_types)
+    # print(df_types)
     dd_types = ['numerics', 'other']
     columns = {dd_type: [] for dd_type in dd_types}
 
@@ -213,16 +219,22 @@ for ff in ['perp_market0', 'spot_market0']:
 
 
 user_selected = st.selectbox('user', options=['all'] + [str(x) for x in list(range(0,20))], index=0)
-
+ff = ''
 if user_selected == 'all':
-    all_user_stats = pd.read_csv(
-        f"https://raw.githubusercontent.com/drift-labs/drift-sim/master/backtest/{experiment}/{trial}/all_user_stats.csv")
+    ff = f"{root}/{experiment}/{trial}/all_user_stats.csv"
+    all_user_stats = pd.read_csv(ff)
     all_user_stats /= 1e6 #todo
-
+    diff_df = all_user_stats.diff()
+    diff_df.columns = [x+'.diff' for x in diff_df.columns]
+    df = pd.concat([all_user_stats, diff_df],axis=1)
 else:
-    all_user_stats = pd.read_csv(
-        f"https://raw.githubusercontent.com/drift-labs/drift-sim/master/backtest/{experiment}/{trial}/result_user_{user_selected}.csv")
-fig = px.line( all_user_stats, 
-        title='user tvl'+' ('+experiment+':'+trial+')'
+    ff =  f"{root}/{experiment}/{trial}/result_user_{user_selected}.csv"
+    all_user_stats = pd.read_csv(ff)
+    num_cols = all_user_stats.select_dtypes(include=np.number).columns.tolist()
+    df = all_user_stats[num_cols]
+
+fig = px.line(df , 
+        title='user '+user_selected+' tvl'+' ('+experiment+':'+trial+')'
     )
 st.plotly_chart(fig)
+st.markdown('[source]('+ff+')')
