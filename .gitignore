@@ -1,2 +1,4 @@
+.ipynb*
+scripts/
 __pycache__
 /venv

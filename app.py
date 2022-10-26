@@ -7,33 +7,50 @@ import plotly.graph_objs as go
 import json
 from urllib.request import urlopen
 import numpy as np
+
+import aiohttp
+import asyncio
+
 from simulations import sim_page
+from pid import show_pid_positions
 
+async def main():
 
-st.set_page_config(
-    'Drift v2 Simulations',
-    layout='wide',
-)
+    st.set_page_config(
+        'Drift v2 Simulations',
+        layout='wide',
+        page_icon="👾"
+    )
 
-tab = st.sidebar.radio(
-    "Select Tab:",
-    ('Overview', 'Simulations', 'Tweets'))
+    tab = st.sidebar.radio(
+        "Select Tab:",
+        ('Overview', 'Devnet', 'Simulations', 'Tweets'))
 
-if tab == 'Overview':
-    st.title('Drift v2')
-    repo = "https://github.com/drift-labs/protocol-v2"
-    st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
+    if tab == 'Overview':
+        st.title('Drift v2')
+        repo = "https://github.com/drift-labs/protocol-v2"
+        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
 
-elif tab == 'Simulations':
-    st.title('Drift v2 Simulations')
-    repo = "https://github.com/drift-labs/drift-sim"
-    st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
-    sim_page()
+    if tab == 'Devnet':
+        st.title('Drift v2 Devnet')
+        repo = "https://github.com/drift-labs/protocol-v2"
+        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
+        await show_pid_positions('')
 
-elif tab == 'Tweets':
-    tweets = {
-        'cindy': 'https://twitter.com/cindyleowtt/status/1569713537454579712',
-        '0xNineteen': 'https://twitter.com/0xNineteen/status/1571926865681711104',
-    
-    }
-    st.table(pd.Series(tweets))
+    elif tab == 'Simulations':
+        st.title('Drift v2 Simulations')
+        repo = "https://github.com/drift-labs/drift-sim"
+        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
+        sim_page()
+
+    elif tab == 'Tweets':
+        tweets = {
+            'cindy': 'https://twitter.com/cindyleowtt/status/1569713537454579712',
+            '0xNineteen': 'https://twitter.com/0xNineteen/status/1571926865681711104',
+        
+        }
+        st.table(pd.Series(tweets))
+
+if __name__ == '__main__':
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(main())
