@@ -23,7 +23,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
 
     # print(config)
     # random key 
-    with open(os.path.expanduser('~/.config/solana/id.json'), 'r') as f: secret = json.load(f) 
+    with open("DRFTL7fm2cA13zHTSHnTKpt58uq5E49yr2vUxuonEtYd.json", 'r') as f: secret = json.load(f) 
     kp = Keypair.from_secret_key(bytes(secret))
 
     wallet = Wallet(kp)
