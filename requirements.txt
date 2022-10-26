@@ -36,6 +36,7 @@ decorator==5.1.1
 defusedxml==0.7.1
 distlib==0.3.4
 dnspython==2.2.1
+git+https://github.com/drift-labs/driftpy@4bc5931#egg=driftpy
 entrypoints==0.4
 executing==0.8.3
 fastjsonschema==2.15.3
