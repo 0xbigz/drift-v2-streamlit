@@ -44,14 +44,24 @@ def human_amm_df(df):
         'base_asset_reserve', 'quote_asset_reserve', 'min_base_asset_reserve', 'max_base_asset_reserve', 'sqrt_k',
         'ask_base_asset_reserve', 'ask_quote_asset_reserve', 'bid_base_asset_reserve', 'bid_quote_asset_reserve',
         'terminal_quote_asset_reserve', 'base_asset_amount_long', 'base_asset_amount_short', 'base_asset_amount_with_amm', 'base_asset_amount_with_unsettled_lp',
-        'user_lp_shares', 'min_order_size', 'max_position_size', 'order_step_size',
+        'user_lp_shares', 'min_order_size', 'max_position_size', 'order_step_size', 'max_open_interest',
         ]
+
+    wgt_fields = ['initial_asset_weight', 'maintenance_asset_weight',
+    
+    'initial_liability_weight', 'maintenance_liability_weight',
+    'unrealized_pnl_initial_asset_weight', 'unrealized_pnl_maintenance_asset_weight']
+
     pct_fields = ['base_spread','long_spread', 'short_spread', 'max_spread', 'concentration_coef',
     'last_oracle_reserve_price_spread_pct',
     'last_oracle_conf_pct',
+        #spot market ones
     'utilization_twap',
-    
+
+    'imf_factor', 'unrealized_pnl_imf_factor', 'liquidator_fee', 'if_liquidation_fee',
+    'optimal_utilization', 'optimal_borrow_rate', 'max_borrow_rate',
     ]
+
     funding_fields = ['cumulative_funding_rate_long', 'cumulative_funding_rate_short', 'last_funding_rate', 'last_funding_rate_long', 'last_funding_rate_short', 'last24h_avg_funding_rate']
     quote_asset_fields = ['total_fee', 'total_mm_fee', 'total_exchange_fee', 'total_fee_minus_distributions',
     'total_fee_withdrawn', 'total_liquidation_fee', 'cumulative_social_loss', 'net_revenue_since_last_funding',
@@ -59,7 +69,7 @@ def human_amm_df(df):
     'volume24h', 'long_intensity_volume', 'short_intensity_volume',
     'total_spot_fee',
     ]
-    time_fields = ['last_trade_ts', 'last_mark_price_twap_ts', 'last_oracle_price_twap_ts',]
+    time_fields = ['last_trade_ts', 'last_mark_price_twap_ts', 'last_oracle_price_twap_ts', 'last_index_price_twap_ts',]
     duration_fields = ['lp_cooldown_time', 'funding_period']
     px_fields = [
         'last_oracle_normalised_price',
@@ -69,10 +79,14 @@ def human_amm_df(df):
     'mark_std',
     'last_oracle_price_twap', 'last_oracle_price_twap5min',
     'last_oracle_price', 'last_oracle_conf', 
+
+    #spot market ones
+        'last_index_bid_price', 'last_index_price_twap', 'last_index_price_twap5min',
     
     ]
+    token_fields = ['deposit_token_twap', 'borrow_token_twap', 'max_token_deposits', 'withdraw_guard_threshold']
     balance_fields = ['scaled_balance', 'deposit_balance', 'borrow_balance']
-
+    interest_fileds = ['cumulative_deposit_interest', 'cumulative_borrow_interest']
     for col in df.columns:
         # if col in enum_fields or col in bool_fields:
         #     pass
@@ -84,14 +98,21 @@ def human_amm_df(df):
             df[col] /= 1e9
         elif col in funding_fields:
             df[col] /= 1e9
+        elif col in wgt_fields:
+            df[col] /= 1e4
         elif col in quote_asset_fields:
             df[col] /= 1e6
         elif col in pct_fields:
             df[col] /= 1e6
         elif col in px_fields:
             df[col] /= 1e6
-        # else if col in time_fields:
-        #     pass
+        elif col in token_fields:
+            z = df['decimals'].values[0]
+            df[col] /= (10**z)
+        elif col in interest_fileds:
+            df[col] /= 1e10
+        elif col in time_fields:
+            df[col] = [datetime.datetime.fromtimestamp(x) for x in df[col].values]
         elif col in balance_fields:
             df[col] /= 1e9
             
@@ -181,7 +202,7 @@ def serialize_spot_market(spot_market: SpotMarket):
         'historical_oracle_data', 'historical_index_data',
         'insurance_fund', # todo
         'spot_fee_pool', 'revenue_pool'
-        ], axis=1)
+        ], axis=1).pipe(human_amm_df)
     spot_market_df.columns = ['spot_market.'+col for col in spot_market_df.columns]
 
     hist_oracle_df= pd.json_normalize(spot_market.historical_oracle_data.__dict__).pipe(human_amm_df)

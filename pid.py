@@ -80,6 +80,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
         for idx, pos in enumerate(x.account.perp_positions):
             dd = pos.__dict__
             dd['position_index'] = idx
+            dd['authority'] = str(x.account.authority)
             dfs[key].append(pd.Series(dd))
         dfs[key] = pd.concat(dfs[key],axis=1) 
         
@@ -87,6 +88,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
         for idx, pos in enumerate(x.account.spot_positions):
             dd = pos.__dict__
             dd['position_index'] = idx
+            dd['authority'] = str(x.account.authority)
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
     perps = pd.concat(dfs,axis=1).T
@@ -114,12 +116,21 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 market = await get_perp_market_account(ch.program, market_index)
                 with st.expander(markettype+" market market_index="+str(market_index)):
                     mdf = serialize_perp_market_2(market).T
-                    st.table(mdf)
+                    st.dataframe(mdf)
 
                 df1 = perps[((perps.base_asset_amount!=0) 
                             | (perps.quote_asset_amount!=0)) 
                             & (perps.market_index==market_index)
                         ].sort_values('base_asset_amount', ascending=False).reset_index(drop=True)
+
+                st.text('user long %:')
+                pct_long = market.amm.base_asset_amount_long / (market.amm.base_asset_amount_long - market.amm.base_asset_amount_short + 1e-10) 
+                my_bar = st.progress(pct_long)
+                
+                st.text('user long % sentiment:')
+                sentiment = df1['base_asset_amount'].pipe(np.sign).sum()/len(df1) + .5
+                my_bar = st.progress(sentiment)
+
                 df1['base_asset_amount'] /= 1e9
                 df1['lp_shares'] /= 1e9
                 df1['quote_asset_amount'] /= 1e6
@@ -129,8 +140,11 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 df1['entry_price'] = -df1['quote_entry_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
                 df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
                 df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
-                toshow = df1[['public_key', 'open_orders', 'lp_shares', 'base_asset_amount', 'entry_price', 'breakeven_price', 'cost_basis']]
-                st.text('User Perp Positions market index = '+str(market_index)+' ('+ str(len(df1)) +')')
+                toshow = df1[['public_key', 'open_orders', 'lp_shares', 'base_asset_amount', 
+                'entry_price', 'breakeven_price', 'cost_basis',
+                'authority',
+                ]]
+                st.text('User Perp Positions ('+ str(len(df1)) +')')
                 st.dataframe(toshow)
             else:
                 market = await get_spot_market_account(ch.program, market_index)
@@ -139,7 +153,12 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                     st.table(mdf)
 
                 df1 = spots[(spots.scaled_balance!=0) & (spots.market_index==market_index)
-                        ].sort_values('scaled_balance', ascending=False).reset_index(drop=True).drop(['idx2'], axis=1)
+                        ].sort_values('scaled_balance', ascending=False).reset_index(drop=True)\
+                            .drop(['idx2', 'padding'], axis=1)
+                for col in ['scaled_balance']:
+                    df1[col] /= 1e9
+                for col in ['cumulative_deposits']:
+                    df1[col] /= (10 ** market.decimals)
 
-                st.text('User Spot Positions market index = '+str(market_index)+' ('+ str(len(df1)) +')')
-                st.table(df1)
+                st.text('User Spot Positions ('+ str(len(df1)) +')')
+                st.dataframe(df1[['public_key', 'balance_type', 'scaled_balance', 'cumulative_deposits', 'open_orders', 'authority']])

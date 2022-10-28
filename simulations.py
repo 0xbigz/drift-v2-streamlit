@@ -21,7 +21,7 @@ def sim_page():
     experiment = st.selectbox(
             "Choose experiment", list(experiments), 
         )
-
+    print(root+"/"+experiment+"/"+"events.csv")
     events_df = pd.read_csv(root+"/"+experiment+"/"+"events.csv")
     with st.expander(experiment+" events sequence ("+str(len(events_df))+")"):
         st.table(events_df)
