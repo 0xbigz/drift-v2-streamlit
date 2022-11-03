@@ -8,7 +8,7 @@ from driftpy.math.user import *
 from driftpy.types import *
 from driftpy.constants.numeric_constants import *
 
-from driftpy.setup.helpers import _create_usdc_mint, mock_oracle, _airdrop_user, set_price_feed, set_price_feed_detailed, adjust_oracle_pretrade, _mint_usdc_tx, _create_user_usdc_ata_tx
+from driftpy.setup.helpers import mock_oracle, _airdrop_user, set_price_feed, set_price_feed_detailed, adjust_oracle_pretrade, _mint_usdc_tx
 from driftpy.admin import Admin
 from driftpy.types import OracleSource
 
@@ -23,7 +23,6 @@ import os
 import json
 import pandas as pd
 
-from driftpy.setup.helpers import _create_user_usdc_ata_tx
 from solana.keypair import Keypair
 
 from subprocess import Popen
