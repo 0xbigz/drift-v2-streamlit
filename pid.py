@@ -110,7 +110,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
     markettype = st.radio(
     "MarketType",
     ('Perp', 'Spot'))
-    print(state)
+    # print(state)
     if markettype == 'Perp':
         num_markets = state.number_of_markets
     else:
@@ -122,7 +122,9 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
         with tab:
             if markettype == 'Perp':
                 market = await get_perp_market_account(ch.program, market_index)
-                with st.expander(markettype+" market market_index="+str(market_index)):
+                market_name = ''.join(map(chr, market.name));
+
+                with st.expander(markettype+" market market_index="+str(market_index)+' '+market_name):
                     mdf = serialize_perp_market_2(market).T
                     st.dataframe(mdf)
 
@@ -158,9 +160,19 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 st.dataframe(toshow)
             else:
                 market = await get_spot_market_account(ch.program, market_index)
-                with st.expander(markettype+" market market_index="+str(market_index)):
+                market_name = ''.join(map(chr, market.name));
+
+                with st.expander(markettype+" market market_index="+str(market_index)+' '+market_name):
                     mdf = serialize_spot_market(market).T
                     st.table(mdf)
+
+                conn = ch.program.provider.connection
+                ivault_pk = market.insurance_fund.vault
+                svault_pk = market.vault
+                iv_amount = int((await conn.get_token_account_balance(ivault_pk))['result']['value']['amount'])
+                sv_amount = int((await conn.get_token_account_balance(svault_pk))['result']['value']['amount'])
+
+                st.text('insurance/spot vault balances:'+ str(iv_amount/1e6)+'/'+str(sv_amount/1e6))
 
                 df1 = spots[(spots.scaled_balance!=0) & (spots.market_index==market_index)
                         ].sort_values('scaled_balance', ascending=False).reset_index(drop=True)\
