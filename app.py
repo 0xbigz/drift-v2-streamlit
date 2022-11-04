@@ -21,21 +21,18 @@ async def main():
         layout='wide',
         page_icon="👾"
     )
-
+    env = st.sidebar.radio('env', ('mainnet-beta', 'devnet'))
+    rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
     tab = st.sidebar.radio(
         "Select Tab:",
-        ('Overview', 'Devnet', 'Simulations', 'Tweets'))
+        ('Overview', 'Simulations', 'Tweets'))
 
     if tab == 'Overview':
         st.title('Drift v2')
         repo = "https://github.com/drift-labs/protocol-v2"
         st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
-
-    if tab == 'Devnet':
-        st.title('Drift v2 Devnet')
-        repo = "https://github.com/drift-labs/protocol-v2"
-        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
-        await show_pid_positions('')
+        env = 'mainnet-beta'
+        await show_pid_positions('', rpc)
 
     elif tab == 'Simulations':
         st.title('Drift v2 Simulations')

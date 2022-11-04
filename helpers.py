@@ -66,7 +66,8 @@ def human_amm_df(df):
     'total_fee_withdrawn', 'total_liquidation_fee', 'cumulative_social_loss', 'net_revenue_since_last_funding',
     'quote_asset_amount_long', 'quote_asset_amount_short', 'quote_entry_amount_long', 'quote_entry_amount_short',
     'volume24h', 'long_intensity_volume', 'short_intensity_volume',
-    'total_spot_fee',
+    'total_spot_fee', 'quote_asset_amount',
+    'quote_break_even_amount_short', 'quote_break_even_amount_long'
     ]
     time_fields = ['last_trade_ts', 'last_mark_price_twap_ts', 'last_oracle_price_twap_ts', 'last_index_price_twap_ts',]
     duration_fields = ['lp_cooldown_time', 'funding_period']

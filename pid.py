@@ -38,7 +38,15 @@ configs = {
     "devnet": Config(
         env='devnet',
         pyth_oracle_mapping_address=PublicKey('BmA9Z6FjioHJPpjT39QazZyhDRUdZy2ezwx4GiDdE2u2'),
-		clearing_house_program_id=PublicKey('4PzAUP84r19y2whicgTysCiqxw5aHabLHyDh3oJiAtqe'),
+		clearing_house_program_id=PublicKey('dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH'),
+		usdc_mint_address=PublicKey('8zGuJQqwhZafTah7Uc7Z4tXRnguqkn5KLFAP8oV6PHe2'),
+		markets=devnet_markets,
+		banks=devnet_banks,
+    ),
+    "mainnet-beta": Config(
+        env='mainnet-beta',
+        pyth_oracle_mapping_address=PublicKey('BmA9Z6FjioHJPpjT39QazZyhDRUdZy2ezwx4GiDdE2u2'),
+		clearing_house_program_id=PublicKey('dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH'),
 		usdc_mint_address=PublicKey('8zGuJQqwhZafTah7Uc7Z4tXRnguqkn5KLFAP8oV6PHe2'),
 		markets=devnet_markets,
 		banks=devnet_banks,
@@ -70,7 +78,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
 
     all_users = await ch.program.account['User'].all()
 
-    len(all_users)
+    st.text('Number of Driftoors:' + str(len(all_users)))
 
     dfs = {}
     spotdfs = {}
@@ -128,7 +136,9 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 my_bar = st.progress(pct_long)
                 
                 st.text('user long % sentiment:')
-                sentiment = df1['base_asset_amount'].pipe(np.sign).sum()/len(df1) + .5
+                sentiment = 0
+                if len(df1):
+                    sentiment = df1['base_asset_amount'].pipe(np.sign).sum()/len(df1) + .5
                 my_bar = st.progress(sentiment)
 
                 df1['base_asset_amount'] /= 1e9
