@@ -103,14 +103,12 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
             dd = pos.__dict__
             dd['position_index'] = idx
             dd['authority'] = str(x.account.authority)
+            dd['name'] = name
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
     perps = pd.concat(dfs,axis=1).T
     perps.index = perps.index.set_names(['public_key', 'idx2'])
     perps = perps.reset_index()
-    print(
-        perps.columns
-    )
 
     spots = pd.concat(spotdfs,axis=1).T
     spots.index = spots.index.set_names(['public_key', 'idx2'])
@@ -167,10 +165,15 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
 
                 toshow = df1[[
-                    'public_key', 'name', 'open_orders', 
-                    'lp_shares', 'remainder_base_asset_amount', 
+                    'public_key', 
+                    'name', 
+                    'open_orders', 
+                    'lp_shares',
                     'base_asset_amount', 
-                    'entry_price', 'breakeven_price', 'cost_basis',
+                    'remainder_base_asset_amount',
+                    'entry_price', 
+                    'breakeven_price', 
+                    'cost_basis',
                     'authority', 
                 ]]
                 st.text('User Perp Positions ('+ str(len(df1)) +')')
@@ -201,3 +204,15 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
 
                 st.text('User Spot Positions ('+ str(len(df1)) +')')
                 st.dataframe(df1[['public_key', 'balance_type', 'scaled_balance', 'cumulative_deposits', 'open_orders', 'authority']])
+
+        authority = st.text_input('public_key:') 
+        auth_df = df1[df1['public_key'] == authority]
+        if len(auth_df) != 0: 
+            columns = list(auth_df.columns)
+            if markettype == 'Perp':
+                columns.pop(columns.index('idx2'))
+            df = auth_df[columns].iloc[0]
+            json_df = df.to_json()
+            st.json(json_df)
+        else: 
+            st.markdown('public key not found...')
