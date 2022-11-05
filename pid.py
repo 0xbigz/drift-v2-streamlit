@@ -82,13 +82,19 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
 
     dfs = {}
     spotdfs = {}
+    from driftpy.types import User
     for x in all_users:
         key = str(x.public_key)
+        account: User = x.account
+
         dfs[key] = []
+        name = str(''.join(map(chr, account.name)))
+
         for idx, pos in enumerate(x.account.perp_positions):
             dd = pos.__dict__
             dd['position_index'] = idx
             dd['authority'] = str(x.account.authority)
+            dd['name'] = name
             dfs[key].append(pd.Series(dd))
         dfs[key] = pd.concat(dfs[key],axis=1) 
         
@@ -100,6 +106,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
     perps = pd.concat(dfs,axis=1).T
+    print(perps)
     perps.index = perps.index.set_names(['public_key', 'idx2'])
     perps = perps.reset_index()
 
@@ -152,9 +159,10 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 df1['entry_price'] = -df1['quote_entry_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
                 df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
                 df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
-                toshow = df1[['public_key', 'open_orders', 'lp_shares', 'base_asset_amount', 
+
+                toshow = df1[['public_key', 'name', 'open_orders', 'lp_shares', 'base_asset_amount', 
                 'entry_price', 'breakeven_price', 'cost_basis',
-                'authority',
+                'authority', 
                 ]]
                 st.text('User Perp Positions ('+ str(len(df1)) +')')
                 st.dataframe(toshow)
