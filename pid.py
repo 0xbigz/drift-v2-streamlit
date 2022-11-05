@@ -106,9 +106,11 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
     perps = pd.concat(dfs,axis=1).T
-    print(perps)
     perps.index = perps.index.set_names(['public_key', 'idx2'])
     perps = perps.reset_index()
+    print(
+        perps.columns
+    )
 
     spots = pd.concat(spotdfs,axis=1).T
     spots.index = spots.index.set_names(['public_key', 'idx2'])
@@ -154,6 +156,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 # my_bar = st.progress(sentiment)
 
                 df1['base_asset_amount'] /= 1e9
+                df1['remainder_base_asset_amount'] /= 1e9
                 df1['lp_shares'] /= 1e9
                 df1['quote_asset_amount'] /= 1e6
                 df1['quote_entry_amount'] /= 1e6
@@ -164,7 +167,9 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
 
                 toshow = df1[[
-                    'public_key', 'name', 'open_orders', 'lp_shares', 'base_asset_amount', 
+                    'public_key', 'name', 'open_orders', 
+                    'lp_shares', 'remainder_base_asset_amount', 
+                    'base_asset_amount', 
                     'entry_price', 'breakeven_price', 'cost_basis',
                     'authority', 
                 ]]
