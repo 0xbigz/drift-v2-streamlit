@@ -129,7 +129,10 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                     st.dataframe(mdf)
 
                 df1 = perps[((perps.base_asset_amount!=0) 
-                            | (perps.quote_asset_amount!=0)) 
+                            | (perps.quote_asset_amount!=0)
+                            |  (perps.lp_shares!=0)
+                             |  (perps.open_orders!=0)
+                            ) 
                             & (perps.market_index==market_index)
                         ].sort_values('base_asset_amount', ascending=False).reset_index(drop=True)
 
@@ -137,11 +140,11 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 pct_long = market.amm.base_asset_amount_long / (market.amm.base_asset_amount_long - market.amm.base_asset_amount_short + 1e-10) 
                 my_bar = st.progress(pct_long)
                 
-                st.text('user long % sentiment:')
-                sentiment = 0
-                if len(df1):
-                    sentiment = df1['base_asset_amount'].pipe(np.sign).sum()/len(df1) + .5
-                my_bar = st.progress(sentiment)
+                # st.text('user long % sentiment:')
+                # sentiment = 0
+                # if len(df1):
+                #     sentiment = df1['base_asset_amount'].pipe(np.sign).sum()/len(df1) + .5
+                # my_bar = st.progress(sentiment)
 
                 df1['base_asset_amount'] /= 1e9
                 df1['lp_shares'] /= 1e9
@@ -151,7 +154,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
 
                 df1['entry_price'] = -df1['quote_entry_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
                 df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
-                df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
+                df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: -1 if x==0 else x)
                 toshow = df1[['public_key', 'open_orders', 'lp_shares', 'base_asset_amount', 
                 'entry_price', 'breakeven_price', 'cost_basis',
                 'authority',

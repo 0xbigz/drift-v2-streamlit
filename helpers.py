@@ -140,7 +140,6 @@ def human_market_df(df):
     time_fields = ['last_trade_ts', 'expiry_ts', 'last_revenue_withdraw_ts']
     balance_fields = ['scaled_balance', 'deposit_balance', 'borrow_balance']
     quote_fields = [
-        
         'total_spot_fee', 
         'unrealized_pnl_max_imbalance', 'quote_settled_insurance', 'quote_max_insurance', 
     'max_revenue_withdraw_per_period', 'revenue_withdraw_since_last_settle', ]
@@ -205,6 +204,9 @@ def serialize_spot_market(spot_market: SpotMarket):
         ], axis=1).pipe(human_amm_df)
     spot_market_df.columns = ['spot_market.'+col for col in spot_market_df.columns]
 
+    if_df= pd.json_normalize(spot_market.insurance_fund.__dict__).pipe(human_amm_df)
+    if_df.columns = ['spot_market.insurance_fund.'+col for col in if_df.columns]
+
     hist_oracle_df= pd.json_normalize(spot_market.historical_oracle_data.__dict__).pipe(human_amm_df)
     hist_oracle_df.columns = ['spot_market.historical_oracle_data.'+col for col in hist_oracle_df.columns]
 
@@ -219,5 +221,5 @@ def serialize_spot_market(spot_market: SpotMarket):
     market_fee_df = pd.json_normalize(spot_market.spot_fee_pool.__dict__).pipe(human_amm_df)
     market_fee_df.columns = ['spot_market.spot_fee_pool.'+col for col in market_fee_df.columns]
 
-    result_df = pd.concat([spot_market_df, hist_oracle_df, hist_index_df, market_pool_df, market_fee_df],axis=1)
+    result_df = pd.concat([spot_market_df, if_df, hist_oracle_df, hist_index_df, market_pool_df, market_fee_df],axis=1)
     return result_df
