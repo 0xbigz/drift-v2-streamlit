@@ -23,6 +23,8 @@ from driftpy.constants.markets import devnet_markets, Market
 from dataclasses import dataclass
 from solana.publickey import PublicKey
 from helpers import serialize_perp_market_2, serialize_spot_market
+from anchorpy import EventParser
+import asyncio
 
 @dataclass
 class Config:
@@ -53,6 +55,10 @@ configs = {
     )
 }
 
+import requests
+def get_account_txs(pk, limit=10):
+    resp = requests.get(f'https://public-api.solscan.io/account/transactions?account={pk}&limit={limit}')
+    return resp
 
 async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
     config = configs['devnet']
@@ -65,7 +71,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
     wallet = Wallet(kp)
     connection = AsyncClient(url)
     provider = Provider(connection, wallet)
-    ch = ClearingHouse.from_config(config, provider)
+    ch: ClearingHouse = ClearingHouse.from_config(config, provider)
 
     with st.expander('pid='+str(    ch.program_id) + " config"):
         # print(str(config))
@@ -106,6 +112,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
             dd['name'] = name
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
+
     perps = pd.concat(dfs,axis=1).T
     perps.index = perps.index.set_names(['public_key', 'idx2'])
     perps = perps.reset_index()

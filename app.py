@@ -11,8 +11,10 @@ import numpy as np
 import aiohttp
 import asyncio
 
+from logs import view_logs
 from simulations import sim_page
 from pid import show_pid_positions
+from driftpy.constants.config import configs
 
 async def main():
 
@@ -25,7 +27,7 @@ async def main():
     rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
     tab = st.sidebar.radio(
         "Select Tab:",
-        ('Overview', 'Simulations', 'Tweets'))
+        ('Overview', 'Simulations', 'Tweets', 'Logs'))
 
     if tab == 'Overview':
         st.title('Drift v2')
@@ -33,6 +35,12 @@ async def main():
         st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
         env = 'mainnet-beta'
         await show_pid_positions('', rpc)
+
+    elif tab == 'Logs':
+        st.title('Drift v2: Logs')
+        repo = "https://github.com/drift-labs/protocol-v2"
+        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
+        await view_logs(rpc)
 
     elif tab == 'Simulations':
         st.title('Drift v2 Simulations')
