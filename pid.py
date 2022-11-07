@@ -23,41 +23,13 @@ from driftpy.constants.markets import devnet_markets, Market
 from dataclasses import dataclass
 from solana.publickey import PublicKey
 from helpers import serialize_perp_market_2, serialize_spot_market
-
-@dataclass
-class Config:
-    env: str
-    pyth_oracle_mapping_address: PublicKey
-    clearing_house_program_id: PublicKey
-    usdc_mint_address: PublicKey
-    markets: list[Market]
-    banks: list[Bank]
-
-
-configs = {
-    "devnet": Config(
-        env='devnet',
-        pyth_oracle_mapping_address=PublicKey('BmA9Z6FjioHJPpjT39QazZyhDRUdZy2ezwx4GiDdE2u2'),
-		clearing_house_program_id=PublicKey('dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH'),
-		usdc_mint_address=PublicKey('8zGuJQqwhZafTah7Uc7Z4tXRnguqkn5KLFAP8oV6PHe2'),
-		markets=devnet_markets,
-		banks=devnet_banks,
-    ),
-    "mainnet-beta": Config(
-        env='mainnet-beta',
-        pyth_oracle_mapping_address=PublicKey('BmA9Z6FjioHJPpjT39QazZyhDRUdZy2ezwx4GiDdE2u2'),
-		clearing_house_program_id=PublicKey('dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH'),
-		usdc_mint_address=PublicKey('8zGuJQqwhZafTah7Uc7Z4tXRnguqkn5KLFAP8oV6PHe2'),
-		markets=devnet_markets,
-		banks=devnet_banks,
-    )
-}
-
+from anchorpy import EventParser
+import asyncio
+from config import configs
 
 async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
     config = configs['devnet']
 
-    # print(config)
     # random key 
     with open("DRFTL7fm2cA13zHTSHnTKpt58uq5E49yr2vUxuonEtYd.json", 'r') as f: secret = json.load(f) 
     kp = Keypair.from_secret_key(bytes(secret))
@@ -65,7 +37,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
     wallet = Wallet(kp)
     connection = AsyncClient(url)
     provider = Provider(connection, wallet)
-    ch = ClearingHouse.from_config(config, provider)
+    ch: ClearingHouse = ClearingHouse.from_config(config, provider)
 
     with st.expander('pid='+str(    ch.program_id) + " config"):
         # print(str(config))
@@ -106,6 +78,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
             dd['name'] = name
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
+
     perps = pd.concat(dfs,axis=1).T
     perps.index = perps.index.set_names(['public_key', 'idx2'])
     perps = perps.reset_index()
