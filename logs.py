@@ -65,6 +65,18 @@ import requests
 from aiocache import Cache
 from aiocache import cached
 
+def get_last_n_tx_sigs(program_id, limit):
+    sigs = []
+    last_hash = None
+    # sol scan only allows 50 at a time
+    for _ in range(0, limit, 50):
+        resp = get_account_txs(program_id, 50, last_hash)
+        resp = json.loads(resp.text)
+        sigs += [r['txHash'] for r in resp]
+        last_hash = sigs[-1]
+    
+    return sigs
+
 @cached(ttl=None, cache=Cache.MEMORY)
 async def get_all(limit, endpoint):
     config = configs['mainnet-beta']
@@ -74,13 +86,7 @@ async def get_all(limit, endpoint):
     provider = Provider(connection, wallet)
     ch: ClearingHouse = ClearingHouse.from_config(config, provider)
 
-    sigs = []
-    last_hash = None
-    for _ in range(0, limit, 50):
-        resp = get_account_txs(ch.program_id, 50, last_hash)
-        resp = json.loads(resp.text)
-        sigs += [r['txHash'] for r in resp]
-        last_hash = sigs[-1]
+    sigs = get_last_n_tx_sigs(ch.program_id, limit)
 
     promises = []
     for sig in sigs:
@@ -88,25 +94,24 @@ async def get_all(limit, endpoint):
     txs = await asyncio.gather(*promises)
     n_logs = len(txs)
     
-    # txs = []
-    # for sig in sigs:
-    #     tx = await connection.get_transaction(sig)
-    #     txs.append(tx)
-
     parser = EventParser(ch.program.program_id, ch.program.coder)
+    
     logs = {}
     for tx, sig in zip(txs, sigs):
-        def call_b(evt): logs[sig] = evt
+        def call_b(evt): 
+            assert sig not in logs.keys()
+            logs[sig] = logs.get(sig, []) + [evt]
         parser.parse_logs(tx['result']['meta']['logMessages'], call_b)
  
     log_names = list(set([log.name for log in logs.values()]))
     type_to_log = {}
     for log_name in log_names:
-        for sig, log in logs.items(): 
-            if log.name == log_name:
-                if log_name not in type_to_log: 
-                    type_to_log[log_name] = {}
-                type_to_log[log_name][sig] = log.data
+        for sig, events in logs.items(): 
+            for event in events:
+                if event.name == log_name:
+                    if log_name not in type_to_log: 
+                        type_to_log[log_name] = {}
+                    type_to_log[log_name][sig] = type_to_log[log_name].get(sig, []) + [event.data]
 
     return log_names, type_to_log, n_logs
 
