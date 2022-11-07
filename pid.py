@@ -25,45 +25,11 @@ from solana.publickey import PublicKey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
-
-@dataclass
-class Config:
-    env: str
-    pyth_oracle_mapping_address: PublicKey
-    clearing_house_program_id: PublicKey
-    usdc_mint_address: PublicKey
-    markets: list[Market]
-    banks: list[Bank]
-
-
-configs = {
-    "devnet": Config(
-        env='devnet',
-        pyth_oracle_mapping_address=PublicKey('BmA9Z6FjioHJPpjT39QazZyhDRUdZy2ezwx4GiDdE2u2'),
-		clearing_house_program_id=PublicKey('dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH'),
-		usdc_mint_address=PublicKey('8zGuJQqwhZafTah7Uc7Z4tXRnguqkn5KLFAP8oV6PHe2'),
-		markets=devnet_markets,
-		banks=devnet_banks,
-    ),
-    "mainnet-beta": Config(
-        env='mainnet-beta',
-        pyth_oracle_mapping_address=PublicKey('BmA9Z6FjioHJPpjT39QazZyhDRUdZy2ezwx4GiDdE2u2'),
-		clearing_house_program_id=PublicKey('dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH'),
-		usdc_mint_address=PublicKey('8zGuJQqwhZafTah7Uc7Z4tXRnguqkn5KLFAP8oV6PHe2'),
-		markets=devnet_markets,
-		banks=devnet_banks,
-    )
-}
-
-import requests
-def get_account_txs(pk, limit=10):
-    resp = requests.get(f'https://public-api.solscan.io/account/transactions?account={pk}&limit={limit}')
-    return resp
+from config import configs
 
 async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
     config = configs['devnet']
 
-    # print(config)
     # random key 
     with open("DRFTL7fm2cA13zHTSHnTKpt58uq5E49yr2vUxuonEtYd.json", 'r') as f: secret = json.load(f) 
     kp = Keypair.from_secret_key(bytes(secret))
