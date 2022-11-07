@@ -71,11 +71,10 @@ async def get_all(limit, endpoint):
     logs = {}
     for tx, sig in zip(txs, sigs):
         def call_b(evt): 
-            assert sig not in logs.keys()
             logs[sig] = logs.get(sig, []) + [evt]
         parser.parse_logs(tx['result']['meta']['logMessages'], call_b)
  
-    log_names = list(set([log.name for log in logs.values()]))
+    log_names = list(set([event.name for events in logs.values() for event in events]))
     type_to_log = {}
     for log_name in log_names:
         for sig, events in logs.items(): 
