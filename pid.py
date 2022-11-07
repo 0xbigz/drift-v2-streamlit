@@ -138,7 +138,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                 df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
 
                 toshow = df1[[
-                    'public_key', 
+                    'authority', 
                     'name', 
                     'open_orders', 
                     'lp_shares',
@@ -147,7 +147,7 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
                     'entry_price', 
                     'breakeven_price', 
                     'cost_basis',
-                    'authority', 
+                    'public_key', 
                 ]]
                 st.text('User Perp Positions ('+ str(len(df1)) +')')
                 st.dataframe(toshow)
