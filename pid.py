@@ -13,6 +13,7 @@ from anchorpy import Provider, Wallet
 from solana.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from driftpy.clearing_house import ClearingHouse
+from driftpy.clearing_house_user import ClearingHouseUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
@@ -39,10 +40,20 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     authorities = set()
     dfs = {}
     spotdfs = {}
+    # healths = []
     from driftpy.types import User
+    kp = Keypair()
+    ch = ClearingHouse(ch.program, kp)
+
     for x in all_users:
         key = str(x.public_key)
         account: User = x.account
+        # chu = ClearingHouseUser(ch, x.account.authority)
+
+        # mr = await chu.get_margin_requirement('Maintenance')
+        # tc = await chu.get_total_collateral('Maintenance')
+        # health = (tc-mr)
+        # healths.append(health)
 
         if account.authority not in authorities:
             authorities.add(account.authority)

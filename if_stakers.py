@@ -70,4 +70,12 @@ async def insurance_fund_page(ch: ClearingHouse):
         st.write(f'Spot Market {i} total vault balance: {v_amount/QUOTE_PRECISION:,.2f}')
     
     stakers = pd.DataFrame(data=dfs)
-    st.write(stakers)
+
+    stakers['cost_basis'] /= 1e6
+    stakers['if_shares'] /= 1e6
+
+    print(stakers.columns)
+    st.write(stakers[['authority', 'market_index', '$ balance', 'if_shares', 'cost_basis', 'last_withdraw_request_shares', 'if_base',
+       'last_withdraw_request_value',
+       'last_withdraw_request_ts', 'last_valid_ts',  'key',
+       ]])

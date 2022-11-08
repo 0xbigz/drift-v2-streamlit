@@ -10,6 +10,7 @@ import numpy as np
 
 import aiohttp
 import asyncio
+import datetime
 
 from logs import log_page
 from simulations import sim_page
@@ -29,6 +30,8 @@ async def main():
         layout='wide',
         page_icon="👾"
     )
+
+    last_update = st.sidebar.text('updated: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
     env = st.sidebar.radio('env', ('mainnet-beta', 'devnet'))
     rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
     tab = st.sidebar.radio(
