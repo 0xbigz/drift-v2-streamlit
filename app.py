@@ -11,15 +11,21 @@ import numpy as np
 import aiohttp
 import asyncio
 
-from logs import view_logs
+from logs import log_page
 from simulations import sim_page
 from pid import show_pid_positions
 from driftpy.constants.config import configs
 
-async def main():
+from anchorpy import Provider, Wallet
+from solana.keypair import Keypair
+from solana.rpc.async_api import AsyncClient
+from driftpy.clearing_house import ClearingHouse
 
+from if_stakers import insurance_fund_page
+
+async def main():
     st.set_page_config(
-        'Drift v2 Simulations',
+        'Drift v2',
         layout='wide',
         page_icon="👾"
     )
@@ -27,32 +33,43 @@ async def main():
     rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
     tab = st.sidebar.radio(
         "Select Tab:",
-        ('Overview', 'Simulations', 'Tweets', 'Logs'))
+        ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers'))
+
+    if env == 'mainnet-beta':
+        config = configs['mainnet']
+    else:
+        config = configs[env]
+
+    kp = Keypair() # random wallet
+    wallet = Wallet(kp)
+    connection = AsyncClient(rpc)
+    provider = Provider(connection, wallet)
+    clearing_house: ClearingHouse = ClearingHouse.from_config(config, provider)
+    
+    st.title(f'Drift v2: {tab}')
+
+    repo = "https://github.com/drift-labs/protocol-v2"
+    st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
+    
+    with st.expander(f"pid={clearing_house.program_id} config"):
+        st.json(config.__dict__)
 
     if tab == 'Overview':
-        st.title('Drift v2')
-        repo = "https://github.com/drift-labs/protocol-v2"
-        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
-        env = 'mainnet-beta'
-        await show_pid_positions('', rpc)
+        await show_pid_positions(rpc, clearing_house)
 
     elif tab == 'Logs':
-        st.title('Drift v2: Logs')
-        repo = "https://github.com/drift-labs/protocol-v2"
-        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
-        await view_logs(rpc)
+        await log_page(rpc, clearing_house)
 
     elif tab == 'Simulations':
-        st.title('Drift v2 Simulations')
-        repo = "https://github.com/drift-labs/drift-sim"
-        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
         sim_page()
+
+    elif tab == 'IF-Stakers':
+        await insurance_fund_page(clearing_house)
 
     elif tab == 'Tweets':
         tweets = {
             'cindy': 'https://twitter.com/cindyleowtt/status/1569713537454579712',
             '0xNineteen': 'https://twitter.com/0xNineteen/status/1571926865681711104',
-        
         }
         st.table(pd.Series(tweets))
 
