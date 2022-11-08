@@ -28,7 +28,6 @@ import asyncio
 import requests
 from aiocache import Cache
 from aiocache import cached
-from config import configs
 from driftpy.types import InsuranceFundStake, SpotMarket
 from driftpy.addresses import * 
 

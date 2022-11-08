@@ -28,7 +28,6 @@ import asyncio
 import requests
 from aiocache import Cache
 from aiocache import cached
-from config import configs
 
 def get_account_txs(pk, limit=10, last_hash=None):
     if last_hash is None:

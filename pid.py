@@ -25,7 +25,6 @@ from solana.publickey import PublicKey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
-from config import configs
 
 async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     ch = clearing_house
