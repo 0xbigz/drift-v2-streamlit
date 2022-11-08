@@ -41,8 +41,9 @@ def get_last_n_tx_sigs(program_id, limit):
     sigs = []
     last_hash = None
     # sol scan only allows 50 at a time
-    for _ in range(0, limit, 50):
-        resp = get_account_txs(program_id, 50, last_hash)
+    for i in range(0, limit, 50):
+        amount = 50 if i < limit else limit % 50 
+        resp = get_account_txs(program_id, amount, last_hash)
         resp = json.loads(resp.text)
         sigs += [r['txHash'] for r in resp]
         last_hash = sigs[-1]
@@ -50,14 +51,8 @@ def get_last_n_tx_sigs(program_id, limit):
     return sigs
 
 @cached(ttl=None, cache=Cache.MEMORY)
-async def get_all(limit, endpoint):
-    config = configs['mainnet-beta']
-    kp = Keypair()
-    wallet = Wallet(kp)
-    connection = AsyncClient(endpoint)
-    provider = Provider(connection, wallet)
-    ch: ClearingHouse = ClearingHouse.from_config(config, provider)
-
+async def get_all(ch, limit):
+    connection = ch.program.provider.connection
     sigs = get_last_n_tx_sigs(ch.program_id, limit)
 
     promises = []
@@ -90,22 +85,10 @@ async def get_all(limit, endpoint):
 
     return log_names, type_to_log, n_logs, (max_log, min_log)
 
-async def view_logs(url):
-    config = configs['mainnet-beta']
-
-    kp = Keypair()
-    wallet = Wallet(kp)
-    connection = AsyncClient(url)
-    provider = Provider(connection, wallet)
-    ch: ClearingHouse = ClearingHouse.from_config(config, provider)
-
-    with st.expander(f'pid={ch.program_id} config'):
-        st.text(str(config))
-
+async def log_page(url: str, ch):
     # log liquidations
-    # ...
     limit = st.number_input('tx look up limit', value=10)
-    log_names, type_to_log, n_logs, (max_ts, min_ts) = await get_all(limit, url)
+    log_names, type_to_log, n_logs, (max_ts, min_ts) = await get_all(ch, limit)
     
     import datetime
     min_ts = datetime.datetime.fromtimestamp(min_ts)

@@ -27,37 +27,25 @@ from anchorpy import EventParser
 import asyncio
 from config import configs
 
-async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
-    config = configs['devnet']
-
-    # random key 
-    with open("DRFTL7fm2cA13zHTSHnTKpt58uq5E49yr2vUxuonEtYd.json", 'r') as f: secret = json.load(f) 
-    kp = Keypair.from_secret_key(bytes(secret))
-
-    wallet = Wallet(kp)
-    connection = AsyncClient(url)
-    provider = Provider(connection, wallet)
-    ch: ClearingHouse = ClearingHouse.from_config(config, provider)
-
-    with st.expander('pid='+str(    ch.program_id) + " config"):
-        # print(str(config))
-        st.text(str(config))
-
+async def show_pid_positions(url: str, clearing_house: ClearingHouse):
+    ch = clearing_house
     state = await get_state_account(ch.program)
 
     with st.expander('state'):
-        st.text(str(state))
+        st.json(state.__dict__)
 
     all_users = await ch.program.account['User'].all()
 
-    st.text('Number of Driftoors:' + str(len(all_users)))
-
+    authorities = set()
     dfs = {}
     spotdfs = {}
     from driftpy.types import User
     for x in all_users:
         key = str(x.public_key)
         account: User = x.account
+
+        if account.authority not in authorities:
+            authorities.add(account.authority)
 
         dfs[key] = []
         name = str(''.join(map(chr, account.name)))
@@ -78,6 +66,9 @@ async def show_pid_positions(pid='', url='https://api.devnet.solana.com'):
             dd['name'] = name
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
+    
+    st.text('Number of Driftoors: ' + str(len(all_users)))
+    st.text('Number of Unique Driftoors: ' + str(len(authorities)))
 
     perps = pd.concat(dfs,axis=1).T
     perps.index = perps.index.set_names(['public_key', 'idx2'])
