@@ -61,7 +61,6 @@ def batch_get_txs(url, sigs):
     from tqdm import tqdm 
     for i in tqdm(range(0, len(data), step)):
         batch = data[i: i+step]
-        print(f'requesting {len(batch)}')
         resp = requests.post(
             url,
             headers={
@@ -77,8 +76,7 @@ def batch_get_txs(url, sigs):
         
         # expecting json list as response
         resps += resp
-    return resp
-
+    return resps
 
 @cached(ttl=None, cache=Cache.MEMORY)
 async def get_all(url, ch, limit):
@@ -89,7 +87,6 @@ async def get_all(url, ch, limit):
         return False, None
 
     txs = batch_get_txs(url, sigs)
-
     n_logs = len(txs)
     parser = EventParser(ch.program.program_id, ch.program.coder)
     
@@ -97,7 +94,15 @@ async def get_all(url, ch, limit):
     for tx, sig in zip(txs, sigs):
         def call_b(evt): 
             logs[sig] = logs.get(sig, []) + [evt]
+        # likely rate limited
+        if 'result' not in tx: 
+            st.write(tx['error'])
+            break 
         parser.parse_logs(tx['result']['meta']['logMessages'], call_b)
+    
+    if len(logs) == 0: 
+        st.write('likely rpc rate limited...')
+        return False, None
 
     log_times = list(set([event.data.ts for events in logs.values() for event in events]))
     max_log = max(log_times)
