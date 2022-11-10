@@ -7,23 +7,10 @@ import numpy as np
 pd.options.plotting.backend = "plotly"
 
 print(driftpy.__dir__())
-# from driftpy.constants.config import configs
-from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
-from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
-from dataclasses import dataclass
-from solana.publickey import PublicKey
-from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
-import asyncio
 
 import requests
 from aiocache import Cache
@@ -66,7 +53,7 @@ def get_tx_request(sig):
         ]
     }
 
-def batch_get_txs(sigs):
+def batch_get_txs(url, sigs):
     data = [get_tx_request(sig) for sig in sigs]
 
     resps = []
@@ -76,10 +63,9 @@ def batch_get_txs(sigs):
         batch = data[i: i+step]
         print(f'requesting {len(batch)}')
         resp = requests.post(
-            "https://drift-cranking.rpcpool.com", 
+            url,
             headers={
                 "Content-Type": "application/json",
-                "origin": "https://app.drift.trade",
             }, 
             json=batch
         )
@@ -93,33 +79,16 @@ def batch_get_txs(sigs):
         resps += resp
     return resp
 
-# async def query_server(ch: ClearingHouse):
-#     all_users = await ch.program.account['User'].all()
-#     page_index = 0 
-#     page_size = 1000
-
-#     jsons = []
-#     from tqdm import tqdm
-#     for x in tqdm(all_users):
-#         key = str(x.public_key)
-#         query = f'https://mainnet-beta.api.drift.trade/liquidations/userAccount/?userPublicKey={key}&pageIndex={page_index}&pageSize={page_size}'
-#         resp = requests.get(query)
-#         resp = json.loads(resp.text)
-#         if len(resp['data']['liquidations']) > 0:
-#             print(resp)
-#             jsons.append(resp)
-#             break
-#     st.json(jsons)
 
 @cached(ttl=None, cache=Cache.MEMORY)
-async def get_all(ch, limit):
+async def get_all(url, ch, limit):
     sigs, n_req = get_last_n_tx_sigs(ch.program_id, limit)
     st.write(f'n of solscan responses: {n_req}')
     if n_req == 0: 
         st.write('likely solscan rate limit...')
         return False, None
 
-    txs = batch_get_txs(sigs)
+    txs = batch_get_txs(url, sigs)
 
     n_logs = len(txs)
     parser = EventParser(ch.program.program_id, ch.program.coder)
@@ -149,7 +118,7 @@ async def get_all(ch, limit):
 async def log_page(url: str, ch):
     # log liquidations
     limit = st.number_input('tx look up limit', value=10)
-    s, r = await get_all(ch, limit)
+    s, r = await get_all(url, ch, limit)
     if not s: 
         return
     log_names, type_to_log, n_logs, (max_ts, min_ts) = r 
