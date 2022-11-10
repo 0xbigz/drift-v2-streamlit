@@ -39,6 +39,9 @@ def get_last_n_tx_sigs(program_id, limit):
 
         last_hash = sigs[-1]
         n_requests += 1
+        if n_requests > 148:
+            st.write('reached max sol scan requests...')
+            break
     
     return sigs, n_requests
 
@@ -122,6 +125,7 @@ async def get_all(url, ch, limit):
 
 async def log_page(url: str, ch):
     # log liquidations
+    st.write("getting recent txs from [https://public-api.solscan.io/docs/#/](https://public-api.solscan.io/docs/#/)...")
     limit = st.number_input('tx look up limit', value=10)
     s, r = await get_all(url, ch, limit)
     if not s: 
