@@ -26,6 +26,9 @@ from solana.publickey import PublicKey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
+import matplotlib.pyplot as plt 
+from driftpy.clearing_house_user import get_token_amount
+from driftpy.types import SpotBalanceType
 
 async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     ch = clearing_house
@@ -88,10 +91,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     spots.index = spots.index.set_names(['public_key', 'idx2'])
     spots = spots.reset_index()
     
-    markettype = st.radio(
-    "MarketType",
-    ('Perp', 'Spot'))
-    # print(state)
+    markettype = st.radio("MarketType", ('Perp', 'Spot'))
     if markettype == 'Perp':
         num_markets = state.number_of_markets
     else:
@@ -178,6 +178,41 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
 
                 st.text('User Spot Positions ('+ str(len(df1)) +')')
                 st.dataframe(df1[['public_key', 'balance_type', 'scaled_balance', 'cumulative_deposits', 'open_orders', 'authority']])
+
+                total_cumm_deposits = df1['cumulative_deposits'].sum()
+
+                sb = df1[df1['balance_type'].map(str) == 'SpotBalanceType.Deposit()']
+                deposits = sb['scaled_balance'].values 
+                total_deposits = 0
+                for depo in deposits: 
+                    token_amount = get_token_amount(
+                        depo * 1e9, 
+                        market, 
+                        'SpotBalanceType.Deposit()'
+                    )
+                    total_deposits += token_amount
+                        
+                sb = df1[df1['balance_type'].map(str) == 'SpotBalanceType.Borrow()']
+                borrows = sb['scaled_balance'].values 
+                total_borrows = 0
+                for borr in borrows: 
+                    token_amount = get_token_amount(
+                        borr * 1e9, 
+                        market, 
+                        'SpotBalanceType.Borrow()'
+                    )
+                    total_borrows += token_amount
+                
+                st.text(f'total deposits: {total_deposits/QUOTE_PRECISION:,.2f}')
+                st.text(f'total borrows: {total_borrows/QUOTE_PRECISION:,.2f}')
+                st.text(f'total cummulative deposits: {total_cumm_deposits:,.2f}')
+
+                fig1, ax1 = plt.subplots()
+                fig1.set_size_inches(15.5, 5.5)
+                ax1.pie([total_deposits/QUOTE_PRECISION, total_borrows/QUOTE_PRECISION], labels=['deposits', 'borrows'], autopct='%1.5f%%',
+                        startangle=90)
+                ax1.axis('equal')  
+                st.pyplot(fig1)
 
         authority = st.text_input('public_key:') 
         auth_df = df1[df1['public_key'] == authority]

@@ -7,23 +7,10 @@ import numpy as np
 pd.options.plotting.backend = "plotly"
 
 print(driftpy.__dir__())
-# from driftpy.constants.config import configs
-from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
-from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
-from dataclasses import dataclass
-from solana.publickey import PublicKey
-from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
-import asyncio
 
 import requests
 from aiocache import Cache
@@ -36,37 +23,89 @@ def get_account_txs(pk, limit=10, last_hash=None):
         resp = requests.get(f'https://public-api.solscan.io/account/transactions?account={pk}&limit={limit}&beforeHash={last_hash}')
     return resp
 
+# 150 requests/ 30 seconds
 def get_last_n_tx_sigs(program_id, limit):
     sigs = []
     last_hash = None
+    n_requests = 0
     # sol scan only allows 50 at a time
     for i in range(0, limit, 50):
-        amount = 50 if i < limit else limit % 50 
+        amount = 50 if i+50 < limit else limit % 50 
         resp = get_account_txs(program_id, amount, last_hash)
         resp = json.loads(resp.text)
         sigs += [r['txHash'] for r in resp]
+        if len(resp) == 0:
+            return sigs, len(sigs)
+
         last_hash = sigs[-1]
+        n_requests += 1
+        if n_requests > 148:
+            st.write('reached max sol scan requests...')
+            break
     
-    return sigs
+    return sigs, n_requests
+
+def get_tx_request(sig):
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTransaction",
+        "params": [
+            sig,
+            "json"
+        ]
+    }
+
+def batch_get_txs(url, sigs):
+    data = [get_tx_request(sig) for sig in sigs]
+
+    resps = []
+    step = 100
+    from tqdm import tqdm 
+    for i in tqdm(range(0, len(data), step)):
+        batch = data[i: i+step]
+        resp = requests.post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+            }, 
+            json=batch
+        )
+        try:
+            resp = json.loads(resp.text)
+        except Exception as e: 
+            print(resp.text)
+            raise e
+        
+        # expecting json list as response
+        resps += resp
+    return resps
 
 @cached(ttl=None, cache=Cache.MEMORY)
-async def get_all(ch, limit):
-    connection = ch.program.provider.connection
-    sigs = get_last_n_tx_sigs(ch.program_id, limit)
+async def get_all(url, ch, limit):
+    sigs, n_req = get_last_n_tx_sigs(ch.program_id, limit)
+    st.write(f'n of solscan responses: {n_req}')
+    if n_req == 0: 
+        st.write('likely solscan rate limit...')
+        return False, None
 
-    promises = []
-    for sig in sigs:
-        promises.append(connection.get_transaction(sig))
-    txs = await asyncio.gather(*promises)
+    txs = batch_get_txs(url, sigs)
     n_logs = len(txs)
-    
     parser = EventParser(ch.program.program_id, ch.program.coder)
     
     logs = {}
     for tx, sig in zip(txs, sigs):
         def call_b(evt): 
             logs[sig] = logs.get(sig, []) + [evt]
+        # likely rate limited
+        if 'result' not in tx: 
+            st.write(tx['error'])
+            break 
         parser.parse_logs(tx['result']['meta']['logMessages'], call_b)
+    
+    if len(logs) == 0: 
+        st.write('likely rpc rate limited...')
+        return False, None
 
     log_times = list(set([event.data.ts for events in logs.values() for event in events]))
     max_log = max(log_times)
@@ -82,13 +121,17 @@ async def get_all(ch, limit):
                         type_to_log[log_name] = {}
                     type_to_log[log_name][sig] = type_to_log[log_name].get(sig, []) + [event.data]
 
-    return log_names, type_to_log, n_logs, (max_log, min_log)
+    return True, (log_names, type_to_log, n_logs, (max_log, min_log))
 
 async def log_page(url: str, ch):
     # log liquidations
+    st.write("getting recent txs from [https://public-api.solscan.io/docs/#/](https://public-api.solscan.io/docs/#/)...")
     limit = st.number_input('tx look up limit', value=10)
-    log_names, type_to_log, n_logs, (max_ts, min_ts) = await get_all(ch, limit)
-    
+    s, r = await get_all(url, ch, limit)
+    if not s: 
+        return
+    log_names, type_to_log, n_logs, (max_ts, min_ts) = r 
+
     import datetime
     min_ts = datetime.datetime.fromtimestamp(min_ts)
     max_ts = datetime.datetime.fromtimestamp(max_ts)
