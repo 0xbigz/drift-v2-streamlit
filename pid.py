@@ -211,7 +211,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                 fig1.set_size_inches(15.5, 5.5)
                 ax1.pie([total_deposits/QUOTE_PRECISION, total_borrows/QUOTE_PRECISION], labels=['deposits', 'borrows'], autopct='%1.5f%%',
                         startangle=90)
-                ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+                ax1.axis('equal')  
                 st.pyplot(fig1)
 
         authority = st.text_input('public_key:') 
