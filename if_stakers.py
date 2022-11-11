@@ -56,9 +56,12 @@ async def insurance_fund_page(ch: ClearingHouse):
     for i in range(state.number_of_spot_markets):
         spot = await get_spot_market_account(ch.program, i)
         total_n_shares = spot.insurance_fund.total_shares
+        user_n_shares = spot.insurance_fund.user_shares
+        protocol_n_shares = total_n_shares - user_n_shares
 
         if_vault = get_insurance_fund_vault_public_key(ch.program_id, i)
         v_amount = int((await conn.get_token_account_balance(if_vault))['result']['value']['amount'])
+        protocol_balance = v_amount * protocol_n_shares / (max(total_n_shares,1))
 
         for staker_df in dfs: 
             if staker_df['market_index'] == i:
@@ -66,7 +69,9 @@ async def insurance_fund_page(ch: ClearingHouse):
                 balance = v_amount * n_shares / total_n_shares
                 staker_df['$ balance'] = f"{balance / QUOTE_PRECISION:,.2f}"
 
-        st.write(f'Spot Market {i} total vault balance: {v_amount/QUOTE_PRECISION:,.2f}')
+        name = str(''.join(map(chr, spot.name)))
+
+        st.write(f'{name} (marketIndex={i}) insurance vault balance: {v_amount/QUOTE_PRECISION:,.2f} (protocol owned: {protocol_balance/QUOTE_PRECISION:,.2f})')
     
     stakers = pd.DataFrame(data=dfs)
 
