@@ -23,6 +23,7 @@ from solana.rpc.async_api import AsyncClient
 from driftpy.clearing_house import ClearingHouse
 
 from if_stakers import insurance_fund_page
+from userstats import show_user_stats
 
 async def main():
     st.set_page_config(
@@ -36,7 +37,7 @@ async def main():
     rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
     tab = st.sidebar.radio(
         "Select Tab:",
-        ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers'))
+        ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers', 'User-Stats'))
 
     if env == 'mainnet-beta':
         config = configs['mainnet']
@@ -68,6 +69,9 @@ async def main():
 
     elif tab == 'IF-Stakers':
         await insurance_fund_page(clearing_house)
+
+    elif tab == 'User-Stats':
+        await show_user_stats(rpc, clearing_house)
 
     elif tab == 'Tweets':
         tweets = {
