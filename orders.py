@@ -41,12 +41,15 @@ async def orders_page(rpc: str, ch: ClearingHouse):
     # [bids/longs] [asks/shorts]
     # [price, baa], [price, baa]
     # (dec price)    (inc price)
+    from driftpy.clearing_house_user import get_oracle_data
 
     state = await get_state_account(ch.program)
     for perp_idx in range(state.number_of_markets):
         market = await get_perp_market_account(
             ch.program, perp_idx
         )
+        oracle_price = (await get_oracle_data(ch.program.provider.connection, market.amm.oracle)).price 
+
         st.write(f"Market: {bytes(market.name).decode('utf-8')}")
 
         order_type_dict = {}
@@ -57,6 +60,9 @@ async def orders_page(rpc: str, ch: ClearingHouse):
                 if str(order.status) == 'OrderStatus.Open()' and order.market_index == perp_idx:
                     if order.trigger_price != 0 and order.price == 0: 
                         order.price = order.trigger_price
+                    
+                    if order.oracle_price_offset != 0 and order.price == 0: 
+                        order.price = oracle_price + order.oracle_price_offset
 
                     # oracle offset orders for now 
                     if order.price != 0:
@@ -71,7 +77,9 @@ async def orders_page(rpc: str, ch: ClearingHouse):
         shorts.sort(key=lambda order: order.price) # increasing price
 
         def format_order(order: Order):
-            return (order.price/PRICE_PRECISION, (order.base_asset_amount - order.base_asset_amount_filled)/AMM_RESERVE_PRECISION)
+            price = float(f'{order.price/PRICE_PRECISION:,.4f}')
+            size = (order.base_asset_amount - order.base_asset_amount_filled)/AMM_RESERVE_PRECISION
+            return (price, size)
 
         d_longs = [format_order(order) for order in longs]
         d_shorts = [format_order(order) for order in shorts]
@@ -88,7 +96,7 @@ async def orders_page(rpc: str, ch: ClearingHouse):
         }
         st.write(f'number of bids: {len(d_longs)}')
         st.write(f'number of asks: {len(d_shorts)}')
-        st.write(f'last oracle price: {market.amm.historical_oracle_data.last_oracle_price/PRICE_PRECISION}')
+        st.write(f'last oracle price: {oracle_price/PRICE_PRECISION}')
 
         df = pd.DataFrame(data=data)
         st.write(df)
