@@ -202,14 +202,17 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                         'SpotBalanceType.Borrow()'
                     )
                     total_borrows += token_amount
+
+                total_deposits /= (10 ** market.decimals)
+                total_borrows /= (10 ** market.decimals)
                 
-                st.text(f'total deposits: {total_deposits/QUOTE_PRECISION:,.2f}')
-                st.text(f'total borrows: {total_borrows/QUOTE_PRECISION:,.2f}')
+                st.text(f'total deposits (token amount): {total_deposits:,.2f}')
+                st.text(f'total borrows (token amount): {total_borrows:,.2f}')
                 st.text(f'total cummulative deposits: {total_cumm_deposits:,.2f}')
 
                 fig1, ax1 = plt.subplots()
                 fig1.set_size_inches(15.5, 5.5)
-                ax1.pie([total_deposits/QUOTE_PRECISION, total_borrows/QUOTE_PRECISION], labels=['deposits', 'borrows'], autopct='%1.5f%%',
+                ax1.pie([total_deposits, total_borrows], labels=['deposits', 'borrows'], autopct='%1.5f%%',
                         startangle=90)
                 ax1.axis('equal')  
                 st.pyplot(fig1)
