@@ -55,7 +55,10 @@ async def orders_page(rpc: str, ch: ClearingHouse):
             orders = user.orders
             for order in orders:
                 if str(order.status) == 'OrderStatus.Open()' and order.market_index == perp_idx:
-                    # ignore trigger / oracle offset orders for now 
+                    if order.trigger_price != 0 and order.price == 0: 
+                        order.price = order.trigger_price
+
+                    # oracle offset orders for now 
                     if order.price != 0:
                         order_type = str(order.direction)
                         order_type_dict[order_type] = order_type_dict.get(order_type, []) + [order]
