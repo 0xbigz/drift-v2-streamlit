@@ -24,6 +24,7 @@ from driftpy.clearing_house import ClearingHouse
 
 from if_stakers import insurance_fund_page
 from userstats import show_user_stats
+from orders import orders_page
 
 async def main():
     st.set_page_config(
@@ -37,7 +38,7 @@ async def main():
     rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
     tab = st.sidebar.radio(
         "Select Tab:",
-        ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers', 'User-Stats'))
+        ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB'))
 
     if env == 'mainnet-beta':
         config = configs['mainnet']
@@ -72,6 +73,9 @@ async def main():
 
     elif tab == 'User-Stats':
         await show_user_stats(rpc, clearing_house)
+    
+    elif tab == 'DLOB':
+        await orders_page(rpc, clearing_house)
 
     elif tab == 'Tweets':
         tweets = {
