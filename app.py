@@ -72,7 +72,7 @@ def main():
 
     elif tab == 'IF-Stakers':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(insurance_fund_page(rpc, clearing_house))
+        loop.run_until_complete(insurance_fund_page(clearing_house))
 
     elif tab == 'User-Stats':
         loop = asyncio.new_event_loop()
