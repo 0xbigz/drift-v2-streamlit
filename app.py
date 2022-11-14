@@ -26,7 +26,7 @@ from if_stakers import insurance_fund_page
 from userstats import show_user_stats
 from orders import orders_page
 
-async def main():
+def main():
     st.set_page_config(
         'Drift v2',
         layout='wide',
@@ -60,22 +60,26 @@ async def main():
         st.json(config.__dict__)
 
     if tab == 'Overview':
-        await show_pid_positions(rpc, clearing_house)
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(show_pid_positions(rpc, clearing_house))
 
     elif tab == 'Logs':
-        await log_page(rpc, clearing_house)
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(log_page(rpc, clearing_house))
 
     elif tab == 'Simulations':
         sim_page()
 
     elif tab == 'IF-Stakers':
-        await insurance_fund_page(clearing_house)
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(insurance_fund_page(rpc, clearing_house))
 
     elif tab == 'User-Stats':
-        await show_user_stats(rpc, clearing_house)
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(show_user_stats(rpc, clearing_house))
     
     elif tab == 'DLOB':
-        await orders_page(rpc, clearing_house)
+        orders_page(rpc, clearing_house)
 
     elif tab == 'Tweets':
         tweets = {
@@ -85,5 +89,4 @@ async def main():
         st.table(pd.Series(tweets))
 
 if __name__ == '__main__':
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(main())
+    main()

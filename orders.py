@@ -6,6 +6,7 @@ import numpy as np
 
 pd.options.plotting.backend = "plotly"
 
+import time
 print(driftpy.__dir__())
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
@@ -32,8 +33,15 @@ from driftpy.types import *
 from driftpy.addresses import * 
 from driftpy.constants.numeric_constants import *
 
-async def orders_page(rpc: str, ch: ClearingHouse):
-    all_users = await ch.program.account['User'].all()
+import asyncio
+
+@st.experimental_memo
+def cached_get_orders_data(rpc: str, _ch: ClearingHouse):
+    loop = asyncio.new_event_loop()
+    return loop.run_until_complete(get_orders_data(rpc, _ch))
+
+async def get_orders_data(rpc: str, _ch: ClearingHouse):
+    all_users = await _ch.program.account['User'].all()
     
     # long orders 
     # short orders 
@@ -43,13 +51,14 @@ async def orders_page(rpc: str, ch: ClearingHouse):
     # (dec price)    (inc price)
     from driftpy.clearing_house_user import get_oracle_data
 
-    state = await get_state_account(ch.program)
+    state = await get_state_account(_ch.program)
     for perp_idx in range(state.number_of_markets):
         market = await get_perp_market_account(
-            ch.program, perp_idx
+            _ch.program, perp_idx
         )
-        oracle_price = (await get_oracle_data(ch.program.provider.connection, market.amm.oracle)).price 
+        oracle_data = await get_oracle_data(_ch.program.provider.connection, market.amm.oracle)
 
+        oracle_price = oracle_data.price
         st.write(f"Market: {bytes(market.name).decode('utf-8')}")
 
         order_type_dict = {}
@@ -58,8 +67,11 @@ async def orders_page(rpc: str, ch: ClearingHouse):
             orders = user.orders
             for order in orders:
                 if str(order.status) == 'OrderStatus.Open()' and order.market_index == perp_idx:
-                    if order.trigger_price != 0 and order.price == 0: 
-                        order.price = order.trigger_price
+                    order.owner = str(x.public_key)
+                    order.authority = str(x.account.authority)
+
+                    # if order.trigger_price != 0 and order.price == 0: 
+                    #     order.price = order.trigger_price
                     
                     if order.oracle_price_offset != 0 and order.price == 0: 
                         order.price = oracle_price + order.oracle_price_offset
@@ -81,22 +93,62 @@ async def orders_page(rpc: str, ch: ClearingHouse):
             size = (order.base_asset_amount - order.base_asset_amount_filled)/AMM_RESERVE_PRECISION
             return (price, size)
 
+        d_longs_authority = [str(order.authority) for order in longs]
+        d_longs_order_id = [order.order_id for order in longs]
+        d_longs_owner = [str(order.owner) for order in longs]
+        d_longs_order_type = [str(order.order_type).split('.')[-1].split('()')[0] for order in longs]
         d_longs = [format_order(order) for order in longs]
         d_shorts = [format_order(order) for order in shorts]
+        d_shorts_order_type = [str(order.order_type).split('.')[-1].split('()')[0] for order in shorts]
+        d_shorts_owner = [str(order.owner) for order in shorts]
+        d_shorts_authority = [str(order.authority) for order in shorts]
+        d_shorts_order_id = [order.order_id for order in shorts]
+
+        st.write(f'number of bids: {len(d_longs)}')
+        st.write(f'number of asks: {len(d_shorts)}')
 
         pad = abs(len(d_longs) - len(d_shorts))
         if len(d_longs) > len(d_shorts):
             d_shorts += [""] * pad
+            d_shorts_owner += [""] * pad
+            d_shorts_order_type += [""] * pad
+            d_shorts_authority += [""] * pad
+            d_shorts_order_id += [""] * pad
         else:
             d_longs += [""] * pad
+            d_longs_owner  += [""] * pad
+            d_longs_order_type += [""] * pad
+            d_longs_authority += [""] * pad
+            d_longs_order_id += [""] * pad
 
         data = {
+            'bids order id': d_longs_order_id,
+            'bids authority': d_longs_authority,
+            'bids owner': d_longs_owner,
+            'bids order type': d_longs_order_type,
             'bids (price, size)': d_longs,
             'asks (price, size)': d_shorts,
+            'asks order type': d_shorts_order_type,
+            'asks owner': d_shorts_owner,
+            'asks authority': d_shorts_authority,
+            'asks order id': d_shorts_order_id,
         }
-        st.write(f'number of bids: {len(d_longs)}')
-        st.write(f'number of asks: {len(d_shorts)}')
+        return (pd.DataFrame(data), oracle_price)
+
+def orders_page(rpc: str, ch: ClearingHouse):
+
+        # time.sleep(3)
+        # oracle_price = 13.5 * 1e6 
+
+        data, oracle_price = cached_get_orders_data(rpc, ch)
+
         st.write(f'last oracle price: {oracle_price/PRICE_PRECISION}')
 
-        df = pd.DataFrame(data=data)
-        st.write(df)
+        correct_order = data.columns.tolist()
+        cols = st.multiselect(
+                        "Choose columns", data.columns.tolist(), 
+                        ['bids order id', 'bids (price, size)', 'asks (price, size)',  'asks order id']
+                    )
+        subset_ordered = [x for x in correct_order if x in cols]
+        df = pd.DataFrame(data)[subset_ordered]
+        st.dataframe(df)
