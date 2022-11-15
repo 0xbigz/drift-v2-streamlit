@@ -7,7 +7,6 @@ import numpy as np
 
 pd.options.plotting.backend = "plotly"
 
-print(driftpy.__dir__())
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
 from solana.keypair import Keypair

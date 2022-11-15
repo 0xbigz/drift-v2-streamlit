@@ -7,7 +7,6 @@ import numpy as np
 pd.options.plotting.backend = "plotly"
 
 import time
-print(driftpy.__dir__())
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
 from solana.keypair import Keypair
@@ -56,9 +55,9 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse):
         market = await get_perp_market_account(
             _ch.program, perp_idx
         )
-        # oracle_data = (await get_oracle_data(_ch.program.provider.connection, market.amm.oracle))
-        # oracle_price = oracle_data.price
-        oracle_price = 14 * 1e6
+        oracle_data = (await get_oracle_data(_ch.program.provider.connection, market.amm.oracle))
+        oracle_price = oracle_data.price
+        # oracle_price = 14 * 1e6
         st.write(f"Market: {bytes(market.name).decode('utf-8')}")
 
         order_type_dict = {}
