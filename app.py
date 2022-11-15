@@ -8,7 +8,6 @@ import json
 from urllib.request import urlopen
 import numpy as np
 
-import aiohttp
 import asyncio
 import datetime
 
