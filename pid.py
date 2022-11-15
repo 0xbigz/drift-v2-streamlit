@@ -46,10 +46,18 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     kp = Keypair()
     ch = ClearingHouse(ch.program, kp)
 
+    chu = ClearingHouseUser(ch, authority=all_users[0].account.authority, use_cache=True)
+    await chu.set_cache()
+    cache = chu.CACHE
+
     for x in all_users:
         key = str(x.public_key)
         account: User = x.account
-        # chu = ClearingHouseUser(ch, x.account.authority)
+
+        chu = ClearingHouseUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, use_cache=True)
+        cache['user'] = account # update cache to look at the correct user account
+        await chu.set_cache(cache)
+        leverage = await chu.get_leverage()
 
         # mr = await chu.get_margin_requirement('Maintenance')
         # tc = await chu.get_total_collateral('Maintenance')
@@ -67,6 +75,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
             dd['position_index'] = idx
             dd['authority'] = str(x.account.authority)
             dd['name'] = name
+            dd['leverage'] = leverage / 10_000
             dfs[key].append(pd.Series(dd))
         dfs[key] = pd.concat(dfs[key],axis=1) 
         
@@ -141,8 +150,9 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     'authority', 
                     'name', 
                     'open_orders', 
-                    'lp_shares',
+                    'leverage',
                     'base_asset_amount', 
+                    'lp_shares',
                     'remainder_base_asset_amount',
                     'entry_price', 
                     'breakeven_price', 
