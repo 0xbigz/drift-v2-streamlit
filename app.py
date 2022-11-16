@@ -32,12 +32,23 @@ def main():
         page_icon="👾"
     )
 
-    last_update = st.sidebar.text('updated: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+    current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+    if st.sidebar.button('Clear Cache'):
+        st.session_state['time'] = current_time
+        st.experimental_memo.clear()
+    
+    if 'time' not in st.session_state:
+        st.session_state['time'] = current_time
+
+    st.sidebar.text('last updated on: ' + st.session_state['time'])
+
     env = st.sidebar.radio('env', ('mainnet-beta', 'devnet'))
     rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
     tab = st.sidebar.radio(
         "Select Tab:",
         ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB'))
+
 
     if env == 'mainnet-beta':
         config = configs['mainnet']
