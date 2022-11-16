@@ -41,6 +41,8 @@ def cached_get_orders_data(rpc: str, _ch: ClearingHouse):
 
 async def get_orders_data(rpc: str, _ch: ClearingHouse):
     all_users = await _ch.program.account['User'].all()
+
+    st.sidebar.text('cache last updated on: ' + _ch.time)
     
     # long orders 
     # short orders 

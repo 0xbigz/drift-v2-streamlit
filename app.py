@@ -33,15 +33,8 @@ def main():
     )
 
     current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-
     if st.sidebar.button('Clear Cache'):
-        st.session_state['time'] = current_time
         st.experimental_memo.clear()
-    
-    if 'time' not in st.session_state:
-        st.session_state['time'] = current_time
-
-    st.sidebar.text('last updated on: ' + st.session_state['time'])
 
     env = st.sidebar.radio('env', ('mainnet-beta', 'devnet'))
     rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
@@ -60,6 +53,8 @@ def main():
     connection = AsyncClient(rpc)
     provider = Provider(connection, wallet)
     clearing_house: ClearingHouse = ClearingHouse.from_config(config, provider)
+
+    clearing_house.time = current_time
     
     st.title(f'Drift v2: {tab}')
 
