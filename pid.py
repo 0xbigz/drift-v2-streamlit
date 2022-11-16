@@ -49,6 +49,9 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     await chu.set_cache()
     cache = chu.CACHE
 
+    perp_liq_prices = []
+    spot_liq_prices = []
+
     for x in all_users:
         key = str(x.public_key)
         account: User = x.account
@@ -81,10 +84,11 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
             if pos.base_asset_amount != 0:
                 perp_market = await chu.get_perp_market(pos.market_index)
                 oracle_price = (await chu.get_perp_oracle_data(perp_market)).price / PRICE_PRECISION
-                liq_price = await chu.get_liq_price(pos.market_index)
+                liq_price = await chu.get_perp_liq_price(pos.market_index)
                 if liq_price is None: 
                     liq_delta = None
                 else:
+                    perp_liq_prices.append(liq_price)
                     liq_delta = liq_price - oracle_price
             else: 
                 liq_delta = None
@@ -176,6 +180,21 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                 ]]
                 st.text('User Perp Positions ('+ str(len(df1)) +')')
                 st.dataframe(toshow)
+
+                # visualize perp liquidations 
+                max_price = st.number_input('max_price', value=np.median(perp_liq_prices) * 1.3)
+
+                perp_market = await chu.get_perp_market(market_index)
+                oracle_price = await chu.get_perp_oracle_data(perp_market)
+
+                import plotly.express as px
+                perp_liq_prices = [min(max_price, p) for p in perp_liq_prices]
+                df = pd.DataFrame({'liq_price': perp_liq_prices})
+                fig = px.histogram(perp_liq_prices, nbins=100, labels={'x': 'liq_price', 'y':'count'})
+                fig.add_vline(x=oracle_price.price/PRICE_PRECISION, line_color="red", annotation_text='oracle')
+
+                st.plotly_chart(fig)
+
             else:
                 market = await get_spot_market_account(ch.program, market_index)
                 market_name = ''.join(map(chr, market.name));
