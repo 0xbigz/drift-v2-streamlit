@@ -27,6 +27,7 @@ import asyncio
 import matplotlib.pyplot as plt 
 from driftpy.clearing_house_user import get_token_amount
 from driftpy.types import SpotBalanceType
+import plotly.express as px
 
 async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     ch = clearing_house
@@ -49,8 +50,8 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     await chu.set_cache()
     cache = chu.CACHE
 
-    perp_liq_prices = []
-    spot_liq_prices = []
+    perp_liq_prices = {}
+    spot_liq_prices = {}
 
     for x in all_users:
         key = str(x.public_key)
@@ -72,7 +73,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
         dfs[key] = []
         name = str(''.join(map(chr, account.name)))
 
-        from driftpy.types import PerpPosition
+        from driftpy.types import PerpPosition, SpotPosition
         pos: PerpPosition
         for idx, pos in enumerate(x.account.perp_positions):
             dd = pos.__dict__
@@ -88,7 +89,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                 if liq_price is None: 
                     liq_delta = None
                 else:
-                    perp_liq_prices.append(liq_price)
+                    perp_liq_prices[pos.market_index] = perp_liq_prices.get(pos.market_index, []) + [liq_price]
                     liq_delta = liq_price - oracle_price
             else: 
                 liq_delta = None
@@ -98,11 +99,26 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
         dfs[key] = pd.concat(dfs[key],axis=1) 
         
         spotdfs[key] = []
+        pos: SpotPosition
         for idx, pos in enumerate(x.account.spot_positions):
             dd = pos.__dict__
             dd['position_index'] = idx
             dd['authority'] = str(x.account.authority)
             dd['name'] = name
+
+            if pos.scaled_balance != 0:
+                spot_market = await chu.get_spot_market(pos.market_index)
+                oracle_price = (await chu.get_spot_oracle_data(spot_market)).price / PRICE_PRECISION
+                liq_price = await chu.get_spot_liq_price(pos.market_index)
+                if liq_price is None: 
+                    liq_delta = None
+                else:
+                    spot_liq_prices[pos.market_index] = spot_liq_prices.get(pos.market_index, []) + [liq_price]
+                    liq_delta = liq_price - oracle_price
+            else: 
+                liq_delta = None
+            dd['liq_price_delta'] = liq_delta
+
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
     
@@ -182,18 +198,24 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                 st.dataframe(toshow)
 
                 # visualize perp liquidations 
-                max_price = st.number_input('max_price', value=np.median(perp_liq_prices) * 1.3)
+                perp_liq_prices_m = perp_liq_prices.get(market_index, None)
+                if perp_liq_prices_m is not None and len(perp_liq_prices_m) > 0:
+                    perp_market = await chu.get_perp_market(market_index)
+                    oracle_price = await chu.get_perp_oracle_data(perp_market)
 
-                perp_market = await chu.get_perp_market(market_index)
-                oracle_price = await chu.get_perp_oracle_data(perp_market)
-
-                import plotly.express as px
-                perp_liq_prices = [min(max_price, p) for p in perp_liq_prices]
-                df = pd.DataFrame({'liq_price': perp_liq_prices})
-                fig = px.histogram(perp_liq_prices, nbins=100, labels={'x': 'liq_price', 'y':'count'})
-                fig.add_vline(x=oracle_price.price/PRICE_PRECISION, line_color="red", annotation_text='oracle')
-
-                st.plotly_chart(fig)
+                    st.markdown('## Liquidation Prices')
+                    max_price = st.number_input('max_price', value=max(np.median(perp_liq_prices_m), oracle_price.price / PRICE_PRECISION) * 1.3)
+                    perp_liq_prices_m = [min(max_price, p) for p in perp_liq_prices_m]
+                    df = pd.DataFrame({'liq_price': perp_liq_prices_m})
+                    fig = px.histogram(perp_liq_prices_m, nbins=100, labels={'x': 'liq_price', 'y':'count'})
+                    fig.add_vline(x=oracle_price.price/PRICE_PRECISION, line_color="red", annotation_text='oracle price')
+                    fig = fig.update_layout( 
+                        xaxis_title="Liquidation Price",
+                        yaxis_title="# of Users",
+                    )
+                    st.plotly_chart(fig)
+                else: 
+                    st.write("no liquidations found...")
 
             else:
                 market = await get_spot_market_account(ch.program, market_index)
@@ -220,7 +242,19 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     df1[col] /= (10 ** market.decimals)
 
                 st.text('User Spot Positions ('+ str(len(df1)) +')')
-                st.dataframe(df1[['public_key', 'balance_type', 'scaled_balance', 'cumulative_deposits', 'open_orders', 'authority']])
+                columns = [
+                    'public_key',
+                    'balance_type',
+                    'scaled_balance',
+                    'cumulative_deposits',
+                    'open_orders',
+                    'liq_price_delta',
+                    'authority',
+                ]
+                if market_index == 0:
+                    columns.pop(columns.index('liq_price_delta'))
+
+                st.dataframe(df1[columns])
 
                 total_cumm_deposits = df1['cumulative_deposits'].sum()
 
@@ -260,14 +294,37 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                 ax1.axis('equal')  
                 st.pyplot(fig1)
 
-        authority = st.text_input('public_key:') 
-        auth_df = df1[df1['public_key'] == authority]
-        if len(auth_df) != 0: 
-            columns = list(auth_df.columns)
-            if markettype == 'Perp':
-                columns.pop(columns.index('idx2'))
-            df = auth_df[columns].iloc[0]
-            json_df = df.to_json()
-            st.json(json_df)
-        else: 
-            st.markdown('public key not found...')
+                # visualize spot liquidations 
+                st.write('## Liquidation Prices')
+                spot_liq_prices_m = spot_liq_prices.get(market_index, None)
+                if spot_liq_prices_m is not None and len(spot_liq_prices_m) > 0 and market_index != 0: # usdc (assumed to always be 1) doesnt really make sense
+                    spot_market = await chu.get_spot_market(market_index)
+                    oracle_price = await chu.get_spot_oracle_data(spot_market)
+                    st.markdown('## Liquidation Prices')
+                    max_price = st.number_input('max_price', value=max(oracle_price.price/PRICE_PRECISION, np.median(spot_liq_prices_m)) * 1.3)
+
+                    spot_liq_prices_m = [min(max_price, p) for p in spot_liq_prices_m]
+                    df = pd.DataFrame({'liq_price': spot_liq_prices_m})
+                    fig = px.histogram(spot_liq_prices_m, nbins=100, labels={'x': 'liq_price', 'y':'count'})
+                    fig = fig.update_layout( 
+                        xaxis_title="Liquidation Price",
+                        yaxis_title="# of Users",
+                    )
+                    fig.add_vline(x=oracle_price.price/PRICE_PRECISION, line_color="red", annotation_text='oracle price')
+
+                    st.plotly_chart(fig)
+                else: 
+                    st.write("no liquidations found...")
+
+    authority = st.text_input('public_key:') 
+    auth_df = df1[df1['public_key'] == authority]
+    if len(auth_df) != 0: 
+        columns = list(auth_df.columns)
+        if markettype == 'Perp':
+            columns.pop(columns.index('idx2'))
+        df = auth_df[columns].iloc[0]
+        json_df = df.to_json()
+        st.json(json_df)
+    else: 
+        st.markdown('public key not found...')
+        
