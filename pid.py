@@ -69,12 +69,27 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
         dfs[key] = []
         name = str(''.join(map(chr, account.name)))
 
+        from driftpy.types import PerpPosition
+        pos: PerpPosition
         for idx, pos in enumerate(x.account.perp_positions):
             dd = pos.__dict__
             dd['position_index'] = idx
             dd['authority'] = str(x.account.authority)
-            dd['name'] = name
+            dd['name'] = name 
             dd['leverage'] = leverage / 10_000
+
+            if pos.base_asset_amount != 0:
+                perp_market = await chu.get_perp_market(pos.market_index)
+                oracle_price = (await chu.get_perp_oracle_data(perp_market)).price / PRICE_PRECISION
+                liq_price = await chu.get_liq_price(pos.market_index)
+                if liq_price is None: 
+                    liq_delta = None
+                else:
+                    liq_delta = liq_price - oracle_price
+            else: 
+                liq_delta = None
+            dd['liq_price_delta'] = liq_delta
+
             dfs[key].append(pd.Series(dd))
         dfs[key] = pd.concat(dfs[key],axis=1) 
         
@@ -151,6 +166,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     'open_orders', 
                     'leverage',
                     'base_asset_amount', 
+                    'liq_price_delta',
                     'lp_shares',
                     'remainder_base_asset_amount',
                     'entry_price', 
