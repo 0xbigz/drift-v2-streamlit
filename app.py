@@ -38,10 +38,28 @@ def main():
 
     env = st.sidebar.radio('env', ('mainnet-beta', 'devnet'))
     rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
+
+    def query_string_callback():
+        st.experimental_set_query_params(**{'tab': st.session_state.query_key})
+    query_p = st.experimental_get_query_params()
+    query_tab = query_p.get('tab', ['Overview'])[0]
+
+    tab_options = ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB')
+    query_index = 0
+    for idx, x in enumerate(tab_options):
+        if x.lower() == query_tab.lower():
+            query_index = idx
+
     tab = st.sidebar.radio(
         "Select Tab:",
-        ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB'))
+        tab_options,
+        query_index,
+        on_change=query_string_callback,
+        key='query_key'
+        )
+    print(tab)
 
+    print(tab)
 
     if env == 'mainnet-beta':
         config = configs['mainnet']
@@ -64,29 +82,29 @@ def main():
     with st.expander(f"pid={clearing_house.program_id} config"):
         st.json(config.__dict__)
 
-    if tab == 'Overview':
+    if tab.lower() == 'overview':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_pid_positions(rpc, clearing_house))
 
-    elif tab == 'Logs':
+    elif tab.lower() == 'logs':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(log_page(rpc, clearing_house))
 
-    elif tab == 'Simulations':
+    elif tab.lower() == 'simulations':
         sim_page()
 
-    elif tab == 'IF-Stakers':
+    elif tab.lower() == 'if-stakers':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(insurance_fund_page(clearing_house))
 
-    elif tab == 'User-Stats':
+    elif tab.lower() == 'user-stats':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_stats(rpc, clearing_house))
     
-    elif tab == 'DLOB':
+    elif tab.lower() == 'dlob':
         orders_page(rpc, clearing_house)
 
-    elif tab == 'Tweets':
+    elif tab.lower() == 'tweets':
         tweets = {
             'cindy': 'https://twitter.com/cindyleowtt/status/1569713537454579712',
             '0xNineteen': 'https://twitter.com/0xNineteen/status/1571926865681711104',
