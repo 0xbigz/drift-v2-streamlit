@@ -31,15 +31,17 @@ from aiocache import cached
 from driftpy.types import *
 from driftpy.addresses import * 
 from driftpy.constants.numeric_constants import *
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 
 import asyncio
 
 @st.experimental_memo
-def cached_get_orders_data(rpc: str, _ch: ClearingHouse):
+def cached_get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide):
     loop = asyncio.new_event_loop()
-    return loop.run_until_complete(get_orders_data(rpc, _ch))
+    return loop.run_until_complete(get_orders_data(rpc, _ch, depth_slide))
 
-async def get_orders_data(rpc: str, _ch: ClearingHouse):
+async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide):
     all_users = await _ch.program.account['User'].all()
 
     st.sidebar.text('cached on: ' + _ch.time)
@@ -60,7 +62,6 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse):
         oracle_data = (await get_oracle_data(_ch.program.provider.connection, market.amm.oracle))
         oracle_price = oracle_data.price
         # oracle_price = 14 * 1e6
-        st.write(f"Market: {bytes(market.name).decode('utf-8')}")
 
         order_type_dict = {}
         for x in all_users: 
@@ -105,8 +106,12 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse):
         d_shorts_authority = [str(order.authority) for order in shorts]
         d_shorts_order_id = [order.order_id for order in shorts]
 
-        st.write(f'number of bids: {len(d_longs)}')
-        st.write(f'number of asks: {len(d_shorts)}')
+        # st.write(f'number of bids: {len(d_longs)}')
+        # st.write(f'number of asks: {len(d_shorts)}')
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("best bid", d_longs[0][0], str(len(d_longs))+" orders total")
+        col2.metric("best ask",  d_shorts[0][0], "-"+str(len(d_shorts))+" orders total")
 
         pad = abs(len(d_longs) - len(d_shorts))
         if len(d_longs) > len(d_shorts):
@@ -122,7 +127,10 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse):
             d_longs_authority += [""] * pad
             d_longs_order_id += [""] * pad
 
-        data = {
+        market_name = bytes(market.name).decode('utf-8')
+
+        order_data = {
+            'market': market_name,
             'bids order id': d_longs_order_id,
             'bids authority': d_longs_authority,
             'bids owner': d_longs_owner,
@@ -134,16 +142,73 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse):
             'asks authority': d_shorts_authority,
             'asks order id': d_shorts_order_id,
         }
-        return (pd.DataFrame(data), oracle_price)
+
+
+        price_min = float(oracle_price/1e6)*float(1-depth_slide*.001)
+        price_max = float(oracle_price/1e6)*float(1+depth_slide*.001)
+        drift_order_depth, drift_depth = calc_drift_depth(oracle_price/1e6, market.amm.long_spread/1e6, 
+
+
+        
+        market.amm.short_spread/1e6,
+        market.amm.base_asset_reserve/1e9, price_max, order_data)
+        return (pd.DataFrame(order_data), oracle_price, drift_order_depth, drift_depth)
+
+
+def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, order_data):
+        def calc_slip(x):
+            f = x/base_asset_reserve
+            slippage = 1/(1-f)**2 - 1
+            return slippage
+        def calc_slip_short(x):
+            f = x/base_asset_reserve
+            slippage = 1 - 1/(1+f)**2
+            return slippage
+
+        max_f = np.sqrt(price_max)/np.sqrt(mark_price) - 1
+
+        # st.table(pd.Series([max_f, mark_price, price_max, base_asset_reserve]))
+        quantities_max = max(1, int(max_f*base_asset_reserve))
+        quantities = list(range(1, quantities_max, int(max(1, quantities_max/100))))
+        drift_asks = pd.DataFrame(quantities, 
+        columns=['asks'],
+        index=[mark_price*(1+l_spr)*(1+calc_slip(x)) for x in quantities])
+        drift_bids = pd.DataFrame(quantities, 
+        columns=['bids'],
+        index=[mark_price*(1-s_spr)*(1-calc_slip_short(x)) for x in quantities])
+
+        # print(order_data['bids (price, size)'])
+        drift_order_bids = pd.DataFrame(order_data['bids (price, size)'], columns=['price', 'bids'])\
+            .set_index('price').dropna()
+        drift_order_bids['bids'] = drift_order_bids['bids'].astype(float).cumsum()
+        drift_order_bids.rename_axis(None, inplace=True)
+       
+        drift_order_asks = pd.DataFrame(order_data['asks (price, size)'], columns=['price', 'asks'])\
+            .set_index('price').dropna()
+        drift_order_asks['asks'] = drift_order_asks['asks'].astype(float).cumsum()
+        drift_order_asks.rename_axis(None, inplace=True)
+        drift_order_asks = drift_order_asks.loc[:price_max]
+
+        drift_depth = pd.concat([drift_bids, drift_asks]).replace(0, np.nan).sort_index()
+
+        drift_order_depth = pd.concat([drift_order_bids, drift_order_asks]).replace(0, np.nan).sort_index()
+        ss = np.linspace(drift_depth.index.min(), drift_depth.index.max(), len(drift_depth.index))
+        drift_order_depth = drift_order_depth.reindex(ss, method='ffill').sort_index()
+
+
+        return drift_order_depth, drift_depth
+
+
 
 def orders_page(rpc: str, ch: ClearingHouse):
 
         # time.sleep(3)
         # oracle_price = 13.5 * 1e6 
+        depth_slide = st.slider("Depth", 1, int(1/.01), 10)
 
-        data, oracle_price = cached_get_orders_data(rpc, ch)
+        data, oracle_price, drift_order_depth, drift_depth  = cached_get_orders_data(rpc, ch, depth_slide)
 
-        st.write(f'last oracle price: {oracle_price/PRICE_PRECISION}')
+        st.write(f'{data.market.values[0]} oracle price: {oracle_price/PRICE_PRECISION}')
 
         correct_order = data.columns.tolist()
         cols = st.multiselect(
@@ -153,3 +218,17 @@ def orders_page(rpc: str, ch: ClearingHouse):
         subset_ordered = [x for x in correct_order if x in cols]
         df = pd.DataFrame(data)[subset_ordered]
         st.dataframe(df)
+
+        fig = make_subplots(
+            rows=2, cols=1,
+             shared_xaxes=True,
+            subplot_titles=['vAMM depth', 'DLOB depth'])
+
+        fig.add_trace( go.Scatter(x=drift_depth.index, y=drift_depth['bids'],  name='bids', fill='tozeroy'),  row=1, col=1)
+        fig.add_trace( go.Scatter(x=drift_depth.index, y=drift_depth['asks'],  name='asks', fill='tozeroy'),  row=1, col=1)
+
+        fig.add_trace( go.Scatter(x=drift_order_depth.index, y=drift_order_depth['bids'], name='bids',  fill='tozeroy'),  row=2, col=1)
+        fig.add_trace( go.Scatter(x=drift_order_depth.index, y=drift_order_depth['asks'], name='asks',  fill='tozeroy'), row=2, col=1)
+
+
+        st.plotly_chart(fig)
