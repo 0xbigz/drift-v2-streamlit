@@ -120,7 +120,6 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type
             size = (order.base_asset_amount - order.base_asset_amount_filled)/AMM_RESERVE_PRECISION
             return (price, size)
 
-        print(longs[0])
         d_longs_authority = [str(order.authority) for order in longs]
         d_longs_order_id = [order.order_id for order in longs]
         d_longs_owner = [str(order.owner) for order in longs]
@@ -249,8 +248,8 @@ def orders_page(rpc: str, ch: ClearingHouse):
             market_index = 1
 
         data, oracle_data, drift_order_depth, drift_depth  = cached_get_orders_data(rpc, ch, depth_slide, market_type, market_index)
-        if len(data):
-            st.write(f'{data.market.values[0]}')
+        # if len(data):
+        #     st.write(f'{data.market.values[0]}')
 
         zol1, zol2, zol3 = st.columns([1,6,20])
 
