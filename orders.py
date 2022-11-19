@@ -120,13 +120,18 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type
             size = (order.base_asset_amount - order.base_asset_amount_filled)/AMM_RESERVE_PRECISION
             return (price, size)
 
+        print(longs[0])
         d_longs_authority = [str(order.authority) for order in longs]
         d_longs_order_id = [order.order_id for order in longs]
         d_longs_owner = [str(order.owner) for order in longs]
         d_longs_order_type = [str(order.order_type).split('.')[-1].split('()')[0] for order in longs]
+        d_longs_order_type = [x+' [POST]' if longs[idx].post_only else x for idx, x in enumerate(d_longs_order_type)]
+        d_longs_order_type = ['Oracle'+x if longs[idx].oracle_price_offset != 0 else x for idx, x in enumerate(d_longs_order_type)]
         d_longs = [format_order(order) for order in longs]
         d_shorts = [format_order(order) for order in shorts]
         d_shorts_order_type = [str(order.order_type).split('.')[-1].split('()')[0] for order in shorts]
+        d_shorts_order_type = [x+' [POST]' if shorts[idx].post_only else x for idx, x in enumerate(d_shorts_order_type)]
+        d_shorts_order_type = ['Oracle'+x if shorts[idx].oracle_price_offset != 0 else x for idx, x in enumerate(d_shorts_order_type)]
         d_shorts_owner = [str(order.owner) for order in shorts]
         d_shorts_authority = [str(order.authority) for order in shorts]
         d_shorts_order_id = [order.order_id for order in shorts]
@@ -261,7 +266,7 @@ def orders_page(rpc: str, ch: ClearingHouse):
             correct_order = data.columns.tolist()
             cols = st.multiselect(
                             "Choose columns", data.columns.tolist(), 
-                            ['bids order id', 'bids (price, size)', 'asks (price, size)',  'asks order id']
+                            ['bids order id', 'bids order type', 'bids (price, size)', 'asks (price, size)', 'asks order type',  'asks order id']
                         )
             subset_ordered = [x for x in correct_order if x in cols]
             df = pd.DataFrame(data)[subset_ordered]
