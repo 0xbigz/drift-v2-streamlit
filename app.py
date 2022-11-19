@@ -24,9 +24,6 @@ from driftpy.clearing_house import ClearingHouse
 from if_stakers import insurance_fund_page
 from userstats import show_user_stats
 from orders import orders_page
-from streamlit_option_menu import option_menu
-
-
 
 def main():
     st.set_page_config(
@@ -34,11 +31,6 @@ def main():
         layout='wide',
         page_icon="👾"
     )
-
-    # 1. as sidebar menu
-    # selected2 = option_menu(None, ["Home", "Upload", "Tasks", 'Settings'], 
-    # icons=['house', 'cloud-upload', "list-task", 'gear'], 
-    # menu_icon="cast", default_index=0, orientation="horizontal")
 
     current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
     if st.sidebar.button('Clear Cache'):
