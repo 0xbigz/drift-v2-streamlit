@@ -24,6 +24,9 @@ from driftpy.clearing_house import ClearingHouse
 from if_stakers import insurance_fund_page
 from userstats import show_user_stats
 from orders import orders_page
+from streamlit_option_menu import option_menu
+
+
 
 def main():
     st.set_page_config(
@@ -31,6 +34,11 @@ def main():
         layout='wide',
         page_icon="👾"
     )
+
+    # 1. as sidebar menu
+    # selected2 = option_menu(None, ["Home", "Upload", "Tasks", 'Settings'], 
+    # icons=['house', 'cloud-upload', "list-task", 'gear'], 
+    # menu_icon="cast", default_index=0, orientation="horizontal")
 
     current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
     if st.sidebar.button('Clear Cache'):
@@ -44,7 +52,7 @@ def main():
     query_p = st.experimental_get_query_params()
     query_tab = query_p.get('tab', ['Overview'])[0]
 
-    tab_options = ('Overview', 'Simulations', 'Tweets', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB')
+    tab_options = ('Overview', 'Simulations', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB', 'Config', 'Social')
     query_index = 0
     for idx, x in enumerate(tab_options):
         if x.lower() == query_tab.lower():
@@ -57,9 +65,6 @@ def main():
         on_change=query_string_callback,
         key='query_key'
         )
-    print(tab)
-
-    print(tab)
 
     if env == 'mainnet-beta':
         config = configs['mainnet']
@@ -76,15 +81,13 @@ def main():
     
     st.title(f'Drift v2: {tab}')
 
-    repo = "https://github.com/drift-labs/protocol-v2"
-    st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
-    
-    with st.expander(f"pid={clearing_house.program_id} config"):
-        st.json(config.__dict__)
-
     if tab.lower() == 'overview':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_pid_positions(rpc, clearing_house))
+
+    elif tab.lower() == 'config':  
+        with st.expander(f"pid={clearing_house.program_id} config"):
+            st.json(config.__dict__)
 
     elif tab.lower() == 'logs':
         loop = asyncio.new_event_loop()
@@ -104,12 +107,24 @@ def main():
     elif tab.lower() == 'dlob':
         orders_page(rpc, clearing_house)
 
-    elif tab.lower() == 'tweets':
+    elif tab.lower() == 'social':
+
+        repo = "https://github.com/drift-labs/protocol-v2"
+        st.markdown('['+repo+']('+repo+') | [@driftprotocol](https://twitter.com/@driftprotocol)')
+
         tweets = {
             'cindy': 'https://twitter.com/cindyleowtt/status/1569713537454579712',
             '0xNineteen': 'https://twitter.com/0xNineteen/status/1571926865681711104',
         }
+        st.header('twitter:')
         st.table(pd.Series(tweets))
+    hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            </style>
+            """
+    st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
 
 if __name__ == '__main__':
     main()

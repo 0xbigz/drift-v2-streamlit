@@ -121,9 +121,9 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
 
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
-    
-    st.text('Number of Driftoors: ' + str(len(all_users)))
-    st.text('Number of Unique Driftoors: ' + str(len(authorities)))
+
+    col1, col2, col3, col4 = st.columns(4)
+    col2.metric("Unique Driftoors", str(len(authorities)),str(len(all_users))+" SubAccounts")
 
     perps = pd.concat(dfs,axis=1).T
     perps.index = perps.index.set_names(['public_key', 'idx2'])
@@ -133,7 +133,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     spots.index = spots.index.set_names(['public_key', 'idx2'])
     spots = spots.reset_index()
     
-    markettype = st.radio("MarketType", ('Perp', 'Spot'))
+    markettype = col1.radio("MarketType", ('Perp', 'Spot'))
     if markettype == 'Perp':
         num_markets = state.number_of_markets
     else:
@@ -159,10 +159,13 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                             & (perps.market_index==market_index)
                         ].sort_values('base_asset_amount', ascending=False).reset_index(drop=True)
 
-                st.text('user long %:')
                 pct_long = market.amm.base_asset_amount_long / (market.amm.base_asset_amount_long - market.amm.base_asset_amount_short + 1e-10) 
-                my_bar = st.progress(pct_long)
-                
+                col3.text(f'user long: {np.round(pct_long*100, 2) }%')
+                my_bar = col3.progress(pct_long)
+                imbalance = (market.amm.base_asset_amount_with_amm) /1e9
+                col3.text(f'user imbalance: {np.round(imbalance, 2) } base')
+                my_bar2 = col3.progress(abs(market.amm.base_asset_amount_with_amm)/((market.amm.base_asset_amount_long - market.amm.base_asset_amount_short + 1e-10)))
+
                 # st.text('user long % sentiment:')
                 # sentiment = 0
                 # if len(df1):
@@ -231,7 +234,11 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                 iv_amount = int((await conn.get_token_account_balance(ivault_pk))['result']['value']['amount'])
                 sv_amount = int((await conn.get_token_account_balance(svault_pk))['result']['value']['amount'])
 
-                st.text('insurance/spot vault balances:'+ str(iv_amount/1e6)+'/'+str(sv_amount/1e6))
+                token_scale = (10**market.decimals)
+                if market_index == 0:
+                    col3.metric(f'{market_name} vault balance', str(sv_amount/token_scale) , str(iv_amount/token_scale)+' (insurance)')
+                else:
+                    col4.metric(f'{market_name} vault balance', str(sv_amount/token_scale) , str(iv_amount/token_scale)+' (insurance)')
 
                 df1 = spots[(spots.scaled_balance!=0) & (spots.market_index==market_index)
                         ].sort_values('scaled_balance', ascending=False).reset_index(drop=True)\
