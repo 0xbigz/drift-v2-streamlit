@@ -255,7 +255,8 @@ def orders_page(rpc: str, ch: ClearingHouse):
 
         zol1.image("https://alpha.openserum.io/api/serum/token/So11111111111111111111111111111111111111112/icon", width=33)
         # print(oracle_data)
-        zol2.metric('Oracle Price', f'{oracle_data.price/PRICE_PRECISION}', f'confidence={oracle_data.confidence/PRICE_PRECISION}',
+        oracle_data.slot
+        zol2.metric('Oracle Price', f'${oracle_data.price/PRICE_PRECISION}', f'±{oracle_data.confidence/PRICE_PRECISION} (slot={oracle_data.slot})',
         delta_color="off")
         tabs = st.tabs(['OrderBook', 'Depth', 'Recent Trades'])
 
@@ -269,7 +270,41 @@ def orders_page(rpc: str, ch: ClearingHouse):
                         )
             subset_ordered = [x for x in correct_order if x in cols]
             df = pd.DataFrame(data)[subset_ordered]
-            st.dataframe(df)
+
+            def make_clickable(link):
+                # target _blank to open new window
+                # extract clickable text to display for your link
+                text = link.split('=')[1]
+                text = text[:4]+'..'+text[-4:]
+                return f'<a target="_blank" href="{link}">{text}</a>'
+
+            # link is the column with hyperlinks
+            # df['link'] = df['bids authority'].apply(lambda x: f'https://app.drift.trade/?authority={x}')
+            # df['link'] = df['link'].apply(make_clickable)
+
+            def highlight_survived(s):
+                res = []
+                for _ in range(len(s)):
+                    if 'bids (price' in s.name:
+                        res.append('background-color: lightgreen')
+                    elif 'asks (price' in s.name:
+                        res.append('background-color: pink')
+                    else:
+                        res.append('')
+                return res
+
+            bids_quote = np.round(df['bids (price, size)'].apply(lambda x: x[0]*x[1] if x!='' else 0).sum(), 2)
+            bids_base = np.round(df['bids (price, size)'].apply(lambda x: x[1] if x!='' else 0).sum(), 2)
+
+            asks_quote = np.round(df['asks (price, size)'].apply(lambda x: x[0]*x[1] if x!='' else 0).sum(), 2)
+            asks_base = np.round(df['asks (price, size)'].apply(lambda x: x[1] if x!='' else 0).sum(), 2)
+            col1, col2, _ = st.columns([5,5, 10])
+            col1.metric(f'bids:', f'${bids_quote}', f'{bids_base} SOL')
+            col2.metric(f'asks:', f'${asks_quote}', f'{-asks_base} SOL')
+            if len(df):
+                st.dataframe(df.style.apply(highlight_survived, axis=0))
+            else:
+                st.dataframe(df)
 
         with tabs[1]: 
             # depth_slide = st.slider("Depth", 1, int(1/.01), 10, step=5)
