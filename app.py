@@ -24,6 +24,7 @@ from driftpy.clearing_house import ClearingHouse
 from if_stakers import insurance_fund_page
 from userstats import show_user_stats
 from orders import orders_page
+from platyperps import show_platyperps
 
 def main():
     st.set_page_config(
@@ -44,7 +45,7 @@ def main():
     query_p = st.experimental_get_query_params()
     query_tab = query_p.get('tab', ['Overview'])[0]
 
-    tab_options = ('Overview', 'Simulations', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB', 'Config', 'Social')
+    tab_options = ('Overview', 'Simulations', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB', 'Config', 'Social', 'PlatyPerps')
     query_index = 0
     for idx, x in enumerate(tab_options):
         if x.lower() == query_tab.lower():
@@ -110,6 +111,11 @@ def main():
         }
         st.header('twitter:')
         st.table(pd.Series(tweets))
+
+    elif tab.lower() == 'platyperps':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(show_platyperps(rpc, clearing_house))
+
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
