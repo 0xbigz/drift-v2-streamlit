@@ -2,7 +2,7 @@
 
 Drift Protocol simulation viewer
 - Uses [streamlit](https://streamlit.io/) to show UI for [drift-sim](https://github.com/drift-labs/drift-sim) results
-- public deploy: [https://0xbigz-drift-v2-streamlit-app-t7hxk8.streamlitapp.com/](https://0xbigz-drift-v2-streamlit-app-t7hxk8.streamlitapp.com/)
+- public deploy: [https://driftv2.streamlit.app/](https://driftv2.streamlit.app/)
 
 ## Run locally
 ### quick setup:
