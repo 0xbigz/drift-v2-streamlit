@@ -99,7 +99,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                 else:
                     perp_liq_prices[pos.market_index] = perp_liq_prices.get(pos.market_index, []) + [liq_price]
                     liq_delta = liq_price - oracle_price
-                    perp_liq_deltas[pos.market_index] = perp_liq_deltas.get(pos.market_index, []) + [(liq_delta, abs(pos.base_asset_amount))]
+                    perp_liq_deltas[pos.market_index] = perp_liq_deltas.get(pos.market_index, []) + [(liq_delta, abs(pos.base_asset_amount), leverage/10_000)]
 
             else: 
                 liq_delta = None
@@ -233,7 +233,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     )
                     st.plotly_chart(fig)
 
-                    liq_deltas, sizes = zip(*perp_liq_deltas[market_index])
+                    liq_deltas, sizes, leverages = zip(*perp_liq_deltas[market_index])
                     pos, neg = [], []
                     for l in liq_deltas:
                         if l > 0: pos.append(l)
@@ -252,9 +252,9 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     df = pd.DataFrame({
                         'liq_delta': liq_deltas, 
                         'position_size': [s/AMM_RESERVE_PRECISION for s in sizes],
-                        '_': [1] * len(liq_deltas)
+                        'leverage': leverages,
                     })
-                    fig = px.scatter(df, x='liq_delta', y='_', size='position_size')
+                    fig = px.scatter(df, x='liq_delta', y='leverage', size='position_size', color='leverage')
                     fig.add_vline(x=0, line_color="red", annotation_text='liquidation')
 
                     st.plotly_chart(fig)
