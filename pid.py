@@ -54,6 +54,9 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     perp_liq_prices = {}
     spot_liq_prices = {}
 
+    position_sizes = []
+    leverages = []
+
     for x in all_users:
         key = str(x.public_key)
         account: User = x.account
@@ -62,6 +65,14 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
         cache['user'] = account # update cache to look at the correct user account
         await chu.set_cache(cache)
         leverage = await chu.get_leverage()
+
+        total_position_size = 0
+        pos: PerpPosition
+        for idx, pos in enumerate(x.account.perp_positions):
+            total_position_size += abs(pos.base_asset_amount)
+
+        leverages.append(leverage)
+        position_sizes.append(total_position_size)
 
         # mr = await chu.get_margin_requirement('Maintenance')
         # tc = await chu.get_total_collateral('Maintenance')
@@ -326,6 +337,18 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     st.plotly_chart(fig)
                 else: 
                     st.write("no liquidations found...")
+
+
+    st.write('## Liquidation Size') 
+    st.write('larger bubble = larger position size')
+    df = pd.DataFrame({
+        'leverage': map(lambda l: l/10_000, leverages), 
+        'position_size': position_sizes,
+        '_': [1] * len(leverages)
+    })
+    fig = px.scatter(df, x='leverage', y='_', size='position_size')
+    fig.add_vline(x=20, line_color="red", annotation_text='liquidation')
+    st.plotly_chart(fig)
 
     authority = st.text_input('public_key:') 
     auth_df = df1[df1['public_key'] == authority]
