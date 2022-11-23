@@ -54,8 +54,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     perp_liq_prices = {}
     spot_liq_prices = {}
 
-    position_sizes = []
-    leverages = []
+    perp_liq_deltas = {}
 
     for x in all_users:
         key = str(x.public_key)
@@ -70,9 +69,6 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
         pos: PerpPosition
         for idx, pos in enumerate(x.account.perp_positions):
             total_position_size += abs(pos.base_asset_amount)
-
-        leverages.append(leverage)
-        position_sizes.append(total_position_size)
 
         # mr = await chu.get_margin_requirement('Maintenance')
         # tc = await chu.get_total_collateral('Maintenance')
@@ -103,8 +99,11 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                 else:
                     perp_liq_prices[pos.market_index] = perp_liq_prices.get(pos.market_index, []) + [liq_price]
                     liq_delta = liq_price - oracle_price
+                    perp_liq_deltas[pos.market_index] = perp_liq_deltas.get(pos.market_index, []) + [(liq_delta, abs(pos.base_asset_amount))]
+
             else: 
                 liq_delta = None
+
             dd['liq_price_delta'] = liq_delta
 
             dfs[key].append(pd.Series(dd))
@@ -129,6 +128,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     liq_delta = liq_price - oracle_price
             else: 
                 liq_delta = None
+
             dd['liq_price_delta'] = liq_delta
 
             spotdfs[key].append(pd.Series(dd))
@@ -219,7 +219,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     perp_market = await chu.get_perp_market(market_index)
                     oracle_price = await chu.get_perp_oracle_data(perp_market)
 
-                    st.markdown('## Liquidation Prices')
+                    st.markdown('## Liquidation Prices/Sizes')
                     max_price = int(max(np.median(perp_liq_prices_m), oracle_price.price / PRICE_PRECISION) * 1.3)
                     max_price = st.number_input('max_price', value=max_price)
 
@@ -232,6 +232,33 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                         yaxis_title="# of Users",
                     )
                     st.plotly_chart(fig)
+
+                    liq_deltas, sizes = zip(*perp_liq_deltas[market_index])
+                    pos, neg = [], []
+                    for l in liq_deltas:
+                        if l > 0: pos.append(l)
+                        if l < 0: neg.append(l)
+                    max_pos_liq = np.median(pos)
+                    max_neg_liq = np.median(neg)
+
+                    st.write('larger bubble = larger position size')
+                    st.text(f'liquidation delta range: {max_neg_liq} - {max_pos_liq}')
+                    _liq_deltas = []
+                    for liq in liq_deltas: 
+                        if liq > 0: _liq_deltas.append(min(max_pos_liq, liq))
+                        if liq < 0: _liq_deltas.append(max(max_neg_liq, liq))
+                    liq_deltas = _liq_deltas
+
+                    df = pd.DataFrame({
+                        'liq_delta': liq_deltas, 
+                        'position_size': [s/AMM_RESERVE_PRECISION for s in sizes],
+                        '_': [1] * len(liq_deltas)
+                    })
+                    fig = px.scatter(df, x='liq_delta', y='_', size='position_size')
+                    fig.add_vline(x=0, line_color="red", annotation_text='liquidation')
+
+                    st.plotly_chart(fig)
+
                 else: 
                     st.write("no liquidations found...")
 
@@ -339,16 +366,6 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     st.write("no liquidations found...")
 
 
-    st.write('## Liquidation Size') 
-    st.write('larger bubble = larger position size')
-    df = pd.DataFrame({
-        'leverage': map(lambda l: l/10_000, leverages), 
-        'position_size': position_sizes,
-        '_': [1] * len(leverages)
-    })
-    fig = px.scatter(df, x='leverage', y='_', size='position_size')
-    fig.add_vline(x=20, line_color="red", annotation_text='liquidation')
-    st.plotly_chart(fig)
 
     authority = st.text_input('public_key:') 
     auth_df = df1[df1['public_key'] == authority]
