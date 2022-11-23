@@ -53,8 +53,6 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     perp_liq_prices = {}
     spot_liq_prices = {}
 
-    leverages = []
-
     for x in all_users:
         key = str(x.public_key)
         account: User = x.account
@@ -63,7 +61,6 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
         cache['user'] = account # update cache to look at the correct user account
         await chu.set_cache(cache)
         leverage = await chu.get_leverage()
-        leverages.append(leverage)
 
         # mr = await chu.get_margin_requirement('Maintenance')
         # tc = await chu.get_total_collateral('Maintenance')
