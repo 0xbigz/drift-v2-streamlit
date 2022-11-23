@@ -53,6 +53,8 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     perp_liq_prices = {}
     spot_liq_prices = {}
 
+    leverages = []
+
     for x in all_users:
         key = str(x.public_key)
         account: User = x.account
@@ -61,6 +63,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
         cache['user'] = account # update cache to look at the correct user account
         await chu.set_cache(cache)
         leverage = await chu.get_leverage()
+        leverages.append(leverage)
 
         # mr = await chu.get_margin_requirement('Maintenance')
         # tc = await chu.get_total_collateral('Maintenance')
@@ -121,6 +124,7 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
 
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
+
 
     col1, col2, col3, col4 = st.columns(4)
     col2.metric("Unique Driftoors", str(len(authorities)),str(len(all_users))+" SubAccounts")
@@ -207,7 +211,9 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
                     oracle_price = await chu.get_perp_oracle_data(perp_market)
 
                     st.markdown('## Liquidation Prices')
-                    max_price = st.number_input('max_price', value=max(np.median(perp_liq_prices_m), oracle_price.price / PRICE_PRECISION) * 1.3)
+                    max_price = int(max(np.median(perp_liq_prices_m), oracle_price.price / PRICE_PRECISION) * 1.3)
+                    max_price = st.number_input('max_price', value=max_price)
+
                     perp_liq_prices_m = [min(max_price, p) for p in perp_liq_prices_m]
                     df = pd.DataFrame({'liq_price': perp_liq_prices_m})
                     fig = px.histogram(perp_liq_prices_m, nbins=100, labels={'x': 'liq_price', 'y':'count'})
