@@ -46,7 +46,8 @@ async def show_pid_positions(url: str, clearing_house: ClearingHouse):
     kp = Keypair()
     ch = ClearingHouse(ch.program, kp)
 
-    chu = ClearingHouseUser(ch, authority=all_users[0].account.authority, use_cache=True)
+    fuser: User = all_users[0].account
+    chu = ClearingHouseUser(ch, authority=fuser.authority, subaccount_id=fuser.sub_account_id, use_cache=True)
     await chu.set_cache()
     cache = chu.CACHE
 
