@@ -223,8 +223,8 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
         drift_depth = pd.concat([drift_bids, drift_asks]).replace(0, np.nan).sort_index()
 
         drift_order_depth = pd.concat([drift_order_bids, drift_order_asks]).replace(0, np.nan).sort_index()
-        ss = [drift_depth.index.min()]+drift_order_depth.index.to_list()+[drift_depth.index.max()]
-        drift_order_depth = drift_order_depth.reindex(ss, method='ffill').sort_index()
+        # ss = [drift_depth.index.min()]+drift_order_depth.index.to_list()+[drift_depth.index.max()]
+        # drift_order_depth = drift_order_depth.reindex(ss, method='ffill').sort_index()
 
 
         return drift_order_depth, drift_depth
