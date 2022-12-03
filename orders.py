@@ -37,9 +37,9 @@ from plotly.subplots import make_subplots
 import asyncio
 
 @st.experimental_memo
-def cached_get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type, market_index):
+def cached_get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index):
     loop = asyncio.new_event_loop()
-    return loop.run_until_complete(get_orders_data(rpc, _ch, depth_slide, market_type, market_index))
+    return loop.run_until_complete(get_orders_data(_ch, depth_slide, market_type, market_index))
 
 @st.experimental_memo
 def cached_get_price_data(market_type, market_index):
@@ -53,7 +53,7 @@ async def get_price_data(market_type, market_index):
     dat = requests.get(url).json()['data']['trades']
     return pd.DataFrame(dat)
 
-async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type, market_index):
+async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index):
     all_users = await _ch.program.account['User'].all()
 
     st.sidebar.text('cached on: ' + _ch.time)
@@ -239,7 +239,7 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
 
 
 
-def orders_page(rpc: str, ch: ClearingHouse):
+def orders_page(ch: ClearingHouse):
 
         # time.sleep(3)
         # oracle_price = 13.5 * 1e6 
@@ -255,7 +255,7 @@ def orders_page(rpc: str, ch: ClearingHouse):
             market_type = 'spot'
             market_index = 1
 
-        data, oracle_data, drift_order_depth, drift_depth  = cached_get_orders_data(rpc, ch, depth_slide, market_type, market_index)
+        data, oracle_data, drift_order_depth, drift_depth  = cached_get_orders_data(ch, depth_slide, market_type, market_index)
         # if len(data):
         #     st.write(f'{data.market.values[0]}')
 

@@ -76,7 +76,7 @@ def main():
 
     if tab.lower() == 'overview':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(show_pid_positions(rpc, clearing_house))
+        loop.run_until_complete(show_pid_positions(clearing_house))
 
     elif tab.lower() == 'config':  
         with st.expander(f"pid={clearing_house.program_id} config"):
@@ -95,10 +95,10 @@ def main():
 
     elif tab.lower() == 'user-stats':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(show_user_stats(rpc, clearing_house))
+        loop.run_until_complete(show_user_stats(clearing_house))
     
     elif tab.lower() == 'dlob':
-        orders_page(rpc, clearing_house)
+        orders_page(clearing_house)
 
     elif tab.lower() == 'social':
 
@@ -114,7 +114,7 @@ def main():
 
     elif tab.lower() == 'platyperps':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(show_platyperps(rpc, clearing_house))
+        loop.run_until_complete(show_platyperps(clearing_house))
 
     hide_streamlit_style = """
             <style>

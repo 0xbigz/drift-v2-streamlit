@@ -27,7 +27,7 @@ from anchorpy import EventParser
 import asyncio
 import requests
 
-async def show_platyperps(url: str, clearing_house: ClearingHouse):
+async def show_platyperps(clearing_house: ClearingHouse):
     binance = requests.get('https://www.binance.com/fapi/v1/premiumIndex?symbol=SOLUSDT').json()
     df = pd.DataFrame(binance, index=['Binance'])
     st.dataframe(df)
