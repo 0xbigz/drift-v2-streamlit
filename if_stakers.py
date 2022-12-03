@@ -49,12 +49,13 @@ async def insurance_fund_page(ch: ClearingHouse):
         data['key'] = key
         dfs.append(data)
 
+    st.markdown('[USDC Insurance Vault](https://solscan.io/account/2CqkQvYxp9Mq4PqLvAQ1eryYxebUh4Liyn5YMDtXsYci)')
     
     col1, col2 = st.columns(2)
     bbs = [col1, col2]
     ccol1, ccol2 = st.columns(2)
     ccs = [ccol1, ccol2]
-
+    
     st.metric("Number of Stakes", str(len(all_stakers)),str(len(authorities))+" Unique Stakers")
 
     conn = ch.program.provider.connection
