@@ -7,6 +7,7 @@ import plotly.graph_objs as go
 import json
 from urllib.request import urlopen
 import numpy as np
+import os
 
 import asyncio
 import datetime
@@ -20,7 +21,6 @@ from anchorpy import Provider, Wallet
 from solana.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from driftpy.clearing_house import ClearingHouse
-
 from if_stakers import insurance_fund_page
 from userstats import show_user_stats
 from orders import orders_page
@@ -38,7 +38,16 @@ def main():
         st.experimental_memo.clear()
 
     env = st.sidebar.radio('env', ('mainnet-beta', 'devnet'))
-    rpc = st.sidebar.text_input('rpc', 'https://api.'+env+'.solana.com')
+
+    url = "🤫"
+    if env == 'devnet':
+        url = 'https://api.'+env+'.solana.com'
+    else:
+        url = "🤫"
+
+    rpc = st.sidebar.text_input('rpc', url)
+    if env == 'mainnet-beta' and (rpc == '🤫' or  rpc == ''):
+        rpc = os.environ['ANCHOR_PROVIDER_URL']
 
     def query_string_callback():
         st.experimental_set_query_params(**{'tab': st.session_state.query_key})
