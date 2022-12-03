@@ -205,6 +205,30 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
             # df['asks'] = [tuple(x) for x in aa.values]
             drift_depth = pd.concat([bb, aa])
 
+            drift_order_bids = pd.DataFrame(order_data['bids (price, size)'], columns=['price', 'bids'])\
+            .set_index('price').dropna()
+            drift_order_bids['bids'] = drift_order_bids['bids'].astype(float).cumsum()
+            drift_order_bids.rename_axis(None, inplace=True)
+        
+            drift_order_asks = pd.DataFrame(order_data['asks (price, size)'], columns=['price', 'asks'])\
+                .set_index('price').dropna()
+            drift_order_asks['asks'] = drift_order_asks['asks'].astype(float).cumsum()
+            drift_order_asks.rename_axis(None, inplace=True)
+            drift_order_asks = drift_order_asks.loc[:price_max]
+
+            drift_order_depth = pd.concat([drift_order_bids, drift_order_asks]).replace(0, np.nan).sort_index()
+            _idxs = []
+            for v in drift_order_depth.index: 
+                # add a small value
+                while v in _idxs: 
+                    v += 1e-5
+                _idxs.append(v)
+            drift_order_depth.index = pd.Index(_idxs)
+
+            ss = [drift_depth.index.min()]+[x for x in drift_order_depth.index.to_list() if x > drift_depth.index.min()]+[drift_depth.index.max()]
+            drift_order_depth = drift_order_depth.reindex(ss, method='ffill').sort_index()
+            drift_order_depth['bids'] = drift_order_depth['bids'].bfill()
+
         return (pd.DataFrame(order_data), oracle_data, drift_order_depth, drift_depth)
 
 
@@ -342,11 +366,11 @@ def orders_page(ch: ClearingHouse):
         with tabs[1]: 
             # depth_slide = st.slider("Depth", 1, int(1/.01), 10, step=5)
 
-            ext_depth_nom = 'vAMM' if market_type == 'perp' else 'Openbook'
+            ext_depth_nom = 'Drift vAMM' if market_type == 'perp' else 'Openbook'
             fig = make_subplots(
                 rows=2, cols=1,
                 shared_xaxes=True,
-                subplot_titles=[ext_depth_nom+' depth', 'DLOB depth'])
+                subplot_titles=[ext_depth_nom+' depth', 'Drift DLOB depth'])
 
             fig.add_trace( go.Scatter(x=drift_depth.index, y=drift_depth['bids'],  name='bids', fill='tozeroy'),  row=1, col=1)
             fig.add_trace( go.Scatter(x=drift_depth.index, y=drift_depth['asks'],  name='asks', fill='tozeroy'),  row=1, col=1)
