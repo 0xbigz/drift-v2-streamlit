@@ -121,25 +121,37 @@ async def get_all(url, ch, limit):
 
     return True, (log_names, type_to_log, n_logs, (max_log, min_log))
 
-async def log_page(url: str, ch):
+from driftpy.clearing_house import ClearingHouse
+async def log_page(url: str, ch: ClearingHouse):
     # log liquidations
     st.write("getting recent txs from [https://public-api.solscan.io/docs/#/](https://public-api.solscan.io/docs/#/)...")
-    limit = st.number_input('tx look up limit', value=10)
-    s, r = await get_all(url, ch, limit)
-    if not s: 
-        return
-    log_names, type_to_log, n_logs, (max_ts, min_ts) = r 
+    limit = st.number_input('tx look up limit', value=0)
+    if limit > 0:
+        s, r = await get_all(url, ch, limit)
+        if not s: 
+            return
+        log_names, type_to_log, n_logs, (max_ts, min_ts) = r 
 
-    import datetime
-    min_ts = datetime.datetime.fromtimestamp(min_ts)
-    max_ts = datetime.datetime.fromtimestamp(max_ts)
-    st.write(f'min <-> max ts :: {min_ts} <-> {max_ts}')
+        import datetime
+        min_ts = datetime.datetime.fromtimestamp(min_ts)
+        max_ts = datetime.datetime.fromtimestamp(max_ts)
+        st.write(f'min <-> max ts :: {min_ts} <-> {max_ts}')
 
-    options = st.multiselect('Log types', log_names, log_names)
-    st.write(f'### number of logs found: {n_logs}')
+        options = st.multiselect('Log types', log_names, log_names)
+        st.write(f'### number of logs found: {n_logs}')
 
-    view_logs = {}
-    for name in options: 
-        view_logs[name] = type_to_log[name]
+        view_logs = {}
+        for name in options: 
+            view_logs[name] = type_to_log[name]
 
-    st.write(view_logs)
+        st.write(view_logs)
+
+    parser = EventParser(ch.program.program_id, ch.program.coder)
+    connection = ch.program.provider.connection
+    tx_sig = st.text_input("lookup tx sig:")
+    if tx_sig != '':
+        tx = await connection.get_transaction(tx_sig)
+        logs = []
+        def call_b(evt): logs.append(evt)
+        parser.parse_logs(tx['result']['meta']['logMessages'], call_b)
+        st.json(logs)
