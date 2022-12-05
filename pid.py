@@ -29,7 +29,7 @@ from driftpy.clearing_house_user import get_token_amount
 from driftpy.types import SpotBalanceType
 import plotly.express as px
 
-async def show_pid_positions(url: str, clearing_house: ClearingHouse):
+async def show_pid_positions(clearing_house: ClearingHouse):
     ch = clearing_house
     state = await get_state_account(ch.program)
 

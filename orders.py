@@ -37,9 +37,9 @@ from plotly.subplots import make_subplots
 import asyncio
 
 @st.experimental_memo
-def cached_get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type, market_index):
+def cached_get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
     loop = asyncio.new_event_loop()
-    return loop.run_until_complete(get_orders_data(rpc, _ch, depth_slide, market_type, market_index))
+    return loop.run_until_complete(get_orders_data(_ch, depth_slide, market_type, market_index, order_filter))
 
 @st.experimental_memo
 def cached_get_price_data(market_type, market_index):
@@ -53,7 +53,7 @@ async def get_price_data(market_type, market_index):
     dat = requests.get(url).json()['data']['trades']
     return pd.DataFrame(dat)
 
-async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type, market_index):
+async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
     all_users = await _ch.program.account['User'].all()
 
     st.sidebar.text('cached on: ' + _ch.time)
@@ -95,7 +95,7 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type
             for order in orders:
                 if str(order.status) == 'OrderStatus.Open()' and order.market_index == perp_idx:
                     order.owner = str(x.public_key)
-                    order.authority = str(x.account.authority)
+                    order.authority = str(x.account.authority)                        
 
                     # if order.trigger_price != 0 and order.price == 0: 
                     #     order.price = order.trigger_price
@@ -110,10 +110,20 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type
 
         longs = order_type_dict['PositionDirection.Long()']
         longs.sort(key=lambda order: order.price)
+        if order_filter != 'All':
+            if order_filter == 'Limit':
+                longs = [x for x in longs if 'Trigger' not in str(x.order_type)]
+            else:
+                longs = [x for x in longs if order_filter in str(x.order_type)]
         longs = longs[::-1] # decreasing price 
 
         shorts = order_type_dict['PositionDirection.Short()']
         shorts.sort(key=lambda order: order.price) # increasing price
+        if order_filter != 'All':
+            if order_filter == 'Limit':
+                shorts = [x for x in shorts if 'Trigger' not in str(x.order_type)]
+            else:
+                shorts = [x for x in shorts if order_filter in str(x.order_type)]
 
         def format_order(order: Order):
             price = float(f'{order.price/PRICE_PRECISION:,.4f}')
@@ -128,6 +138,7 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type
         d_longs_order_type = ['Oracle'+x if longs[idx].oracle_price_offset != 0 else x for idx, x in enumerate(d_longs_order_type)]
         d_longs = [format_order(order) for order in longs]
         d_shorts = [format_order(order) for order in shorts]
+
         d_shorts_order_type = [str(order.order_type).split('.')[-1].split('()')[0] for order in shorts]
         d_shorts_order_type = [x+' [POST]' if shorts[idx].post_only else x for idx, x in enumerate(d_shorts_order_type)]
         d_shorts_order_type = ['Oracle'+x if shorts[idx].oracle_price_offset != 0 else x for idx, x in enumerate(d_shorts_order_type)]
@@ -182,7 +193,42 @@ async def get_orders_data(rpc: str, _ch: ClearingHouse, depth_slide, market_type
             
             market.amm.short_spread/1e6,
             market.amm.base_asset_reserve/1e9, price_max, order_data)
-            
+        else:
+            dd = requests.get('https://openserum.io/api/serum/market/8BnEgHoWFysVcuFFX7QztDmzuH8r5ZFvyP3sYwn1XTh6/depth').json()
+            lenn = 13
+            bb = pd.DataFrame(dd['bids']).set_index(0)[[2]].iloc[-lenn:].sort_index(ascending=False).cumsum()#.reset_index()
+            aa = pd.DataFrame(dd['asks']).set_index(0)[[2]].iloc[:lenn].sort_index(ascending=True).cumsum()#.reset_index()
+            bb.columns = ['bids']
+            aa.columns = ['asks']
+            # df = pd.DataFrame(index=range(10))
+            # df['bids'] = [tuple(x) for x in bb.values]
+            # df['asks'] = [tuple(x) for x in aa.values]
+            drift_depth = pd.concat([bb, aa])
+
+            drift_order_bids = pd.DataFrame(order_data['bids (price, size)'], columns=['price', 'bids'])\
+            .set_index('price').dropna()
+            drift_order_bids['bids'] = drift_order_bids['bids'].astype(float).cumsum()
+            drift_order_bids.rename_axis(None, inplace=True)
+        
+            drift_order_asks = pd.DataFrame(order_data['asks (price, size)'], columns=['price', 'asks'])\
+                .set_index('price').dropna()
+            drift_order_asks['asks'] = drift_order_asks['asks'].astype(float).cumsum()
+            drift_order_asks.rename_axis(None, inplace=True)
+            drift_order_asks = drift_order_asks.loc[:price_max]
+
+            drift_order_depth = pd.concat([drift_order_bids, drift_order_asks]).replace(0, np.nan).sort_index()
+            _idxs = []
+            for v in drift_order_depth.index: 
+                # add a small value
+                while v in _idxs: 
+                    v += 1e-5
+                _idxs.append(v)
+            drift_order_depth.index = pd.Index(_idxs)
+
+            ss = [drift_depth.index.min()]+[x for x in drift_order_depth.index.to_list() if x > drift_depth.index.min()]+[drift_depth.index.max()]
+            drift_order_depth = drift_order_depth.reindex(ss, method='ffill').sort_index()
+            drift_order_depth['bids'] = drift_order_depth['bids'].bfill()
+
         return (pd.DataFrame(order_data), oracle_data, drift_order_depth, drift_depth)
 
 
@@ -231,7 +277,7 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
             _idxs.append(v)
         drift_order_depth.index = pd.Index(_idxs)
 
-        ss = [drift_depth.index.min()]+drift_order_depth.index.to_list()+[drift_depth.index.max()]
+        ss = [drift_depth.index.min()]+[x for x in drift_order_depth.index.to_list() if x > drift_depth.index.min()]+[drift_depth.index.max()]
         drift_order_depth = drift_order_depth.reindex(ss, method='ffill').sort_index()
 
 
@@ -239,14 +285,16 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
 
 
 
-def orders_page(rpc: str, ch: ClearingHouse):
+def orders_page(ch: ClearingHouse):
 
         # time.sleep(3)
         # oracle_price = 13.5 * 1e6 
 
         depth_slide = 10
 
-        market = st.radio('select market:', ['SOL-PERP', 'SOL-USDC'], horizontal=True)
+        col1, col2 = st.columns(2)
+        market = col1.radio('select market:', ['SOL-PERP', 'SOL-USDC'], horizontal=True)
+        order_filter = col2.radio('order filter:', ['Limit', 'Trigger', 'All'], horizontal=True)
 
         if market == 'SOL-PERP':
             market_type = 'perp'
@@ -255,7 +303,7 @@ def orders_page(rpc: str, ch: ClearingHouse):
             market_type = 'spot'
             market_index = 1
 
-        data, oracle_data, drift_order_depth, drift_depth  = cached_get_orders_data(rpc, ch, depth_slide, market_type, market_index)
+        data, oracle_data, drift_order_depth, drift_depth  = cached_get_orders_data(ch, depth_slide, market_type, market_index, order_filter)
         # if len(data):
         #     st.write(f'{data.market.values[0]}')
 
@@ -263,7 +311,7 @@ def orders_page(rpc: str, ch: ClearingHouse):
 
         zol1.image("https://alpha.openserum.io/api/serum/token/So11111111111111111111111111111111111111112/icon", width=33)
         # print(oracle_data)
-        oracle_data.slot
+        # oracle_data.slot
         zol2.metric('Oracle Price', f'${oracle_data.price/PRICE_PRECISION}', f'±{oracle_data.confidence/PRICE_PRECISION} (slot={oracle_data.slot})',
         delta_color="off")
         tabs = st.tabs(['OrderBook', 'Depth', 'Recent Trades'])
@@ -301,6 +349,7 @@ def orders_page(rpc: str, ch: ClearingHouse):
                         res.append('')
                 return res
 
+            
             bids_quote = np.round(df['bids (price, size)'].apply(lambda x: x[0]*x[1] if x!='' else 0).sum(), 2)
             bids_base = np.round(df['bids (price, size)'].apply(lambda x: x[1] if x!='' else 0).sum(), 2)
 
@@ -317,14 +366,15 @@ def orders_page(rpc: str, ch: ClearingHouse):
         with tabs[1]: 
             # depth_slide = st.slider("Depth", 1, int(1/.01), 10, step=5)
 
-            ext_depth_nom = 'vAMM' if market_type == 'perp' else 'Openbook'
+            ext_depth_nom = 'Drift vAMM' if market_type == 'perp' else 'Openbook'
             fig = make_subplots(
                 rows=2, cols=1,
                 shared_xaxes=True,
-                subplot_titles=[ext_depth_nom+' depth', 'DLOB depth'])
+                subplot_titles=[ext_depth_nom+' depth', 'Drift DLOB depth'])
 
             fig.add_trace( go.Scatter(x=drift_depth.index, y=drift_depth['bids'],  name='bids', fill='tozeroy'),  row=1, col=1)
             fig.add_trace( go.Scatter(x=drift_depth.index, y=drift_depth['asks'],  name='asks', fill='tozeroy'),  row=1, col=1)
+            fig.add_vline(x=oracle_data.price/PRICE_PRECISION, line_width=3, line_dash="dot", line_color="blue")
 
             fig.add_trace( go.Scatter(x=drift_order_depth.index, y=drift_order_depth['bids'], name='bids',  fill='tozeroy'),  row=2, col=1)
             fig.add_trace( go.Scatter(x=drift_order_depth.index, y=drift_order_depth['asks'], name='asks',  fill='tozeroy'), row=2, col=1)

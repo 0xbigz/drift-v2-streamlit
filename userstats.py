@@ -26,7 +26,7 @@ from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
 
-async def show_user_stats(url: str, clearing_house: ClearingHouse):
+async def show_user_stats(clearing_house: ClearingHouse):
     ch = clearing_house
 
     all_user_stats = await ch.program.account['UserStats'].all()

@@ -13,6 +13,8 @@ from solana.rpc.async_api import AsyncClient
 from driftpy.clearing_house import ClearingHouse
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
+from driftpy.clearing_house_user import get_token_amount
+
 import os
 import json
 import streamlit as st
@@ -47,8 +49,14 @@ async def insurance_fund_page(ch: ClearingHouse):
         data['key'] = key
         dfs.append(data)
 
-    st.text('Number of Stakers: ' + str(len(all_stakers)))
-    st.text('Number of Unique Stakers: ' + str(len(authorities)))
+    st.markdown('[USDC Insurance Vault](https://solscan.io/account/2CqkQvYxp9Mq4PqLvAQ1eryYxebUh4Liyn5YMDtXsYci) | [Stake Example (Python)](https://github.com/drift-labs/driftpy/blob/master/examples/if_stake.py)')
+    
+    col1, col2 = st.columns(2)
+    bbs = [col1, col2]
+    ccol1, ccol2 = st.columns(2)
+    ccs = [ccol1, ccol2]
+    
+    st.metric("Number of Stakes", str(len(all_stakers)),str(len(authorities))+" Unique Stakers")
 
     conn = ch.program.provider.connection
     state = await get_state_account(ch.program)
@@ -70,14 +78,32 @@ async def insurance_fund_page(ch: ClearingHouse):
 
         name = str(''.join(map(chr, spot.name)))
 
-        st.write(f'{name} (marketIndex={i}) insurance vault balance: {v_amount/QUOTE_PRECISION:,.2f} (protocol owned: {protocol_balance/QUOTE_PRECISION:,.2f})')
+        symbol = '$' if i==0 else ''
+        bbs[i].metric(f'{name} (marketIndex={i}) insurance vault balance:',
+         f'{symbol}{v_amount/(10**spot.decimals):,.2f}',
+         f'{symbol}{protocol_balance/10**spot.decimals:,.2f} protocol owned'
+         ) 
+
+        rev_pool_tokens = get_token_amount(
+                        spot.revenue_pool.scaled_balance,
+                        spot, 
+                        'SpotBalanceType.Deposit()'
+                    )
+
+        #capped at 1000% APR
+        next_payment = min(rev_pool_tokens, (v_amount*10/365/24))
+        ccs[i].metric('revenue pool', f'{symbol}{rev_pool_tokens/10**spot.decimals:,.2f}', f'{symbol}{next_payment/10**spot.decimals:,.2f} next est. hourly payment')
+
+        st.write('')
+
     
     stakers = pd.DataFrame(data=dfs)
 
-    stakers['cost_basis'] /= 1e6
-    stakers['if_shares'] /= 1e6
+    stakers['cost_basis'] /= 1e6 #todo
+    stakers['if_shares'] /= 1e6 #todo
 
-    print(stakers.columns)
+    # print(stakers.columns)    
+
     st.write(stakers[['authority', 'market_index', '$ balance', 'if_shares', 'cost_basis', 'last_withdraw_request_shares', 'if_base',
        'last_withdraw_request_value',
        'last_withdraw_request_ts', 'last_valid_ts',  'key',
