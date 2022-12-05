@@ -223,9 +223,15 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                     max_price = int(max(np.median(perp_liq_prices_m), oracle_price.price / PRICE_PRECISION) * 1.3)
                     max_price = st.number_input('max_price', value=max_price)
 
-                    perp_liq_prices_m = [min(max_price, p) for p in perp_liq_prices_m]
+                    _perp_liq_prices_m = []
+                    for p in perp_liq_prices_m: 
+                        if p < max_price: 
+                            _perp_liq_prices_m.append(p)
+                    perp_liq_prices_m = _perp_liq_prices_m
+                    n_bins = st.number_input('number of bins:', value=min(100, len(perp_liq_prices_m)))
+
                     df = pd.DataFrame({'liq_price': perp_liq_prices_m})
-                    fig = px.histogram(perp_liq_prices_m, nbins=100, labels={'x': 'liq_price', 'y':'count'})
+                    fig = px.histogram(perp_liq_prices_m, nbins=n_bins, labels={'x': 'liq_price', 'y':'count'})
                     fig.add_vline(x=oracle_price.price/PRICE_PRECISION, line_color="red", annotation_text='oracle price')
                     fig = fig.update_layout( 
                         xaxis_title="Liquidation Price",
@@ -352,9 +358,15 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                     st.markdown('## Liquidation Prices')
                     max_price = st.number_input('max_price', value=max(oracle_price.price/PRICE_PRECISION, np.median(spot_liq_prices_m)) * 1.3)
 
-                    spot_liq_prices_m = [min(max_price, p) for p in spot_liq_prices_m]
+                    _spot_liq_prices_m = []
+                    for p in spot_liq_prices_m: 
+                        if p < max_price: 
+                            _spot_liq_prices_m.append(p)
+                    spot_liq_prices_m = _spot_liq_prices_m
+
+                    n_bins = st.number_input('number of bins:', value=min(100, len(spot_liq_prices_m)))
                     df = pd.DataFrame({'liq_price': spot_liq_prices_m})
-                    fig = px.histogram(spot_liq_prices_m, nbins=100, labels={'x': 'liq_price', 'y':'count'})
+                    fig = px.histogram(spot_liq_prices_m, nbins=n_bins, labels={'x': 'liq_price', 'y':'count'})
                     fig = fig.update_layout( 
                         xaxis_title="Liquidation Price",
                         yaxis_title="# of Users",

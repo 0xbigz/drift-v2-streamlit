@@ -108,6 +108,8 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
                         order_type = str(order.direction)
                         order_type_dict[order_type] = order_type_dict.get(order_type, []) + [order]
 
+                        print(order_type, order.price/PRICE_PRECISION, user.authority)
+
         longs = order_type_dict['PositionDirection.Long()']
         longs.sort(key=lambda order: order.price)
         if order_filter != 'All':
