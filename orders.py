@@ -211,12 +211,15 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
             .set_index('price').dropna()
             drift_order_bids['bids'] = drift_order_bids['bids'].astype(float).cumsum()
             drift_order_bids.rename_axis(None, inplace=True)
-        
-            drift_order_asks = pd.DataFrame(order_data['asks (price, size)'], columns=['price', 'asks'])\
-                .set_index('price').dropna()
-            drift_order_asks['asks'] = drift_order_asks['asks'].astype(float).cumsum()
-            drift_order_asks.rename_axis(None, inplace=True)
-            drift_order_asks = drift_order_asks.loc[:price_max]
+
+            drift_order_asks = pd.DataFrame(columns=['asks'])
+            if order_data['asks (price, size)'] != ['']:
+                drift_order_asks = pd.DataFrame(order_data['asks (price, size)'], columns=['price', 'asks'])\
+                    .set_index('price').dropna()
+                drift_order_asks['asks'] = drift_order_asks['asks'].astype(float).cumsum()
+                drift_order_asks.rename_axis(None, inplace=True)
+                drift_order_asks = drift_order_asks.loc[:price_max]
+                
 
             drift_order_depth = pd.concat([drift_order_bids, drift_order_asks]).replace(0, np.nan).sort_index()
             _idxs = []
