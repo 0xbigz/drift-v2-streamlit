@@ -35,10 +35,13 @@ from driftpy.addresses import *
 async def fee_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
     
+
+
     col1, col2 = st.columns(2)
     tbl1, tbl2 = st.columns(2)
 
-    col1.header('Perp Trading')
+    col1.markdown('[Perp Trading](https://github.com/drift-labs/protocol-v2/blob/24704d781748f3266840a3c68a5d4f65e629826c/programs/drift/src/math/fees.rs#L345)')
+    
     df= pd.DataFrame(state.perp_fee_structure.fee_tiers)
     df['taker_fee'] = df['fee_numerator']/df['fee_denominator']
     df['maker_rebate'] = df['maker_rebate_numerator']/df['maker_rebate_denominator']
@@ -50,7 +53,7 @@ async def fee_page(ch: ClearingHouse):
     tbl1.dataframe(df[['TIER', 'taker_fee', 'maker_rebate', 'referee_fee', 'referrer_reward']])
 
 
-    col2.header('Spot Trading')
+    col2.markdown('[Spot Trading](https://github.com/drift-labs/protocol-v2/blob/24704d781748f3266840a3c68a5d4f65e629826c/programs/drift/src/math/fees.rs#L381)')
     df= pd.DataFrame(state.spot_fee_structure.fee_tiers)
     df['taker_fee'] = df['fee_numerator']/df['fee_denominator']
     df['maker_rebate'] = df['maker_rebate_numerator']/df['maker_rebate_denominator']

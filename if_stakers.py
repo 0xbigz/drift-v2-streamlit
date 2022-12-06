@@ -31,6 +31,7 @@ from aiocache import Cache
 from aiocache import cached
 from driftpy.types import InsuranceFundStake, SpotMarket
 from driftpy.addresses import * 
+import plotly.express as px
 
 async def insurance_fund_page(ch: ClearingHouse):
     all_stakers = await ch.program.account['InsuranceFundStake'].all()
@@ -61,6 +62,7 @@ async def insurance_fund_page(ch: ClearingHouse):
     conn = ch.program.provider.connection
     state = await get_state_account(ch.program)
     spot_markets = []
+    protocol_balances = []
     for i in range(state.number_of_spot_markets):
         spot = await get_spot_market_account(ch.program, i)
         total_n_shares = spot.insurance_fund.total_shares
@@ -71,6 +73,7 @@ async def insurance_fund_page(ch: ClearingHouse):
         if_vault = get_insurance_fund_vault_public_key(ch.program_id, i)
         v_amount = int((await conn.get_token_account_balance(if_vault))['result']['value']['amount'])
         protocol_balance = v_amount * protocol_n_shares / (max(total_n_shares,1))
+        protocol_balances.append(protocol_balance/10**spot.decimals)
 
         for staker_df in dfs: 
             if staker_df['market_index'] == i:
@@ -101,13 +104,31 @@ async def insurance_fund_page(ch: ClearingHouse):
     
     stakers = pd.DataFrame(data=dfs)
 
+    total_shares = [spot_markets[r['market_index']].insurance_fund.total_shares for i, r in stakers.iterrows()]
     precisions = [(10 ** spot_markets[r['market_index']].decimals) for i, r in stakers.iterrows()]
     stakers['cost_basis'] /= precisions 
     stakers['if_shares'] /= precisions
-
+    stakers['total_shares'] = total_shares
+    stakers['total_shares'] /= precisions
+    stakers['own %'] = stakers['if_shares']/stakers['total_shares'] * 100
+    stakers['authority'] = stakers['authority'].astype(str)
     # print(stakers.columns)    
 
-    st.write(stakers[['authority', 'market_index', '$ balance', 'if_shares', 'cost_basis', 'last_withdraw_request_shares', 'if_base',
+    st.write(stakers[['authority', 'market_index', '$ balance', 'if_shares', 'total_shares', 'own %', 'cost_basis', 'last_withdraw_request_shares', 'if_base',
        'last_withdraw_request_value',
        'last_withdraw_request_ts', 'last_valid_ts',  'key',
        ]])
+
+    df = stakers[['$ balance', 'authority', 'own %', 'market_index']]
+    
+    z1, z2 = st.columns(2)
+    pie1, z2 = st.columns(2)
+
+    i = z1.selectbox('market index:', sorted(list(df['market_index'].unique())))
+    df = df[df.market_index==i]
+    df = pd.concat([df, pd.DataFrame([[protocol_balances[i], 'protocol', 100 - df['own %'].sum(), i]], index=[0], columns=df.columns)])
+
+    fig = px.pie(df, values='own %', names='authority',
+                title='MarketIndex='+str(i)+' IF breakdown',
+                hover_data=['$ balance'], labels={'$ balance':'balance'})
+    pie1.plotly_chart(fig)

@@ -21,6 +21,7 @@ from anchorpy import Provider, Wallet
 from solana.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from driftpy.clearing_house import ClearingHouse
+from fees import fee_page
 from if_stakers import insurance_fund_page
 from userstats import show_user_stats
 from orders import orders_page
@@ -54,7 +55,7 @@ def main():
     query_p = st.experimental_get_query_params()
     query_tab = query_p.get('tab', ['Overview'])[0]
 
-    tab_options = ('Overview', 'Simulations', 'Logs', 'IF-Stakers', 'User-Stats', 'DLOB', 'Config', 'Social', 'PlatyPerps')
+    tab_options = ('Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 'User-Stats', 'DLOB', 'Config', 'Social', 'PlatyPerps')
     query_index = 0
     for idx, x in enumerate(tab_options):
         if x.lower() == query_tab.lower():
@@ -97,6 +98,10 @@ def main():
 
     elif tab.lower() == 'simulations':
         sim_page()
+
+    elif tab.lower() == 'fee-schedule':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(fee_page(clearing_house))
 
     elif tab.lower() == 'if-stakers':
         loop = asyncio.new_event_loop()
