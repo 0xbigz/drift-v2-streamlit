@@ -252,6 +252,8 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
         # st.table(pd.Series([max_f, mark_price, price_max, base_asset_reserve]))
         quantities_max = max(1, int(max_f*base_asset_reserve))
         quantities = list(range(1, quantities_max, int(max(1, quantities_max/100))))
+        if quantities_max <= 10:
+            quantities = [x/100 for x in quantities]
         drift_asks = pd.DataFrame(quantities, 
         columns=['asks'],
         index=[mark_price*(1+l_spr)*(1+calc_slip(x)) for x in quantities])
@@ -264,12 +266,15 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
             .set_index('price').dropna()
         drift_order_bids['bids'] = drift_order_bids['bids'].astype(float).cumsum()
         drift_order_bids.rename_axis(None, inplace=True)
-       
-        drift_order_asks = pd.DataFrame(order_data['asks (price, size)'], columns=['price', 'asks'])\
-            .set_index('price').dropna()
-        drift_order_asks['asks'] = drift_order_asks['asks'].astype(float).cumsum()
-        drift_order_asks.rename_axis(None, inplace=True)
-        drift_order_asks = drift_order_asks.loc[:price_max]
+            
+        drift_order_asks = pd.DataFrame(columns=['asks'])
+        if order_data['asks (price, size)'] != []:
+            print(order_data)
+            drift_order_asks = pd.DataFrame(order_data['asks (price, size)'], columns=['price', 'asks'])\
+                .set_index('price').dropna()
+            drift_order_asks['asks'] = drift_order_asks['asks'].astype(float).cumsum()
+            drift_order_asks.rename_axis(None, inplace=True)
+            drift_order_asks = drift_order_asks.loc[:price_max]
 
         drift_depth = pd.concat([drift_bids, drift_asks]).replace(0, np.nan).sort_index()
 
@@ -298,12 +303,18 @@ def orders_page(ch: ClearingHouse):
         depth_slide = 10
 
         col1, col2 = st.columns(2)
-        market = col1.radio('select market:', ['SOL-PERP', 'SOL-USDC'], horizontal=True)
+        market = col1.radio('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'SOL-USDC'], horizontal=True)
         order_filter = col2.radio('order filter:', ['Limit', 'Trigger', 'All'], horizontal=True)
 
         if market == 'SOL-PERP':
             market_type = 'perp'
             market_index= 0
+        elif market == 'BTC-PERP':
+            market_type = 'perp'
+            market_index= 1        
+        elif market == 'ETH-PERP':
+            market_type = 'perp'
+            market_index= 2
         else:
             market_type = 'spot'
             market_index = 1
@@ -390,43 +401,44 @@ def orders_page(ch: ClearingHouse):
         with tabs[2]:
             price_df = cached_get_price_data(market_type, market_index)
             # print(price_df.columns)
-            odf = (price_df.set_index('ts'))
-            odf['tradePrice'] = (odf['quoteAssetAmountFilled'].astype(float) * 1e3)/ odf['baseAssetAmountFilled'].astype(float)
-            odf['oraclePrice'] = odf['oraclePrice'].astype(float)/1e6
-            odf['baseAssetAmountFilled'] = odf['baseAssetAmountFilled'].astype(float)/1e9
-            can_cols = ['oraclePrice', 'tradePrice', 'baseAssetAmountFilled', 'taker', 'maker', 'actionExplanation', 'takerOrderDirection']
-            can_cols = [x for x in can_cols if x in odf.columns]
-            odf = odf[can_cols]
-            odf.index = pd.to_datetime([int(x) for x in odf.index.astype(int) * 1e9])
-            layout = go.Layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                grid=None,
-            xaxis_showgrid=False, yaxis_showgrid=False
-            )
+            if len(price_df):
+                odf = (price_df.set_index('ts'))
+                odf['tradePrice'] = (odf['quoteAssetAmountFilled'].astype(float) * 1e3)/ odf['baseAssetAmountFilled'].astype(float)
+                odf['oraclePrice'] = odf['oraclePrice'].astype(float)/1e6
+                odf['baseAssetAmountFilled'] = odf['baseAssetAmountFilled'].astype(float)/1e9
+                can_cols = ['oraclePrice', 'tradePrice', 'baseAssetAmountFilled', 'taker', 'maker', 'actionExplanation', 'takerOrderDirection']
+                can_cols = [x for x in can_cols if x in odf.columns]
+                odf = odf[can_cols]
+                odf.index = pd.to_datetime([int(x) for x in odf.index.astype(int) * 1e9])
+                layout = go.Layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    grid=None,
+                xaxis_showgrid=False, yaxis_showgrid=False
+                )
 
-            fig = odf[['tradePrice', 'oraclePrice']].plot()
-            fig = fig.update_layout(layout)
+                fig = odf[['tradePrice', 'oraclePrice']].plot()
+                fig = fig.update_layout(layout)
 
-            col1, col3 = st.columns(2, gap='large')
-            col1.plotly_chart(fig, use_container_width=True)
+                col1, col3 = st.columns(2, gap='large')
+                col1.plotly_chart(fig, use_container_width=True)
 
-            can_cols2 = [x for x in ['tradePrice', 'baseAssetAmountFilled', 'taker', 'maker', 'actionExplanation', 'takerOrderDirection'] if x in can_cols]
-            tbl = odf.reset_index(drop=True)[can_cols2].fillna('vAMM')
+                can_cols2 = [x for x in ['tradePrice', 'baseAssetAmountFilled', 'taker', 'maker', 'actionExplanation', 'takerOrderDirection'] if x in can_cols]
+                tbl = odf.reset_index(drop=True)[can_cols2].fillna('vAMM')
 
-            renom_cols = ['Price', 'Size', 'Taker', 'Maker', 'ActionExplanation', 'takerOrderDirection']
-            if len(can_cols2) == len(renom_cols):
-                tbl.columns = renom_cols
-            else:
-                tbl.columns = ['Price', 'Size', 'Taker', 'ActionExplanation', 'takerOrderDirection']
+                renom_cols = ['Price', 'Size', 'Taker', 'Maker', 'ActionExplanation', 'takerOrderDirection']
+                if len(can_cols2) == len(renom_cols):
+                    tbl.columns = renom_cols
+                else:
+                    tbl.columns = ['Price', 'Size', 'Taker', 'ActionExplanation', 'takerOrderDirection']
 
 
-            def highlight_survived(s):
-                return ['background-color: lightgreen']*len(s) if s.takerOrderDirection=='long' else ['background-color: pink']*len(s)
+                def highlight_survived(s):
+                    return ['background-color: lightgreen']*len(s) if s.takerOrderDirection=='long' else ['background-color: pink']*len(s)
 
-            def color_survived(val):
-                color = 'green' if val else 'red'
-                return f'background-color: {color}'
+                def color_survived(val):
+                    color = 'green' if val else 'red'
+                    return f'background-color: {color}'
 
-            col3.dataframe(tbl.style.apply(highlight_survived, axis=1), use_container_width=True)
+                col3.dataframe(tbl.style.apply(highlight_survived, axis=1), use_container_width=True)
 
