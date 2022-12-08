@@ -108,7 +108,7 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
                         order_type = str(order.direction)
                         order_type_dict[order_type] = order_type_dict.get(order_type, []) + [order]
 
-                        print(order_type, order.price/PRICE_PRECISION, user.authority)
+                        # print(order_type, order.price/PRICE_PRECISION, user.authority)
 
         longs = order_type_dict['PositionDirection.Long()']
         longs.sort(key=lambda order: order.price)
@@ -128,7 +128,7 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
                 shorts = [x for x in shorts if order_filter in str(x.order_type)]
 
         def format_order(order: Order):
-            price = float(f'{order.price/PRICE_PRECISION:,.4f}')
+            price = order.price/PRICE_PRECISION
             size = (order.base_asset_amount - order.base_asset_amount_filled)/AMM_RESERVE_PRECISION
             return (price, size)
 
@@ -269,7 +269,7 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
             
         drift_order_asks = pd.DataFrame(columns=['asks'])
         if order_data['asks (price, size)'] != []:
-            print(order_data)
+            # print(order_data)
             drift_order_asks = pd.DataFrame(order_data['asks (price, size)'], columns=['price', 'asks'])\
                 .set_index('price').dropna()
             drift_order_asks['asks'] = drift_order_asks['asks'].astype(float).cumsum()
