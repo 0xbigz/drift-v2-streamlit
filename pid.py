@@ -158,7 +158,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
         with tab:
             if markettype == 'Perp':
                 market = await get_perp_market_account(ch.program, market_index)
-                market_name = ''.join(map(chr, market.name));
+                market_name = ''.join(map(chr, market.name)).strip(" ")
 
                 with st.expander(markettype+" market market_index="+str(market_index)+' '+market_name):
                     mdf = serialize_perp_market_2(market).T
@@ -270,7 +270,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
             else:
                 market = await get_spot_market_account(ch.program, market_index)
-                market_name = ''.join(map(chr, market.name));
+                market_name = ''.join(map(chr, market.name)).strip(" ")
 
                 with st.expander(markettype+" market market_index="+str(market_index)+' '+market_name):
                     mdf = serialize_spot_market(market).T
@@ -341,6 +341,32 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 st.text(f'total deposits (token amount): {total_deposits:,.2f}')
                 st.text(f'total borrows (token amount): {total_borrows:,.2f}')
                 st.text(f'total cummulative deposits: {total_cumm_deposits:,.2f}')
+                PERCENTAGE_PRECISION = 10**6
+
+                opt_util = market.optimal_utilization/PERCENTAGE_PRECISION * 100
+                opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION
+                max_borrow = market.max_borrow_rate/PERCENTAGE_PRECISION
+
+                ir_curve_index = [x/100 for x in range(0,100*100, 10)]
+                bor_ir_curve = [opt_borrow* (100/opt_util)*x/100 
+                if x <= opt_util
+                else ((max_borrow-opt_borrow) * (100/opt_util))*(x-opt_util)/100 + opt_borrow
+                for x in ir_curve_index]
+
+                dep_ir_curve = [ir*ir_curve_index[idx]/100 for idx,ir in enumerate(bor_ir_curve)]
+
+                ir_fig = (pd.DataFrame([dep_ir_curve, bor_ir_curve], 
+                index=['deposit interest', 'borrow interest'], 
+                columns=ir_curve_index).T * 100).plot() 
+
+                ir_fig.add_vline(x=market.utilization_twap/1e6 * 100, line_color="blue", annotation_text='utilization_twap')
+                ir_fig.update_layout(
+                    title=market_name+" Interest Rate",
+                    xaxis_title="utilization (%)",
+                    yaxis_title="interest rate (%)",
+                    legend_title="Curves",
+                )
+                st.plotly_chart(ir_fig)
 
                 fig1, ax1 = plt.subplots()
                 fig1.set_size_inches(15.5, 5.5)
