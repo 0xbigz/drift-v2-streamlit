@@ -134,6 +134,21 @@ async def show_pid_positions(clearing_house: ClearingHouse):
             spotdfs[key].append(pd.Series(dd))
         spotdfs[key] = pd.concat(spotdfs[key],axis=1)    
 
+    user_leaderboard = pd.DataFrame([x.account for x in all_users])
+    user_leaderboard = user_leaderboard[['authority', 'sub_account_id', 'settled_perp_pnl',  'cumulative_perp_funding', 'total_deposits',
+       'total_withdraws', 'total_social_loss',
+       'cumulative_spot_fees',
+       'next_order_id',
+       'next_liquidation_id', 
+       'status',
+       'is_margin_trading_enabled',]].sort_values('settled_perp_pnl', ascending=False).reset_index(drop=True)
+
+    for x in ['total_deposits',
+       'total_withdraws', 'total_social_loss',  'settled_perp_pnl',
+       'cumulative_spot_fees', 'cumulative_perp_funding',]:
+       user_leaderboard[x]/=1e6
+    st.text('user leaderboard (merry driftmas)')
+    st.dataframe(user_leaderboard)
 
     col1, col2, col3, col4 = st.columns(4)
     col2.metric("Unique Driftoors", str(len(authorities)),str(len(all_users))+" SubAccounts")
@@ -221,14 +236,14 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
                     st.markdown('## Liquidation Prices/Sizes')
                     max_price = int(max(np.median(perp_liq_prices_m), oracle_price.price / PRICE_PRECISION) * 1.3)
-                    max_price = st.number_input('max_price', value=max_price)
+                    max_price = st.number_input('max_price', value=max_price, key=1337*(market_index+1))
 
                     _perp_liq_prices_m = []
                     for p in perp_liq_prices_m: 
                         if p < max_price: 
                             _perp_liq_prices_m.append(p)
                     perp_liq_prices_m = _perp_liq_prices_m
-                    n_bins = st.number_input('number of bins:', value=min(100, len(perp_liq_prices_m)))
+                    n_bins = st.number_input('number of bins:', value=min(100, len(perp_liq_prices_m)), key=1*(market_index+1))
 
                     df = pd.DataFrame({'liq_price': perp_liq_prices_m})
                     fig = px.histogram(perp_liq_prices_m, nbins=n_bins, labels={'x': 'liq_price', 'y':'count'})
@@ -382,7 +397,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                     spot_market = await chu.get_spot_market(market_index)
                     oracle_price = await chu.get_spot_oracle_data(spot_market)
                     st.markdown('## Liquidation Prices')
-                    max_price = st.number_input('max_price', value=max(oracle_price.price/PRICE_PRECISION, np.median(spot_liq_prices_m)) * 1.3)
+                    max_price = st.number_input('max_price', value=max(oracle_price.price/PRICE_PRECISION, np.median(spot_liq_prices_m)) * 1.3, key=19*(market_index+1))
 
                     _spot_liq_prices_m = []
                     for p in spot_liq_prices_m: 
@@ -390,7 +405,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                             _spot_liq_prices_m.append(p)
                     spot_liq_prices_m = _spot_liq_prices_m
 
-                    n_bins = st.number_input('number of bins:', value=min(100, len(spot_liq_prices_m)))
+                    n_bins = st.number_input('number of bins:', value=min(100, len(spot_liq_prices_m)), key=23*(market_index+1))
                     df = pd.DataFrame({'liq_price': spot_liq_prices_m})
                     fig = px.histogram(spot_liq_prices_m, nbins=n_bins, labels={'x': 'liq_price', 'y':'count'})
                     fig = fig.update_layout( 
