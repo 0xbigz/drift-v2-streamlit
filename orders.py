@@ -54,7 +54,11 @@ async def get_price_data(market_type, market_index):
     return pd.DataFrame(dat)
 
 async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
-    all_users = await _ch.program.account['User'].all()
+    try:
+        all_users = await _ch.program.account['User'].all()
+    except:
+        st.write("ERROR: cannot load ['User'].all() with current rpc")
+        return
 
     st.sidebar.text('cached on: ' + _ch.time)
     

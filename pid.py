@@ -35,8 +35,15 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
     with st.expander('state'):
         st.json(state.__dict__)
+    
+    all_users = None
 
-    all_users = await ch.program.account['User'].all()
+    try:
+        all_users = await ch.program.account['User'].all()
+    except:
+        st.write("ERROR: cannot load ['User'].all() with current rpc")
+        return
+    
 
     authorities = set()
     dfs = {}
