@@ -20,6 +20,7 @@ import json
 import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
+from driftpy.clearing_house_user import get_token_amount
 from dataclasses import dataclass
 from solana.publickey import PublicKey
 from helpers import serialize_perp_market_2, serialize_spot_market
@@ -31,8 +32,9 @@ from aiocache import Cache
 from aiocache import cached
 from driftpy.types import InsuranceFundStake, SpotMarket
 from driftpy.addresses import * 
-import plotly.express as px
-
+# using time module
+import time
+  
 async def insurance_fund_page(ch: ClearingHouse):
     all_stakers = await ch.program.account['InsuranceFundStake'].all()
     
@@ -61,8 +63,8 @@ async def insurance_fund_page(ch: ClearingHouse):
 
     conn = ch.program.provider.connection
     state = await get_state_account(ch.program)
-    spot_markets = []
-    protocol_balances = []
+    ts = time.time()
+
     for i in range(state.number_of_spot_markets):
         spot = await get_spot_market_account(ch.program, i)
         total_n_shares = spot.insurance_fund.total_shares
@@ -70,6 +72,7 @@ async def insurance_fund_page(ch: ClearingHouse):
         protocol_n_shares = total_n_shares - user_n_shares
         spot_markets.append(spot)
 
+        get_token_amount(spot.revenue_pool.scaled_balance, spot, )
         if_vault = get_insurance_fund_vault_public_key(ch.program_id, i)
         v_amount = int((await conn.get_token_account_balance(if_vault))['result']['value']['amount'])
         protocol_balance = v_amount * protocol_n_shares / (max(total_n_shares,1))
@@ -83,25 +86,8 @@ async def insurance_fund_page(ch: ClearingHouse):
 
         name = str(''.join(map(chr, spot.name)))
 
-        symbol = '$' if i==0 else ''
-        bbs[i].metric(f'{name} (marketIndex={i}) insurance vault balance:',
-         f'{symbol}{v_amount/(10**spot.decimals):,.2f}',
-         f'{symbol}{protocol_balance/10**spot.decimals:,.2f} protocol owned'
-         ) 
-
-        rev_pool_tokens = get_token_amount(
-                        spot.revenue_pool.scaled_balance,
-                        spot, 
-                        'SpotBalanceType.Deposit()'
-                    )
-
-        #capped at 1000% APR
-        next_payment = min(rev_pool_tokens, (v_amount*10/365/24))
-        ccs[i].metric('revenue pool', f'{symbol}{rev_pool_tokens/10**spot.decimals:,.2f}', f'{symbol}{next_payment/10**spot.decimals:,.2f} next est. hourly payment')
-
-        st.write('')
-
-    
+        st.write(f'{name} (marketIndex={i}) insurance vault balance: {v_amount/QUOTE_PRECISION:,.2f} (protocol owned: {protocol_balance/QUOTE_PRECISION:,.2f})')
+        st.write(f'time since last settle: {np.round((ts - spot.insurance_fund.last_revenue_settle_ts)/(60*60), 2)} hours')
     stakers = pd.DataFrame(data=dfs)
 
     total_shares = [spot_markets[r['market_index']].insurance_fund.total_shares for i, r in stakers.iterrows()]

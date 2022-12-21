@@ -26,6 +26,7 @@ from if_stakers import insurance_fund_page
 from userstats import show_user_stats
 from orders import orders_page
 from platyperps import show_platyperps
+from liquidity import mm_page
 
 def main():
     st.set_page_config(
@@ -55,7 +56,7 @@ def main():
     query_p = st.experimental_get_query_params()
     query_tab = query_p.get('tab', ['Overview'])[0]
 
-    tab_options = ('Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 'User-Stats', 'DLOB', 'Config', 'Social', 'PlatyPerps')
+    tab_options = ('Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 'User-Stats', 'DLOB', 'MM', 'Config', 'Social', 'PlatyPerps')
     query_index = 0
     for idx, x in enumerate(tab_options):
         if x.lower() == query_tab.lower():
@@ -113,7 +114,8 @@ def main():
     
     elif tab.lower() == 'dlob':
         orders_page(clearing_house)
-
+    elif tab.lower() == 'mm':
+        mm_page(clearing_house)
     elif tab.lower() == 'social':
 
         repo = "https://github.com/drift-labs/protocol-v2"
