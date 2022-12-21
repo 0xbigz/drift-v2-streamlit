@@ -64,17 +64,13 @@ def get_mm_stats(df, user, oracle, bbo2):
     return bbo_user, bbo_stats
 
 
-def mm_page(clearing_house: ClearingHouse):
-    # df = pd.read_csv('https://raw.githubusercontent.com/0xbigz/drift-v2-orderbook-snap/main/perp0/orderbook_slot_168119125.csv')
-
+def mm_page(clearing_house: ClearingHouse):    
     st.title('best bid/offer')
-
-    st.markdown('[data source](https://github.com/0xbigz/drift-v2-orderbook-snap)')
     market_index = st.selectbox('market index', [0, 1, 2])
     dfs = []
 
     tt = 'perp'+str(market_index)
-    ggs = glob('../11drift-v2-orderbook-snap/'+tt+'/*.csv')
+    ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
 
     df = None
     if len(ggs):
@@ -95,7 +91,16 @@ def mm_page(clearing_house: ClearingHouse):
     bbo2 = pd.concat([lmax, oracle, smin],axis=1)
     bbo2.columns = ['best dlob bid', 'oracle', 'best dlob offer']
     st.text('last updated at slot: ' + str(bbo2.index[-1]))
-    st.plotly_chart(bbo2.plot(title='perp market index='+str(market_index)))
+    values = st.slider(
+     'Select a range of slot values',
+     int(bbo2.index[0]), int(bbo2.index[-1]), (int(bbo2.index[0]), int(bbo2.index[-1])))
+
+    bbo2snippet = bbo2.loc[values[0]:values[1]]
+    st.markdown('[data source](https://github.com/0xbigz/drift-v2-orderbook-snap)'+\
+        ' ([slot='+str(bbo2snippet.index[0])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[0])+'.csv))')
+
+    # st.write('slot range:', values)
+    st.plotly_chart(bbo2snippet.plot(title='perp market index='+str(market_index)))
 
     all_stats = []
     for user in df.user.unique():
@@ -117,6 +122,7 @@ def mm_page(clearing_house: ClearingHouse):
     # st.text('user offer within 3bps of best time='+str(np.round(offer_within_best_pct*100, 2))+'%')
     # st.text('user uptime='+str(np.round(uptime_pct*100, 2))+'%')
     st.text('stats last updated at slot: ' + str(bbo_user.index[-1]))
+    st.text('current slot:')
     st.plotly_chart(bbo_user.plot(title='perp market index='+str(market_index)))
 
 
