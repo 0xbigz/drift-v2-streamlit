@@ -40,7 +40,8 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
     try:
         all_users = await ch.program.account['User'].all()
-    except:
+    except Exception as e:
+        print('ERRRRR:', e)
         st.write("ERROR: cannot load ['User'].all() with current rpc")
         return
     
@@ -54,7 +55,12 @@ async def show_pid_positions(clearing_house: ClearingHouse):
     ch = ClearingHouse(ch.program, kp)
 
     fuser: User = all_users[0].account
-    chu = ClearingHouseUser(ch, authority=fuser.authority, subaccount_id=fuser.sub_account_id, use_cache=True)
+    chu = ClearingHouseUser(
+        ch, 
+        authority=fuser.authority, 
+        subaccount_id=fuser.sub_account_id, 
+        use_cache=True
+    )
     await chu.set_cache()
     cache = chu.CACHE
 
