@@ -105,7 +105,10 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
             if pos.base_asset_amount != 0:
                 perp_market = await chu.get_perp_market(pos.market_index)
-                oracle_price = (await chu.get_perp_oracle_data(perp_market)).price / PRICE_PRECISION
+                try:
+                    oracle_price = (await chu.get_perp_oracle_data(perp_market)).price / PRICE_PRECISION
+                except:
+                    oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
                 liq_price = await chu.get_perp_liq_price(pos.market_index)
                 if liq_price is None: 
                     liq_delta = None
@@ -132,7 +135,10 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
             if pos.scaled_balance != 0:
                 spot_market = await chu.get_spot_market(pos.market_index)
-                oracle_price = (await chu.get_spot_oracle_data(spot_market)).price / PRICE_PRECISION
+                try:
+                    oracle_price = (await chu.get_spot_oracle_data(spot_market)).price / PRICE_PRECISION
+                except:
+                    oracle_price = spot_market.historical_oracle_data.last_oracle_price / PRICE_PRECISION
                 liq_price = await chu.get_spot_liq_price(pos.market_index)
                 if liq_price is None: 
                     liq_delta = None
@@ -245,10 +251,13 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 perp_liq_prices_m = perp_liq_prices.get(market_index, None)
                 if perp_liq_prices_m is not None and len(perp_liq_prices_m) > 0:
                     perp_market = await chu.get_perp_market(market_index)
-                    oracle_price = await chu.get_perp_oracle_data(perp_market)
+                    try:
+                        oracle_price = await chu.get_perp_oracle_data(perp_market).price/PRICE_PRECISION
+                    except:
+                        oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
 
                     st.markdown('## Liquidation Prices/Sizes')
-                    max_price = int(max(np.median(perp_liq_prices_m), oracle_price.price / PRICE_PRECISION) * 1.3)
+                    max_price = int(max(np.median(perp_liq_prices_m), oracle_price) * 1.3)
                     max_price = st.number_input('max_price', value=max_price, key=1337*(market_index+1))
 
                     _perp_liq_prices_m = []
@@ -260,7 +269,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
                     df = pd.DataFrame({'liq_price': perp_liq_prices_m})
                     fig = px.histogram(perp_liq_prices_m, nbins=n_bins, labels={'x': 'liq_price', 'y':'count'})
-                    fig.add_vline(x=oracle_price.price/PRICE_PRECISION, line_color="red", annotation_text='oracle price')
+                    fig.add_vline(x=oracle_price, line_color="red", annotation_text='oracle price')
                     fig = fig.update_layout( 
                         xaxis_title="Liquidation Price",
                         yaxis_title="# of Users",
@@ -408,9 +417,9 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 spot_liq_prices_m = spot_liq_prices.get(market_index, None)
                 if spot_liq_prices_m is not None and len(spot_liq_prices_m) > 0 and market_index != 0: # usdc (assumed to always be 1) doesnt really make sense
                     spot_market = await chu.get_spot_market(market_index)
-                    oracle_price = await chu.get_spot_oracle_data(spot_market)
+                    oracle_price = await chu.get_spot_oracle_data(spot_market).price/PRICE_PRECISION
                     st.markdown('## Liquidation Prices')
-                    max_price = st.number_input('max_price', value=max(oracle_price.price/PRICE_PRECISION, np.median(spot_liq_prices_m)) * 1.3, key=19*(market_index+1))
+                    max_price = st.number_input('max_price', value=max(oracle_price, np.median(spot_liq_prices_m)) * 1.3, key=19*(market_index+1))
 
                     _spot_liq_prices_m = []
                     for p in spot_liq_prices_m: 
@@ -425,7 +434,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                         xaxis_title="Liquidation Price",
                         yaxis_title="# of Users",
                     )
-                    fig.add_vline(x=oracle_price.price/PRICE_PRECISION, line_color="red", annotation_text='oracle price')
+                    fig.add_vline(x=oracle_price, line_color="red", annotation_text='oracle price')
 
                     st.plotly_chart(fig)
                 else: 
