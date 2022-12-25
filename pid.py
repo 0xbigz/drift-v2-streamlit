@@ -417,7 +417,11 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 spot_liq_prices_m = spot_liq_prices.get(market_index, None)
                 if spot_liq_prices_m is not None and len(spot_liq_prices_m) > 0 and market_index != 0: # usdc (assumed to always be 1) doesnt really make sense
                     spot_market = await chu.get_spot_market(market_index)
-                    oracle_price = await chu.get_spot_oracle_data(spot_market).price/PRICE_PRECISION
+                    try:
+                        oracle_price = await chu.get_spot_oracle_data(spot_market).price/PRICE_PRECISION
+                    except:
+                        oracle_price = spot_market.historical_oracle_data.last_oracle_price / PRICE_PRECISION
+                        
                     st.markdown('## Liquidation Prices')
                     max_price = st.number_input('max_price', value=max(oracle_price, np.median(spot_liq_prices_m)) * 1.3, key=19*(market_index+1))
 
