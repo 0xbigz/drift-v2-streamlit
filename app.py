@@ -27,6 +27,7 @@ from userstats import show_user_stats
 from orders import orders_page
 from platyperps import show_platyperps
 from liquidity import mm_page
+from userhealth import show_user_health
 
 def main():
     st.set_page_config(
@@ -56,7 +57,7 @@ def main():
     query_p = st.experimental_get_query_params()
     query_tab = query_p.get('tab', ['Overview'])[0]
 
-    tab_options = ('Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 'User-Stats', 'DLOB', 'MM', 'Config', 'Social', 'PlatyPerps')
+    tab_options = ('Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 'User-Health', 'User-Stats', 'DLOB', 'MM', 'Config', 'Social', 'PlatyPerps')
     query_index = 0
     for idx, x in enumerate(tab_options):
         if x.lower() == query_tab.lower():
@@ -107,6 +108,10 @@ def main():
     elif tab.lower() == 'if-stakers':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(insurance_fund_page(clearing_house))
+
+    elif tab.lower() == 'user-health':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(show_user_health(clearing_house))
 
     elif tab.lower() == 'user-stats':
         loop = asyncio.new_event_loop()
