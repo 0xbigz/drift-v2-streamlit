@@ -35,7 +35,7 @@ from driftpy.math.margin import MarginCategory, calculate_asset_weight
 
 async def show_user_health(clearing_house: ClearingHouse):
     state = await get_state_account(clearing_house.program)
-    user_authority = st.text_input('user authority', '')
+    user_authority = st.text_input('user authority', '882DFRCi5akKFyYxT4PP2vZkoQEGvm2Nsind2nPDuGqu')
 
     if user_authority != '':
         ch = clearing_house
@@ -82,7 +82,7 @@ async def show_user_health(clearing_house: ClearingHouse):
                     tokens = get_token_amount(
                         spot_pos.scaled_balance,
                         spot, 
-                        'SpotBalanceType.Deposit()'
+                        str(spot_pos.balance_type)
                     )
                     market_name = ''.join(map(chr, spot.name)).strip(" ")
 
