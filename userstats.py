@@ -38,15 +38,14 @@ async def show_user_stats(clearing_house: ClearingHouse):
 
 
     # print(df.columns)
-    print(fees_df.columns)
     df = pd.concat([df, fees_df], axis=1)
-    print(df.columns)
+    # print(df.columns)
     for x in df.columns:
         if x in ['taker_volume30d', 'maker_volume30d', 'filler_volume30d', 'total_fee_paid', 'total_fee_rebate', 'if_staked_quote_asset_amount']:
             df[x] /= 1e6
     
     current_ts = time.time()
-    print(current_ts)
+    # print(current_ts)
     df['last_trade_seconds_ago'] = int(current_ts) - df[['last_taker_volume30d_ts', 'last_maker_volume30d_ts']].max(axis=1).astype(int)
     
     
