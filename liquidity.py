@@ -42,6 +42,7 @@ def get_mm_stats(df, user, oracle, bbo2):
         ll['best dlob offer'] = (smin)
 
     bbo_user = pd.concat(ll,axis=1).reindex(ll['oracle'].index)
+    bbo_user = bbo_user.loc[bbo2.index[0]:bbo2.index[-1]]
 
     try:
         uptime_pct = len(bbo_user.dropna())/len(bbo_user)
@@ -103,7 +104,7 @@ def mm_page(clearing_house: ClearingHouse):
 
     all_stats = []
     for user in df.user.unique():
-        bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2)
+        bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2snippet)
         all_stats.append(bbo_user_stats)
 
     st.title('mm leaderboard')
