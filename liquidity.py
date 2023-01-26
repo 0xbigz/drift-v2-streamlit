@@ -28,8 +28,34 @@ import asyncio
 from glob import glob
 
 
+def get_mm_score_for_snap_slot(df):
+    d = df[(df.orderType=='limit') 
+    # & (df.postOnly)
+    ]
+
+    #todo: too slow
+    # assert(len(d.snap_slot.unique())==1)
+    # top6bids = d[d.direction=='long'].groupby('price').sum().sort_values('price', ascending=False)[['baseAssetAmount']]
+    # top6asks = d[d.direction=='short'].groupby('price').sum()[['baseAssetAmount']]
+
+    # tts = pd.concat([top6bids['baseAssetAmount'].reset_index(drop=True), top6asks['baseAssetAmount'].reset_index(drop=True)],axis=1)
+    # tts.columns = ['bs','as']
+    # score_scale = tts.min(axis=1)/((tts['bs']+tts['as'])/2) * 100
+    # score_scale = score_scale * pd.Series([2, .75, .5, .4, .3, .2])
+
+    # for i,x in enumerate(top6bids.index[:6]):
+    #     d.loc[(d.price==x)  & (d.direction=='long'), 'score'] = score_scale.values[i]
+    # for i,x in enumerate(top6asks.index[:6]):
+    #     d.loc[(d.price==x) & (d.direction=='short'), 'score'] = score_scale.values[i]
+
+    d['score'] = 0
+    
+    return d
+
+
 def get_mm_stats(df, user, oracle, bbo2):
     df = df[df.user == user]
+    # print(df.columns)
 
     bbo = df.groupby(['direction', 'snap_slot']).agg({'price':['min', 'max']}).unstack(0)['price'].swaplevel(axis=1)
     ll = {}
@@ -43,7 +69,10 @@ def get_mm_stats(df, user, oracle, bbo2):
 
     bbo_user = pd.concat(ll,axis=1).reindex(ll['oracle'].index)
     bbo_user = bbo_user.loc[bbo2.index[0]:bbo2.index[-1]]
-
+    # bbo_user['score'] = df.groupby(['direction', 'snap_slot'])['score'].sum()
+    bbo_user_score = df.groupby('snap_slot')['score'].sum().loc[bbo2.index[0]:bbo2.index[-1]]
+    bbo_user = pd.concat([bbo_user, bbo_user_score],axis=1)
+    bbo_user_avg_score = bbo_user_score.fillna(0).mean()
     try:
         uptime_pct = len(bbo_user.dropna())/len(bbo_user)
         bid_best_pct = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) == 0).mean()
@@ -56,9 +85,9 @@ def get_mm_stats(df, user, oracle, bbo2):
         offer_best_pct = 0
         offer_within_best_pct = 0
     bbo_stats = pd.DataFrame(
-        [[uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct]],
+        [[uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct, bbo_user_avg_score]],
         index=[user],
-        columns=['uptime%', 'best_bid%', 'near_best_bid%', 'best_offer%', 'near_best_offer%']
+        columns=['uptime%', 'best_bid%', 'near_best_bid%', 'best_offer%', 'near_best_offer%', 'avg score']
         ).T * 100
 
     return bbo_user, bbo_stats
@@ -77,6 +106,7 @@ def mm_page(clearing_house: ClearingHouse):
         for x in sorted(ggs):
             df = pd.read_csv(x) 
             df['snap_slot'] = int(x.split('_')[-1].split('.')[0])
+            df = get_mm_score_for_snap_slot(df)
             dfs.append(df)
         df = pd.concat(dfs, axis=0)
         df.to_csv('data/'+tt+'.csv', index=False)
@@ -123,7 +153,11 @@ def mm_page(clearing_house: ClearingHouse):
     # st.text('user uptime='+str(np.round(uptime_pct*100, 2))+'%')
     st.text('stats last updated at slot: ' + str(bbo_user.index[-1]))
     st.text('current slot:')
-    st.plotly_chart(bbo_user.plot(title='perp market index='+str(market_index)))
+    st.plotly_chart(bbo_user.loc[values[0]:values[1]].plot(title='perp market index='+str(market_index)))
+
+    st.title('individual snapshot lookup')
+    slot = st.select_slider('individual snapshot', df.snap_slot.unique().tolist())
+    st.dataframe(df[df.snap_slot.astype(int)==int(slot)])
 
 
         
