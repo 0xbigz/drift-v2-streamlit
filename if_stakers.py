@@ -54,7 +54,7 @@ async def insurance_fund_page(ch: ClearingHouse):
         data['key'] = key
         dfs.append(data)
 
-    st.markdown('[USDC Insurance Vault](https://solscan.io/account/2CqkQvYxp9Mq4PqLvAQ1eryYxebUh4Liyn5YMDtXsYci) | [Stake Example (Python)](https://github.com/drift-labs/driftpy/blob/master/examples/if_stake.py)')
+    st.markdown('[USDC Insurance Vault](https://solscan.io/account/2CqkQvYxp9Mq4PqLvAQ1eryYxebUh4Liyn5YMDtXsYci) | [Stake Example (Python)](https://github.com/0xbigz/driftpy-examples/blob/master/if_stake.py)')
     
     col1, col2 = st.columns(2)
     bbs = [col1, col2]
