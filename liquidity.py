@@ -34,21 +34,21 @@ def get_mm_score_for_snap_slot(df):
     ]
 
     #todo: too slow
-    # assert(len(d.snap_slot.unique())==1)
-    # top6bids = d[d.direction=='long'].groupby('price').sum().sort_values('price', ascending=False)[['baseAssetAmount']]
-    # top6asks = d[d.direction=='short'].groupby('price').sum()[['baseAssetAmount']]
+    assert(len(d.snap_slot.unique())==1)
+    top6bids = d[d.direction=='long'].groupby('price').sum().sort_values('price', ascending=False)[['baseAssetAmount']]
+    top6asks = d[d.direction=='short'].groupby('price').sum()[['baseAssetAmount']]
 
-    # tts = pd.concat([top6bids['baseAssetAmount'].reset_index(drop=True), top6asks['baseAssetAmount'].reset_index(drop=True)],axis=1)
-    # tts.columns = ['bs','as']
-    # score_scale = tts.min(axis=1)/((tts['bs']+tts['as'])/2) * 100
-    # score_scale = score_scale * pd.Series([2, .75, .5, .4, .3, .2])
+    tts = pd.concat([top6bids['baseAssetAmount'].reset_index(drop=True), top6asks['baseAssetAmount'].reset_index(drop=True)],axis=1)
+    tts.columns = ['bs','as']
+    min_q = (2000/float(tts.mean().mean()))
+    q = ((tts['bs']+tts['as'])/2).apply(lambda x: max(x, min_q))
+    score_scale = tts.min(axis=1)/q * 100
+    score_scale = score_scale * pd.Series([2, .75, .5, .4, .3, .2])
 
-    # for i,x in enumerate(top6bids.index[:6]):
-    #     d.loc[(d.price==x)  & (d.direction=='long'), 'score'] = score_scale.values[i]
-    # for i,x in enumerate(top6asks.index[:6]):
-    #     d.loc[(d.price==x) & (d.direction=='short'), 'score'] = score_scale.values[i]
-
-    d['score'] = 0
+    for i,x in enumerate(top6bids.index[:6]):
+        d.loc[(d.price==x)  & (d.direction=='long'), 'score'] = score_scale.values[i]
+    for i,x in enumerate(top6asks.index[:6]):
+        d.loc[(d.price==x) & (d.direction=='short'), 'score'] = score_scale.values[i]
     
     return d
 
@@ -72,7 +72,12 @@ def get_mm_stats(df, user, oracle, bbo2):
     # bbo_user['score'] = df.groupby(['direction', 'snap_slot'])['score'].sum()
     bbo_user_score = df.groupby('snap_slot')['score'].sum().loc[bbo2.index[0]:bbo2.index[-1]]
     bbo_user = pd.concat([bbo_user, bbo_user_score],axis=1)
-    bbo_user_avg_score = bbo_user_score.fillna(0).mean()
+    bbo_user_avg_score = bbo_user['score'].fillna(0).mean()
+    # if(float(bbo_user_avg_score) > 90):
+    #     print(user)
+    #     print(bbo_user['score'].describe())
+    #     print(bbo_user['score'].fillna(0))
+
     try:
         uptime_pct = len(bbo_user.dropna())/len(bbo_user)
         bid_best_pct = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) == 0).mean()
@@ -85,7 +90,7 @@ def get_mm_stats(df, user, oracle, bbo2):
         offer_best_pct = 0
         offer_within_best_pct = 0
     bbo_stats = pd.DataFrame(
-        [[uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct, bbo_user_avg_score]],
+        [[uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct, bbo_user_avg_score/100]],
         index=[user],
         columns=['uptime%', 'best_bid%', 'near_best_bid%', 'best_offer%', 'near_best_offer%', 'avg score']
         ).T * 100
@@ -103,7 +108,8 @@ def mm_page(clearing_house: ClearingHouse):
 
     df = None
     if len(ggs):
-        for x in sorted(ggs):
+        print('building new data file with', len(ggs), 'records!')
+        for x in sorted(ggs)[-3500:]:
             df = pd.read_csv(x) 
             df['snap_slot'] = int(x.split('_')[-1].split('.')[0])
             df = get_mm_score_for_snap_slot(df)
