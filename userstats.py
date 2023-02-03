@@ -68,7 +68,7 @@ async def show_user_stats(clearing_house: ClearingHouse):
 
     pie1, z2 = st.columns(2)
 
-    other = pd.DataFrame(df.sort_values('total_30d_volume_calc\'d', ascending=False).loc[10:].sum(axis=0)).T
+    other = pd.DataFrame(df.sort_values('total_30d_volume_calc\'d', ascending=False).iloc[10:].sum(axis=0)).T
     other['authority'] = 'Other'
     dfmin = pd.concat([df.sort_values('total_30d_volume_calc\'d', ascending=False).head(10), other],axis=0)
 
