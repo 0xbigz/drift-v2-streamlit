@@ -73,15 +73,22 @@ async def show_user_stats(clearing_house: ClearingHouse):
     dfmin = pd.concat([df.sort_values('total_30d_volume_calc\'d', ascending=False).head(10), other],axis=0)
 
     fig = px.pie(dfmin, values='total_30d_volume_calc\'d', names='authority',
-                title='Total Volume Breakdown',
+                title='30D Volume Breakdown ('+  str(int(df['total_30d_volume_calc\'d'].pipe(np.sign).sum())) +' unique)',
                 hover_data=['total_30d_volume_calc\'d'], 
                 # labels={'$ balance':'balance'}
                 )
     pie1.plotly_chart(fig)
 
     col1, col2, col3 = st.columns(3)
-    col1.metric('30D User Taker Volume', str(np.round(df['taker_volume30d_calc'].sum()/1e6, 2))+'M')
-    col2.metric('30D User Maker Volume', str(np.round(df['maker_volume30d_calc'].sum()/1e6, 2))+'M')
+    col1.metric('30D User Taker Volume', str(np.round(df['taker_volume30d_calc'].sum()/1e6, 2))+'M',
+        str(int(df['taker_volume30d_calc'].pipe(np.sign).sum())) + ' unique'
+    )
+    col2.metric('30D User Maker Volume', str(np.round(df['maker_volume30d_calc'].sum()/1e6, 2))+'M',
+    
+    
+            str(int(df['maker_volume30d_calc'].pipe(np.sign).sum())) + ' unique'
+
+    )
     col3.metric('30D vAMM Volume', str(np.round(df['taker_volume30d_calc'].sum()/1e6 - df['maker_volume30d_calc'].sum()/1e6, 2))+'M')
 
     st.dataframe(df)
