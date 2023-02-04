@@ -61,7 +61,8 @@ async def insurance_fund_page(ch: ClearingHouse):
     ccol1, ccol2 = st.columns(2)
     ccs = [ccol1, ccol2]
     
-    st.metric("Number of Stakes", str(len(all_stakers)),str(len(authorities))+" Unique Stakers")
+    dcol1, dcol2 = st.columns(2)
+    dcol1.metric("Number of Stakes", str(len(all_stakers)),str(len(authorities))+" Unique Stakers")
 
     conn = ch.program.provider.connection
     state = await get_state_account(ch.program)
@@ -73,6 +74,8 @@ async def insurance_fund_page(ch: ClearingHouse):
         spot = await get_spot_market_account(ch.program, i)
         total_n_shares = spot.insurance_fund.total_shares
         user_n_shares = spot.insurance_fund.user_shares
+
+        factor_for_protocol = spot.insurance_fund.user_factor/spot.insurance_fund.total_factor
         protocol_n_shares = total_n_shares - user_n_shares
         spot_markets.append(spot)
 
@@ -103,7 +106,13 @@ async def insurance_fund_page(ch: ClearingHouse):
 
         #capped at 1000% APR
         next_payment = min(rev_pool_tokens/5, (v_amount*10/365/24))
-        ccs[i].metric('revenue pool', f'{symbol}{rev_pool_tokens/10**spot.decimals:,.2f}', f'{symbol}{next_payment/10**spot.decimals:,.2f} next est. hourly payment')
+        staker_apr = (next_payment*24*365.25 * factor_for_protocol)/v_amount
+
+        ccs[i].metric('revenue pool', f'{symbol}{rev_pool_tokens/10**spot.decimals:,.2f}', 
+        f'{symbol}{next_payment/10**spot.decimals:,.2f} next est. hr payment ('+str(np.round(factor_for_protocol*100, 2))+ '% protocol | '+str(np.round(staker_apr*100, 2))+'% staker APR)'
+        )
+
+
 
         st.write('')
 
