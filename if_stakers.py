@@ -102,7 +102,7 @@ async def insurance_fund_page(ch: ClearingHouse):
                     )
 
         #capped at 1000% APR
-        next_payment = min(rev_pool_tokens, (v_amount*10/365/24))
+        next_payment = min(rev_pool_tokens/5, (v_amount*10/365/24))
         ccs[i].metric('revenue pool', f'{symbol}{rev_pool_tokens/10**spot.decimals:,.2f}', f'{symbol}{next_payment/10**spot.decimals:,.2f} next est. hourly payment')
 
         st.write('')
