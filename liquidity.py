@@ -32,28 +32,37 @@ def get_mm_score_for_snap_slot(df):
     d = df[(df.orderType=='limit') 
     # & (df.postOnly)
     ]
+    d['baseAssetAmountLeft'] = d['baseAssetAmount'] - d['baseAssetAmountFilled']
 
     #todo: too slow
     assert(len(d.snap_slot.unique())==1)
-    top6bids = d[d.direction=='long'].groupby('price').sum().sort_values('price', ascending=False)[['baseAssetAmount']]
-    top6asks = d[d.direction=='short'].groupby('price').sum()[['baseAssetAmount']]
+    d['priceRounded'] = d['price'].round(2)
+    top6bids = d[d.direction=='long'].groupby('priceRounded').sum().sort_values('priceRounded', ascending=False)[['baseAssetAmountLeft']]
+    top6asks = d[d.direction=='short'].groupby('priceRounded').sum()[['baseAssetAmountLeft']]
 
-    tts = pd.concat([top6bids['baseAssetAmount'].reset_index(drop=True), top6asks['baseAssetAmount'].reset_index(drop=True)],axis=1)
+    tts = pd.concat([top6bids['baseAssetAmountLeft'].reset_index(drop=True), top6asks['baseAssetAmountLeft'].reset_index(drop=True)],axis=1)
     tts.columns = ['bs','as']
-    min_q = (2000/float(tts.mean().mean()))
-    q = ((tts['bs']+tts['as'])/2).apply(lambda x: max(x, min_q))
+    # print(tts)
+    min_q = (1000/float(pd.Series(tts.index).median()))
+    q = ((tts['bs']+tts['as'])/2).apply(lambda x: max(x, min_q)).max()
+    # print('q=', q)
     score_scale = tts.min(axis=1)/q * 100
     score_scale = score_scale * pd.Series([2, .75, .5, .4, .3, .2])
 
     for i,x in enumerate(top6bids.index[:6]):
-        d.loc[(d.price==x)  & (d.direction=='long'), 'score'] = score_scale.values[i]
+        ba = d.loc[(d.priceRounded==x)  & (d.direction=='long'), 'baseAssetAmountLeft']
+        ba /= ba.sum()
+        d.loc[(d.priceRounded==x)  & (d.direction=='long'), 'score'] = score_scale.values[i] * ba
     for i,x in enumerate(top6asks.index[:6]):
-        d.loc[(d.price==x) & (d.direction=='short'), 'score'] = score_scale.values[i]
+        ba = d.loc[(d.priceRounded==x)  & (d.direction=='short'), 'baseAssetAmountLeft']
+        ba /= ba.sum()
+        d.loc[(d.priceRounded==x) & (d.direction=='short'), 'score'] = score_scale.values[i] * ba
     
     return d
 
 
 def get_mm_stats(df, user, oracle, bbo2):
+    all_snap_slots = sorted(list(df.snap_slot.unique()))
     df = df[df.user == user]
     # print(df.columns)
 
@@ -68,9 +77,9 @@ def get_mm_stats(df, user, oracle, bbo2):
         ll['best dlob offer'] = (smin)
 
     bbo_user = pd.concat(ll,axis=1).reindex(ll['oracle'].index)
-    bbo_user = bbo_user.loc[bbo2.index[0]:bbo2.index[-1]]
+    bbo_user = bbo_user.reindex(all_snap_slots).loc[bbo2.index[0]:bbo2.index[-1]]
     # bbo_user['score'] = df.groupby(['direction', 'snap_slot'])['score'].sum()
-    bbo_user_score = df.groupby('snap_slot')['score'].sum().loc[bbo2.index[0]:bbo2.index[-1]]
+    bbo_user_score = df.groupby('snap_slot')['score'].sum().reindex(all_snap_slots).loc[bbo2.index[0]:bbo2.index[-1]]
     bbo_user = pd.concat([bbo_user, bbo_user_score],axis=1)
     bbo_user_avg_score = bbo_user['score'].fillna(0).mean()
     # if(float(bbo_user_avg_score) > 90):
@@ -159,11 +168,21 @@ def mm_page(clearing_house: ClearingHouse):
     # st.text('user uptime='+str(np.round(uptime_pct*100, 2))+'%')
     st.text('stats last updated at slot: ' + str(bbo_user.index[-1]))
     st.text('current slot:')
+    bbo_user['score'] = bbo_user['score'].fillna(0)
+    bbo_user['ema_score'] = bbo_user['score'].ewm(100).mean()
     st.plotly_chart(bbo_user.loc[values[0]:values[1]].plot(title='perp market index='+str(market_index)))
 
     st.title('individual snapshot lookup')
-    slot = st.select_slider('individual snapshot', df.snap_slot.unique().tolist())
-    st.dataframe(df[df.snap_slot.astype(int)==int(slot)])
+    # print(df.columns)
+    slot = st.select_slider('individual snapshot', df.snap_slot.unique().tolist(), df.snap_slot.max())
+    toshow = df[['score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
+       'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'snap_slot', 'orderId', 'userOrderId', 
+       'baseAssetAmountFilled', 'quoteAssetAmountFilled', 'reduceOnly',
+       'triggerPrice', 'triggerCondition', 'existingPositionDirection',
+       'postOnly', 'immediateOrCancel', 'oraclePriceOffset', 'auctionDuration',
+       'auctionStartPrice', 'auctionEndPrice', 'maxTs', 
+       ]]
+    st.dataframe(toshow[df.snap_slot.astype(int)==int(slot)])
 
 
         
