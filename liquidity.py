@@ -109,7 +109,7 @@ def get_mm_stats(df, user, oracle, bbo2):
 
 def mm_page(clearing_house: ClearingHouse):    
     st.title('best bid/offer')
-    market_index = st.selectbox('market index', [0, 1, 2])
+    market_index = st.selectbox('market index', [0, 1, 2, 3])
     dfs = []
 
     tt = 'perp'+str(market_index)
@@ -148,12 +148,18 @@ def mm_page(clearing_house: ClearingHouse):
     st.plotly_chart(bbo2snippet.plot(title='perp market index='+str(market_index)))
 
     all_stats = []
+    score_emas = {}
     for user in df.user.unique():
         bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2snippet)
+        score_emas[str(user)] = (bbo_user['score'].fillna(0).ewm(100).mean())
         all_stats.append(bbo_user_stats)
 
     st.title('mm leaderboard')
-    st.dataframe(pd.concat(all_stats, axis=1).T.sort_values('best_bid%', ascending=False))
+    all_stats_df = pd.concat(all_stats, axis=1).T.sort_values('best_bid%', ascending=False)
+    st.dataframe(all_stats_df)
+    topmm = all_stats_df.index.to_list()
+    # print(topmm)
+    st.plotly_chart(pd.concat(score_emas, axis=1)[topmm[:10]].fillna(0).plot())
 
     st.title('individual mm lookup')
 
@@ -169,7 +175,7 @@ def mm_page(clearing_house: ClearingHouse):
     st.text('stats last updated at slot: ' + str(bbo_user.index[-1]))
     st.text('current slot:')
     bbo_user['score'] = bbo_user['score'].fillna(0)
-    bbo_user['ema_score'] = bbo_user['score'].ewm(100).mean()
+    bbo_user['ema_score'] = bbo_user['score'].fillna(0).ewm(100).mean()
     st.plotly_chart(bbo_user.loc[values[0]:values[1]].plot(title='perp market index='+str(market_index)))
 
     st.title('individual snapshot lookup')
