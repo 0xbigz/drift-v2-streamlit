@@ -90,9 +90,9 @@ def get_mm_stats(df, user, oracle, bbo2):
     try:
         uptime_pct = len(bbo_user.dropna())/len(bbo_user)
         bid_best_pct = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) == 0).mean()
-        bid_within_best_pct = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) > -.0003).mean()
+        bid_within_best_pct = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) > -.001).mean()
         offer_best_pct = (((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) == 0).mean()
-        offer_within_best_pct = (((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) < .0003).mean()
+        offer_within_best_pct = (((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) < .001).mean()
     except:
         bid_best_pct = 0
         bid_within_best_pct = 0
