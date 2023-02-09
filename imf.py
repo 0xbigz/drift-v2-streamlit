@@ -53,9 +53,9 @@ def imf_page(clearing_house: ClearingHouse):
     def calc_size_liab(wgt, imf, base):
         liability_wgt_n = wgt
         if(imf != 0):
-            liability_wgt_n = wgt - wgt/(1/imf)
+            liability_wgt_n = wgt * .8 #/(1/(imf/10000))
         dd = np.sqrt(np.abs(base))
-        res = liability_wgt_n + imf * dd
+        res = max(wgt, liability_wgt_n + imf * dd)
         return res
 
     index = np.linspace(0, max(10000, base * oracle_px), 1000)
