@@ -56,9 +56,9 @@ def main():
     def query_string_callback():
         st.experimental_set_query_params(**{'tab': st.session_state.query_key})
     query_p = st.experimental_get_query_params()
-    query_tab = query_p.get('tab', ['Overview'])[0]
+    query_tab = query_p.get('tab', ['Welcome'])[0]
 
-    tab_options = ('Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 'User-Health', 'User-Stats', 'DLOB', 'MM', 'IMF', 'Config', 'Social', 'PlatyPerps')
+    tab_options = ('Welcome', 'Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 'User-Health', 'User-Stats', 'DLOB', 'MM', 'IMF', 'Config', 'Social', 'PlatyPerps')
     query_index = 0
     for idx, x in enumerate(tab_options):
         if x.lower() == query_tab.lower():
@@ -87,7 +87,11 @@ def main():
     
     st.title(f'Drift v2: {tab}')
 
-    if tab.lower() == 'overview':
+    if tab.lower() == 'welcome':
+        st.text('welcome to drift v2 streamlit!')
+        st.markdown('this entire website is [open sourced](https://github.com/0xbigz/drift-v2-streamlit)')
+
+    elif tab.lower() == 'overview':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_pid_positions(clearing_house))
 
