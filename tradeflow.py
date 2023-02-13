@@ -2,7 +2,7 @@ import datetime
 import pandas as pd
 pd.options.plotting.backend = "plotly"
 import streamlit as st
-
+import numpy as np
 
 def dedupdf(all_markets, market_name):
     df1 = all_markets[market_name].copy()    
@@ -19,10 +19,15 @@ def dedupdf(all_markets, market_name):
        'actionExplanation', 'marketIndex', 'marketType', 'filler',
        'fillRecordId', 'taker', 'takerOrderId', 'takerOrderDirection', 'maker',
        'makerOrderId', 'makerOrderDirection', 'spotFulfillmentMethodFee',
-       'date'])
+       'date']).reset_index(drop=True)
     oracle_series = df1.groupby('ts')['oraclePrice'].last()
     
     df1['markPrice'] = df1['quoteAssetAmountFilled']/df1['baseAssetAmountFilled']
+    df1['buyPrice'] = np.nan
+    df1['sellPrice'] = np.nan
+    df1['buyPrice'] = df1.loc[df1[df1['takerOrderDirection']=='long'].index, 'markPrice']
+    df1['sellPrice'] = df1.loc[df1['takerOrderDirection']=='short', 'markPrice']
+
     df1['takerPremium'] = (df1['markPrice'] - df1['oraclePrice']) * (2*(df1['takerOrderDirection']=='long')-1)
     df1['takerPremiumDollar'] = df1['takerPremium']*df1['baseAssetAmountFilled']
     df1['takerPremiumNextMinute'] = (df1['markPrice'] - df1['ts'].apply(lambda x: oracle_series.loc[x+60:].head(1).max())) * (2*(df1['takerOrderDirection']=='long')-1)
@@ -34,7 +39,7 @@ def load_s3_data(markets, START=None, END=None):
     url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
 
 
-    assert(START > '2022-11-05')
+    assert(START >= '2022-11-04')
     if START is None:
         START = (datetime.datetime.now()-datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     if END is None:
@@ -72,7 +77,7 @@ def trade_flow_analysis():
     col1, col2, col3 = st.columns(3)
     market = col1.selectbox('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP', 'SOL'])
 
-    date = col2.date_input('select date:', min_value=datetime.datetime(2022,11,5), max_value=(datetime.datetime.now()+datetime.timedelta(days=1)))
+    date = col2.date_input('select date:', min_value=datetime.datetime(2022,11,4), max_value=(datetime.datetime.now()+datetime.timedelta(days=1)))
     markets_data = load_s3_data([market], date.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
 
 
@@ -91,6 +96,13 @@ def trade_flow_analysis():
 
     zol1.metric(market+' Volume:', '$'+f"{(solperp['quoteAssetAmountFilled'].sum().round(2)):,}")
     zol2.metric(market+' Rewards:', '', '$'+str(-solperp['makerFee'].sum().round(2))+' in maker rebates')
+    showprem = zol3.radio('show premiums in plot', [True, False], 1)
+    trade_df = solperp.set_index('date').sort_index()[['buyPrice', 'oraclePrice', 'sellPrice']]
+    if showprem:
+        trade_df['buyPremium'] = (trade_df['buyPrice']-trade_df['oraclePrice']).ffill()
+        trade_df['sellPremium'] = (trade_df['oraclePrice']-trade_df['sellPrice']).ffill()
+    fig = trade_df.plot()
+    st.plotly_chart(fig)
 
     retail_takers = solperp[solperp.takerOrderId < 10000]['taker'].unique()
     bot_takers = solperp[solperp.takerOrderId >= 10000]['taker'].unique()
