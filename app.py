@@ -29,6 +29,7 @@ from platyperps import show_platyperps
 from liquidity import mm_page
 from imf import imf_page
 from userhealth import show_user_health
+from tradeflow import trade_flow_analysis
 
 def main():
     st.set_page_config(
@@ -58,7 +59,9 @@ def main():
     query_p = st.experimental_get_query_params()
     query_tab = query_p.get('tab', ['Welcome'])[0]
 
-    tab_options = ('Welcome', 'Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 'User-Health', 'User-Stats', 'DLOB', 'MM', 'IMF', 'Config', 'Social', 'PlatyPerps')
+    tab_options = ('Welcome', 'Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 
+    'User-Health', 'User-Stats', 'DLOB', 'MM', 'Trade Flow', 'IMF',
+     'Config', 'Social', 'PlatyPerps')
     query_index = 0
     for idx, x in enumerate(tab_options):
         if x.lower() == query_tab.lower():
@@ -126,6 +129,10 @@ def main():
         orders_page(clearing_house)
     elif tab.lower() == 'mm':
         mm_page(clearing_house)
+
+    elif tab.lower() == 'trade flow':
+        trade_flow_analysis()
+
     elif tab.lower() == 'imf':
         imf_page(clearing_house)
     elif tab.lower() == 'social':
