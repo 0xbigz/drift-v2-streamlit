@@ -79,7 +79,7 @@ def trade_flow_analysis():
             # extract clickable text to display for your link
             text = link.split('=')[1]
             return f'<a target="_blank" href="{link}">{text}</a>'
-        st.write(nom + ' '+str(len(takers)))
+        st.write(nom, len(takers))
         with st.expander('users'):
             tt = pd.DataFrame(solperp[solperp.taker.isin(takers)].groupby('taker')['quoteAssetAmountFilled'].sum().sort_values(ascending=False))
             tt['link'] =  ['https://app.drift.trade?userAccount='+str(x) for x in tt.index]
