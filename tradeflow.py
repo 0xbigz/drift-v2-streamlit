@@ -61,14 +61,36 @@ def load_s3_data(markets, START=None, END=None):
     return all_markets
 
 
+
+@st.cache
+def convert_df(df):
+    # IMPORTANT: Cache the conversion to prevent computation on every rerun
+    return df.to_csv().encode('utf-8')
+
 def trade_flow_analysis():
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     market = col1.selectbox('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP', 'SOL'])
 
     date = col2.date_input('select date:', min_value=datetime.datetime(2022,11,5), max_value=(datetime.datetime.now()+datetime.timedelta(days=1)))
     markets_data = load_s3_data([market], date.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
+
+
+    csv = convert_df(markets_data[market])
+
+    col3.download_button(
+        label="Download CSV",
+        data=csv,
+        file_name='drift-v2-'+market+'-'+date.strftime('%Y-%m-%d')+'.csv',
+        mime='text/csv',
+    )
+
     solperp = dedupdf(markets_data, market)
+
+    zol1, zol2, zol3 = st.columns(3)
+
+    zol1.metric(market+' Volume:', '$'+f"{(solperp['quoteAssetAmountFilled'].sum().round(2)):,}")
+    zol2.metric(market+' Rewards:', '', '$'+str(-solperp['makerFee'].sum().round(2))+' in maker rebates')
 
     retail_takers = solperp[solperp.takerOrderId < 10000]['taker'].unique()
     bot_takers = solperp[solperp.takerOrderId >= 10000]['taker'].unique()
