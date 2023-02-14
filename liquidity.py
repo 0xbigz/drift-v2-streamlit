@@ -217,8 +217,8 @@ def mm_page(clearing_house: ClearingHouse):
     tzInfo = pytz.timezone('UTC')
 
 
-    range_selected = molselect.selectbox('range select:', ['single day', 'slot range'], 0)
-    if range_selected == 'single day':
+    range_selected = molselect.selectbox('range select:', ['daily', 'last month'], 0)
+    if range_selected == 'daily':
         date = mol0.date_input('select approx. date:', min_value=datetime.datetime(2022,11,4), max_value=(datetime.datetime.now(tzInfo)))
         values = get_slots_for_date(date)
     else:
