@@ -130,6 +130,7 @@ def get_mm_stats(df, user, oracle, bbo2):
         offer_best_pct = (((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) == 0).mean()
         offer_within_best_pct = (((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) <= near_threshold).mean()
     except:
+        uptime_pct = 0
         bid_best_pct = 0
         bid_within_best_pct = 0
         offer_best_pct = 0
@@ -143,18 +144,14 @@ def get_mm_stats(df, user, oracle, bbo2):
     return bbo_user, bbo_stats
 
 
-def mm_page(clearing_house: ClearingHouse):    
-
-
-    mol1, molselect, mol0, mol2 = st.columns([3, 3, 3, 10])
-    market_index = mol1.selectbox('market index', [0, 1, 2, 3])
+@st.cache  # No need for TTL this time. It's static data :)
+def get_data_by_market_index(market_index):
     dfs = []
-
     tt = 'perp'+str(market_index)
     ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
 
     df = None
-    if len(ggs):
+    if False:
         print('building new data file with', len(ggs), 'records!')
         for x in sorted(ggs)[-3500:]:
             df = pd.read_csv(x) 
@@ -164,10 +161,22 @@ def mm_page(clearing_house: ClearingHouse):
         df = pd.concat(dfs, axis=0)
         df.to_csv('data/'+tt+'.csv.gz', index=False, compression='gzip')
     else:
+        print('reading csv')
         df = pd.read_csv('data/'+tt+'.csv.gz')
-
     df = df.reset_index(drop=True)
-    oracle = df.groupby('snap_slot')['oraclePrice'].max()
+    return df
+
+def mm_page(clearing_house: ClearingHouse):    
+    mol1, molselect, mol0, mol2 = st.columns([3, 3, 3, 10])
+    market_index = mol1.selectbox('market index', [0, 1, 2, 3])
+    
+    tt = 'perp'+str(market_index)
+    df_full = get_data_by_market_index(market_index)
+
+    oldest_slot = df_full.snap_slot.min()
+    newest_slot = df_full.snap_slot.max()
+
+    oracle = df_full.groupby('snap_slot')['oraclePrice'].max()
     tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot'])
 
     # st.write('slot range:', values)
@@ -205,28 +214,6 @@ def mm_page(clearing_house: ClearingHouse):
 
         return np.average(x, weights=weights)
 
-    # print(df.groupby(['direction', 'snap_slot']).mean()[['price', 'baseAssetAmount']])
-    bbo = df.groupby(['direction', 'snap_slot']).agg(
-        baseAssetAmount=("baseAssetAmount", "sum"),
-        max_price=("price", 'max'), 
-        min_price=("price", 'min'), 
-        price_weighted_mean=("price", wm),
-    ).unstack(0)
-    # print(bbo)
-    
-    bbo = bbo.swaplevel(axis=1)
-    lmax = bbo['long']['max_price']
-    smin = bbo['short']['min_price']
-    lpwm = bbo['long']['price_weighted_mean']
-    spwm = bbo['short']['price_weighted_mean']
-
-    bbo2 = pd.concat([lpwm, lmax, oracle, smin, spwm],axis=1)
-    bbo2.columns = ['short fill', 'best dlob bid', 'oracle', 'best dlob offer', 'long fill']
-    last_slot_update = bbo2.index[-1]
-
-    st.text('stats last updated at slot: ' + str(bbo2.index[-1]) +' (approx. '+ str(pd.to_datetime(slot_to_timestamp_est(last_slot_update)*1e9))+')')
-   
-
     tzInfo = pytz.timezone('UTC')
 
 
@@ -237,10 +224,33 @@ def mm_page(clearing_house: ClearingHouse):
     else:
         values = mol2.slider(
         'Select a range of slot values',
-        int(bbo2.index[0]), int(bbo2.index[-1]), (int(bbo2.index[0]), int(bbo2.index[-1])))
+        int(oldest_slot), int(newest_slot), (int(oldest_slot), int(newest_slot)))
         mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
 
-    bbo2snippet = bbo2.loc[values[0]:values[1]]
+    df = df_full[(df_full.snap_slot>=values[0]) & (df_full.snap_slot<=values[1])]
+        # print(df.groupby(['direction', 'snap_slot']).mean()[['price', 'baseAssetAmount']])
+    bbo = df.groupby(['direction', 'snap_slot']).agg(
+        baseAssetAmount=("baseAssetAmount", "sum"),
+        max_price=("price", 'max'), 
+        min_price=("price", 'min'), 
+        price_weighted_mean=("price", wm),
+    ).unstack(0)
+    # print(bbo)
+    bbo = bbo.swaplevel(axis=1)
+    lmax = bbo['long']['max_price']
+    smin = bbo['short']['min_price']
+    lpwm = bbo['long']['price_weighted_mean']
+    spwm = bbo['short']['price_weighted_mean']
+
+    bbo2 = pd.concat([lpwm, lmax, df.groupby('snap_slot')['oraclePrice'].max(), smin, spwm],axis=1)
+    bbo2.columns = ['short fill', 'best dlob bid', 'oracle', 'best dlob offer', 'long fill']
+    last_slot_update = bbo2.index[-1]
+
+    st.text('stats last updated at slot: ' + str(bbo2.index[-1]) +' (approx. '+ str(pd.to_datetime(slot_to_timestamp_est(last_slot_update)*1e9))+')')
+   
+
+
+    bbo2snippet = bbo2#.loc[values[0]:values[1]]
     st.markdown('[data source](https://github.com/0xbigz/drift-v2-orderbook-snap)'+\
         ' ([slot='+str(bbo2snippet.index[0])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[0])+'.csv))')
 
