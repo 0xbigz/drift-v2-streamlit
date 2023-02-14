@@ -275,7 +275,9 @@ def mm_page(clearing_house: ClearingHouse):
     with tabs[1]:
         all_stats = []
         score_emas = {}
-        for user in df.user.unique():
+        top10users = df.groupby('user')['snap_slot'].count().sort_values().tail(10).index
+        users = st.multiselect('users:', list(df.user.unique()), list(top10users))
+        for user in users:
             bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2snippet)
             score_emas[str(user)] = (bbo_user['score'].fillna(0).ewm(100).mean())
             all_stats.append(bbo_user_stats)
