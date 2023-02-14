@@ -162,9 +162,9 @@ def mm_page(clearing_house: ClearingHouse):
             df = get_mm_score_for_snap_slot(df)
             dfs.append(df)
         df = pd.concat(dfs, axis=0)
-        df.to_csv('data/'+tt+'.csv', index=False)
+        df.to_csv('data/'+tt+'.csv.gz', index=False, compression='gzip')
     else:
-        df = pd.read_csv('data/'+tt+'.csv')
+        df = pd.read_csv('data/'+tt+'.csv.gz')
 
     df = df.reset_index(drop=True)
     oracle = df.groupby('snap_slot')['oraclePrice'].max()
