@@ -3,6 +3,7 @@ import pandas as pd
 pd.options.plotting.backend = "plotly"
 import streamlit as st
 import numpy as np
+import pytz
 
 def dedupdf(all_markets, market_name):
     df1 = all_markets[market_name].copy()    
@@ -35,15 +36,16 @@ def dedupdf(all_markets, market_name):
     return df1
 
 def load_s3_data(markets, START=None, END=None):
+    tzInfo = pytz.timezone('UTC')
     # markets = ['SOL', 'SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP']
     url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
 
 
     assert(START >= '2022-11-04')
     if START is None:
-        START = (datetime.datetime.now()-datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        START = (datetime.datetime.now(tzInfo)-datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     if END is None:
-        END = (datetime.datetime.now()+datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        END = (datetime.datetime.now(tzInfo)+datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     dates = [x.strftime("%Y/%m/%d") for x in pd.date_range(
                                                             # '2022-11-05', 
                                                         START,
@@ -73,11 +75,12 @@ def convert_df(df):
     return df.to_csv().encode('utf-8')
 
 def trade_flow_analysis():
+    tzInfo = pytz.timezone('UTC')
 
     col1, col2, col3 = st.columns(3)
     market = col1.selectbox('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP', 'SOL'])
 
-    date = col2.date_input('select date:', min_value=datetime.datetime(2022,11,4), max_value=(datetime.datetime.now()+datetime.timedelta(days=1)))
+    date = col2.date_input('select date:', min_value=datetime.datetime(2022,11,4), max_value=(datetime.datetime.now(tzInfo)))
     markets_data = load_s3_data([market], date.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
 
 
@@ -95,37 +98,57 @@ def trade_flow_analysis():
     zol1, zol2, zol3 = st.columns(3)
 
     zol1.metric(market+' Volume:', '$'+f"{(solperp['quoteAssetAmountFilled'].sum().round(2)):,}")
-    zol2.metric(market+' Rewards:', '', '$'+str(-solperp['makerFee'].sum().round(2))+' in maker rebates')
+    zol2.metric(market+' Rewards:', '', '$'+str(-solperp['makerFee'].sum().round(2))+' in liq/maker rebates')
     showprem = zol3.radio('show premiums in plot', [True, False], 1)
+
+    pol1, pol2 = st.columns(2)
     trade_df = solperp.set_index('date').sort_index()[['buyPrice', 'oraclePrice', 'sellPrice']]
     if showprem:
         trade_df['buyPremium'] = (trade_df['buyPrice']-trade_df['oraclePrice']).ffill()
         trade_df['sellPremium'] = (trade_df['oraclePrice']-trade_df['sellPrice']).ffill()
     fig = trade_df.plot()
-    st.plotly_chart(fig)
+
+    pol1.plotly_chart(fig)
+
 
     retail_takers = solperp[solperp.takerOrderId < 10000]['taker'].unique()
     bot_takers = solperp[solperp.takerOrderId >= 10000]['taker'].unique()
+
+    solperp['markout_pnl_1MIN'] = (solperp['baseAssetAmountFilled'] * (solperp['takerPremiumNextMinute'] - solperp['takerPremium']))
+    markoutdf = pd.concat({
+        'retailMarkout1MIN:': solperp[solperp.taker.isin(retail_takers)].set_index('date').sort_index()['markout_pnl_1MIN'].resample('1MIN').last(),
+     'botMarkout1MIN': solperp[solperp.taker.isin(bot_takers)].set_index('date').sort_index()['markout_pnl_1MIN'].resample('1MIN').last(),
+    },axis=1).cumsum().ffill()
+    fig2 = markoutdf.plot()
+    pol2.plotly_chart(fig2)
+
 
     def show_analysis_tables(nom, takers):
         def make_clickable(link):
             # target _blank to open new window
             # extract clickable text to display for your link
             text = link.split('=')[1]
-            return f'<a target="_blank" href="{link}">{text}</a>'
+            ts = text[:4]+'...'+text[-4:]
+            return f'<a target="_blank" href="{link}">{ts}</a>'
         st.write(nom, len(takers))
         with st.expander('users'):
-            tt = pd.DataFrame(solperp[solperp.taker.isin(takers)].groupby('taker')['quoteAssetAmountFilled'].sum().sort_values(ascending=False))
-            tt['link'] =  ['https://app.drift.trade?userAccount='+str(x) for x in tt.index]
-            tt['link'] =  tt['link'].apply(make_clickable)
-            st.write(tt.to_html(escape=False), unsafe_allow_html=True)
+            tt = pd.DataFrame(solperp[solperp.taker.isin(takers)].groupby('taker')[['takerFee', 'quoteAssetAmountFilled', 'takerPremium', 'takerPremiumNextMinute', 'takerPremiumDollar']]\
+                .agg({'takerFee':'count', 'quoteAssetAmountFilled':'sum', 'takerPremium':'sum', 'takerPremiumNextMinute':'sum', 'takerPremiumDollar':'sum' })\
+                .sort_values(by='quoteAssetAmountFilled', ascending=False))
+            tt.columns = ['count', 'volume', 'takerPremiumTotal', 'takerPremiumNextMinuteTotal', 'takerUSDPremiumSum',]
+            tt['Markout'] = tt['takerPremiumNextMinuteTotal'] - tt['takerPremiumTotal']
+            tt['userAccount'] =  ['https://app.drift.trade?userAccount='+str(x) for x in tt.index]
+            tt['userAccount'] =  tt['userAccount'].apply(make_clickable)
+            zol1, zol2 = st.columns([1,4])
+            zol2.dataframe(tt.drop(['userAccount'], axis=1), height=len(tt)*40, use_container_width=True)
+            zol1.write(tt[['userAccount', 'volume']].reset_index(drop=True).to_html(index=False, escape=False), unsafe_allow_html=True)
 
         df1 = solperp[solperp.taker.isin(takers)].groupby('takerOrderDirection').agg({
             'takerOrderDirection':'count',
             'quoteAssetAmountFilled':'sum',
                                                                                         'takerPremium':'mean',
                                                                                         'takerPremiumNextMinute':'mean',
-                                                                                                                                                                                'takerPremiumDollar':'sum',
+                                                                                        'takerPremiumDollar':'sum',
                                                                                         'takerFee':'sum',
                                                                                         'makerFee':'sum',
                                                                                         
@@ -133,7 +156,7 @@ def trade_flow_analysis():
         df1.columns = ['count', 'volume', 'takerPricePremiumMean', 'takerPricePremiumNextMinuteMean', 'takerUSDPremiumSum', 
                         'takerFeeSum', 'makerFeeSum', 
         ]
-        df1['TOXIC'] = df1['takerPricePremiumNextMinuteMean'] - df1['takerPricePremiumMean']
+        df1['Markout'] = df1['takerPricePremiumNextMinuteMean'] - df1['takerPricePremiumMean']
 
         df2 = solperp[solperp.taker.isin(takers)].groupby('actionExplanation').agg({'fillerReward':'count', 
         'quoteAssetAmountFilled':'sum', 'takerPremium':'mean', 'takerPremiumNextMinute':'mean', 'takerPremiumDollar':'sum', 
@@ -144,7 +167,7 @@ def trade_flow_analysis():
         df2.columns = ['count', 'volume', 'takerPricePremiumMean', 'takerPricePremiumNextMinuteMean', 'takerUSDPremiumSum',
                         'takerFeeSum', 'makerFeeSum', 
         ]
-        df2['TOXIC'] = df2['takerPricePremiumNextMinuteMean'] - df2['takerPricePremiumMean']
+        df2['Markout'] = df2['takerPricePremiumNextMinuteMean'] - df2['takerPricePremiumMean']
 
 
         st.dataframe(df1)
