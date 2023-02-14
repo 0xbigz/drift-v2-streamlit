@@ -92,7 +92,7 @@ def main():
 
     if tab.lower() == 'welcome':
         st.text('welcome to drift v2 streamlit!')
-        st.markdown('this entire website is [open sourced](https://github.com/0xbigz/drift-v2-streamlit)')
+        st.markdown('this entire website is [open source](https://github.com/0xbigz/drift-v2-streamlit)')
 
     elif tab.lower() == 'overview':
         loop = asyncio.new_event_loop()

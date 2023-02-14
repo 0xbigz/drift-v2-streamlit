@@ -97,16 +97,25 @@ def trade_flow_analysis():
 
     zol1, zol2, zol3 = st.columns(3)
 
+    takerfee = solperp['takerFee'].sum()
+    makerfee = solperp['makerFee'].sum()
+    fillerfee = solperp['fillerReward'].sum()
+
     zol1.metric(market+' Volume:', '$'+f"{(solperp['quoteAssetAmountFilled'].sum().round(2)):,}")
-    zol2.metric(market+' Rewards:', '', '$'+str(-solperp['makerFee'].sum().round(2))+' in liq/maker rebates')
+    zol2.metric(market+' Fees:', '$'+str((takerfee).round(2)), '$'+str(-makerfee.round(2))+' in liq/maker rebates, '+'$'+str(fillerfee.round(2))+' in filler rewards')
+
     showprem = zol3.radio('show premiums in plot', [True, False], 1)
+    showmarkoutfees = zol3.radio('show spread vs oracle w/ markout', [True, False], 1)
 
     pol1, pol2 = st.columns(2)
     trade_df = solperp.set_index('date').sort_index()[['buyPrice', 'oraclePrice', 'sellPrice']]
     if showprem:
         trade_df['buyPremium'] = (trade_df['buyPrice']-trade_df['oraclePrice']).ffill()
         trade_df['sellPremium'] = (trade_df['oraclePrice']-trade_df['sellPrice']).ffill()
-    fig = trade_df.plot()
+    fig = trade_df.plot().update_layout(
+        title='fills vs oracle',
+    xaxis_title="date", yaxis_title="price"
+)
 
     pol1.plotly_chart(fig)
 
@@ -114,12 +123,17 @@ def trade_flow_analysis():
     retail_takers = solperp[solperp.takerOrderId < 10000]['taker'].unique()
     bot_takers = solperp[solperp.takerOrderId >= 10000]['taker'].unique()
 
-    solperp['markout_pnl_1MIN'] = (solperp['baseAssetAmountFilled'] * (solperp['takerPremiumNextMinute'] - solperp['takerPremium']))
+    if showmarkoutfees:
+        solperp['markout_pnl_1MIN'] = -(solperp['baseAssetAmountFilled'] * (solperp['takerPremiumNextMinute']))
+    else:
+        solperp['markout_pnl_1MIN'] = -(solperp['baseAssetAmountFilled'] * (solperp['takerPremiumNextMinute'] - solperp['takerPremium']))
     markoutdf = pd.concat({
         'retailMarkout1MIN:': solperp[solperp.taker.isin(retail_takers)].set_index('date').sort_index()['markout_pnl_1MIN'].resample('1MIN').last(),
      'botMarkout1MIN': solperp[solperp.taker.isin(bot_takers)].set_index('date').sort_index()['markout_pnl_1MIN'].resample('1MIN').last(),
     },axis=1).cumsum().ffill()
-    fig2 = markoutdf.plot()
+    fig2 = markoutdf.plot().update_layout(title='markout',
+    xaxis_title="date", yaxis_title="PnL (USD)"
+)
     pol2.plotly_chart(fig2)
 
 
@@ -136,7 +150,7 @@ def trade_flow_analysis():
                 .agg({'takerFee':'count', 'quoteAssetAmountFilled':'sum', 'takerPremium':'sum', 'takerPremiumNextMinute':'sum', 'takerPremiumDollar':'sum' })\
                 .sort_values(by='quoteAssetAmountFilled', ascending=False))
             tt.columns = ['count', 'volume', 'takerPremiumTotal', 'takerPremiumNextMinuteTotal', 'takerUSDPremiumSum',]
-            tt['Markout'] = tt['takerPremiumNextMinuteTotal'] - tt['takerPremiumTotal']
+            tt['Markout'] = -(tt['takerPremiumNextMinuteTotal'] - tt['takerPremiumTotal'])
             tt['userAccount'] =  ['https://app.drift.trade?userAccount='+str(x) for x in tt.index]
             tt['userAccount'] =  tt['userAccount'].apply(make_clickable)
             zol1, zol2 = st.columns([1,4])
@@ -156,7 +170,7 @@ def trade_flow_analysis():
         df1.columns = ['count', 'volume', 'takerPricePremiumMean', 'takerPricePremiumNextMinuteMean', 'takerUSDPremiumSum', 
                         'takerFeeSum', 'makerFeeSum', 
         ]
-        df1['Markout'] = df1['takerPricePremiumNextMinuteMean'] - df1['takerPricePremiumMean']
+        df1['Markout'] = -(df1['takerPricePremiumNextMinuteMean'] - df1['takerPricePremiumMean'])
 
         df2 = solperp[solperp.taker.isin(takers)].groupby('actionExplanation').agg({'fillerReward':'count', 
         'quoteAssetAmountFilled':'sum', 'takerPremium':'mean', 'takerPremiumNextMinute':'mean', 'takerPremiumDollar':'sum', 
@@ -167,7 +181,7 @@ def trade_flow_analysis():
         df2.columns = ['count', 'volume', 'takerPricePremiumMean', 'takerPricePremiumNextMinuteMean', 'takerUSDPremiumSum',
                         'takerFeeSum', 'makerFeeSum', 
         ]
-        df2['Markout'] = df2['takerPricePremiumNextMinuteMean'] - df2['takerPricePremiumMean']
+        df2['Markout'] = -(df2['takerPricePremiumNextMinuteMean'] - df2['takerPricePremiumMean'])
 
 
         st.dataframe(df1)
