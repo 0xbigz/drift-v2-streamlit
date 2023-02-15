@@ -68,6 +68,8 @@ async def show_user_stats(clearing_house: ClearingHouse):
 
     pie1, pie2 = st.columns(2)
 
+    net_vamm_maker_volume = df['taker_volume30d_calc'].sum() - df['maker_volume30d_calc'].sum()
+
     other = pd.DataFrame(df.sort_values('taker_volume30d_calc', ascending=False).iloc[10:].sum(axis=0)).T
     other['authority'] = 'Other'
     dfmin = pd.concat([df.sort_values('taker_volume30d_calc', ascending=False).head(10), other],axis=0)
@@ -81,9 +83,13 @@ async def show_user_stats(clearing_house: ClearingHouse):
     pie1.plotly_chart(fig)
 
     other = pd.DataFrame(df.sort_values('maker_volume30d_calc', ascending=False).iloc[10:].sum(axis=0)).T
-    other['authority'] = 'Other'
+    if net_vamm_maker_volume > 0:
+        vamm = other.copy()
+        vamm.maker_volume30d_calc = net_vamm_maker_volume
+        other = pd.concat([other, vamm])
+    other['authority'] = ['Other', 'vAMM']
     dfmin = pd.concat([df.sort_values('maker_volume30d_calc', ascending=False).head(10), other],axis=0)
-    dfmin['authority'] = dfmin['authority'].apply(lambda x: str(x)[:4]+'...'+str(x)[-4:] if x !="Other" else x)
+    dfmin['authority'] = dfmin['authority'].apply(lambda x: str(x)[:4]+'...'+str(x)[-4:] if x not in ["Other", 'vAMM'] else x)
 
     fig = px.pie(dfmin, values='maker_volume30d_calc', names='authority',
                 title='30D Maker Volume Breakdown ('+  str(int(df['maker_volume30d_calc'].pipe(np.sign).sum())) +' unique)',
@@ -91,6 +97,7 @@ async def show_user_stats(clearing_house: ClearingHouse):
                 # labels={'$ balance':'balance'}
                 )
     pie2.plotly_chart(fig)
+
 
     col1, col2, col3 = st.columns(3)
     col1.metric('30D User Taker Volume', str(np.round(df['taker_volume30d_calc'].sum()/1e6, 2))+'M',
@@ -102,7 +109,8 @@ async def show_user_stats(clearing_house: ClearingHouse):
             str(int(df['maker_volume30d_calc'].pipe(np.sign).sum())) + ' unique'
 
     )
-    col3.metric('30D vAMM Volume', str(np.round(df['taker_volume30d_calc'].sum()/1e6 - df['maker_volume30d_calc'].sum()/1e6, 2))+'M')
+    col3.metric('30D vAMM Volume (Net Maker)', 
+    str(np.round(net_vamm_maker_volume/1e6, 2))+'M')
 
     st.dataframe(df)
     
