@@ -186,9 +186,11 @@ def mm_page(clearing_house: ClearingHouse):
     # st.write('slot range:', values)
     with tabs[0]:
         st.title('best bid/offer')
-        do1, do2 = st.columns([3, 1])
+        do1, do2, do3 = st.columns([3, 1, 1])
         quote_trade_size = do1.number_input('trade size ($)', 0, None, 50000)
         do2 = do2.write('base size=' + str((quote_trade_size/oracle).max().max().round(4)))
+        threshold = do3.slider('threshold (bps)', 0, 100, 20, step=5)
+
 
     base_trade_size = (quote_trade_size/oracle).max().max().round(4)
     # print(base_trade_size)
@@ -265,19 +267,44 @@ def mm_page(clearing_house: ClearingHouse):
 
     # st.write('slot range:', values)
     with tabs[0]:
+        (summarytxt,summarytxt2) = st.columns(2)
         plot1, plot0, plot2 = st.columns([4, 1, 4])
         plot1.plotly_chart(bbo2snippet.plot(title='perp market index='+str(market_index)))
-
         df1 = pd.concat({
+            'buy offset + impact': (bbo2snippet['long fill'] - bbo2snippet['oracle'])/bbo2snippet['oracle'],
             'buy impact': (bbo2snippet['long fill'] - bbo2snippet['best dlob offer'])/bbo2snippet['best dlob offer'],
             'sell impact': (bbo2snippet['short fill'] - bbo2snippet['best dlob bid'])/bbo2snippet['best dlob bid'],
+            'sell offset + impact': (bbo2snippet['short fill'] - bbo2snippet['oracle'])/bbo2snippet['oracle'],
+
         },axis=1)*100
-        fig = df1.plot(title='perp market index='+str(market_index))
+
+        buy_pct_within = ((df1['buy impact']<threshold/100)*1).sum()/len(df1['buy impact'])
+        sell_pct_within = ((df1['sell impact']>-threshold/100)*1).sum()/len(df1['sell impact'])
+        both_pct_within = (((df1['buy impact']<threshold/100) & (df1['sell impact']>-threshold/100))*1).sum()/len(df1['buy impact'])
+        
+        
+        buy_pct_within2 = ((df1['buy offset + impact']<threshold/100)*1).sum()/len(df1['buy offset + impact'])
+        sell_pct_within2 = ((df1['sell offset + impact']>-threshold/100)*1).sum()/len(df1['sell offset + impact'])
+        both_pct_within2 = (((df1['buy offset + impact']<threshold/100) & (df1['sell offset + impact']>-threshold/100))*1).sum()/len(df1['sell offset + impact'])
+        
+        fig = df1[['buy impact', 'sell impact']].plot(title='perp market index='+str(market_index))
         fig.update_layout(
                     yaxis_title="Price Impact (%)",
                     legend_title="Trade Impact",
                 )
+        fig.add_hline(y=threshold/100, line_width=3, line_dash="dash", line_color="green")
+        fig.add_hline(y=-threshold/100, line_width=3, line_dash="dash", line_color="green")
+
         plot2.plotly_chart(fig)
+
+        summarytxt.metric("fill vs oracle within threshold", 
+        ' '+str(np.round(both_pct_within2*100, 1))+' % of time',
+        'buys='+str(np.round(buy_pct_within2*100, 1))+'%, sells='+str(np.round(sell_pct_within2*100, 1))+'%')
+
+        summarytxt2.metric("price impact within threshold", 
+        ' '+str(np.round(both_pct_within*100, 1))+' % of time',
+        'buys='+str(np.round(buy_pct_within*100, 1))+'%, sells='+str(np.round(sell_pct_within*100, 1))+'%')
+        
 
 
     with tabs[1]:
