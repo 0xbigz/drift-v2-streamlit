@@ -1,0 +1,3 @@
+[submodule "drift-v2-orderbook-snap"]
+	path = drift-v2-orderbook-snap
+	url = https://github.com/0xbigz/drift-v2-orderbook-snap.git
