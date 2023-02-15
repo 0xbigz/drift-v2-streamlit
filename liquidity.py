@@ -148,14 +148,14 @@ def get_mm_stats(df, user, oracle, bbo2):
     return bbo_user, bbo_stats
 
 
-@st.cache  # No need for TTL this time. It's static data :)
+@st.experimental_memo  # No need for TTL this time. It's static data :)
 def get_data_by_market_index(market_index):
     dfs = []
     tt = 'perp'+str(market_index)
-    ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
+    # ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
 
     df = None
-    if len(ggs):
+    if False:
         print('building new data file with', len(ggs), 'records!')
         for x in sorted(ggs)[-3500:]:
             df = pd.read_csv(x) 
