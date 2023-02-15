@@ -121,24 +121,28 @@ def get_mm_stats(df, user, oracle, bbo2):
     #     print(bbo_user['score'].describe())
     #     print(bbo_user['score'].fillna(0))
 
-    near_threshold = .001
+    near_threshold = .002
 
     try:
-        uptime_pct = len(bbo_user.dropna())/len(bbo_user)
+        bid_up = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) >= -near_threshold)
+        ask_up = ((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) <= near_threshold
+        availability_pct = len(bbo_user.dropna())/len(bbo_user)
         bid_best_pct = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) == 0).mean()
-        bid_within_best_pct = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) >= -near_threshold).mean()
+        bid_within_best_pct = (bid_up).mean()
         offer_best_pct = (((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) == 0).mean()
-        offer_within_best_pct = (((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) <= near_threshold).mean()
+        offer_within_best_pct = (ask_up).mean()
+        uptime_pct = (bid_up & ask_up).mean()
     except:
         uptime_pct = 0
+        availability_pct = 0
         bid_best_pct = 0
         bid_within_best_pct = 0
         offer_best_pct = 0
         offer_within_best_pct = 0
     bbo_stats = pd.DataFrame(
-        [[uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct, bbo_user_avg_score/100]],
+        [[availability_pct, uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct, bbo_user_avg_score/100]],
         index=[user],
-        columns=['uptime%', 'best_bid%', 'near_best_bid%', 'best_offer%', 'near_best_offer%', 'avg score']
+        columns=['availability%', 'uptime%', 'best_bid%', 'uptime_bid%', 'best_offer%', 'uptime_offer%', 'avg score']
         ).T * 100
 
     return bbo_user, bbo_stats
@@ -151,7 +155,7 @@ def get_data_by_market_index(market_index):
     ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
 
     df = None
-    if False:
+    if len(ggs):
         print('building new data file with', len(ggs), 'records!')
         for x in sorted(ggs)[-3500:]:
             df = pd.read_csv(x) 
@@ -193,7 +197,11 @@ def mm_page(clearing_house: ClearingHouse):
         weights = df.loc[x.index, "baseAssetAmount"]
 
         direction = df.loc[x.index, "direction"]
-        assert(len(direction.unique())==1)
+        # print(direction)
+        if(len(direction)==0):
+            return np.nan
+
+        # assert(len(direction.unique())==1)
         direction = direction.max()
 
         if direction == 'long':
@@ -228,7 +236,7 @@ def mm_page(clearing_house: ClearingHouse):
         mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
 
     df = df_full[(df_full.snap_slot>=values[0]) & (df_full.snap_slot<=values[1])]
-        # print(df.groupby(['direction', 'snap_slot']).mean()[['price', 'baseAssetAmount']])
+    assert(df_full.snap_slot.max() >= values[0])
     bbo = df.groupby(['direction', 'snap_slot']).agg(
         baseAssetAmount=("baseAssetAmount", "sum"),
         max_price=("price", 'max'), 
