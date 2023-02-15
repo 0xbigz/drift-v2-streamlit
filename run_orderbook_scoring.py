@@ -58,7 +58,7 @@ def get_mm_score_for_snap_slot(df):
 market_indexes = [0,1,2,3]
 for mi in market_indexes:
     tt = 'perp'+str(mi)
-    ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
+    ggs = glob('drift-v2-orderbook-snap/'+tt+'/*.csv')
     dfs = []
     for x in sorted(ggs)[-3500:]:
         df = pd.read_csv(x) 

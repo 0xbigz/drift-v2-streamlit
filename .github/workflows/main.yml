@@ -1,4 +1,4 @@
-name: Flat
+name: MM Scoring
 
 on:
     push:
@@ -16,7 +16,7 @@ jobs:
               uses: actions/checkout@v2
               with:
                   submodules: recursive
-                  
+
             - name: Pull & update submodules recursively
               run: |
                 git submodule update --init --recursive
