@@ -16,6 +16,11 @@ jobs:
               uses: actions/checkout@v2
               with:
                   submodules: recursive
+                  
+            - name: Pull & update submodules recursively
+              run: |
+                git submodule update --init --recursive
+                git submodule update --recursive --remote
 
             - name: setup python
               uses: actions/setup-python@v2
