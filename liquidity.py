@@ -113,9 +113,12 @@ def get_mm_stats(df, user, oracle, bbo2):
     bbo_user = pd.concat(ll,axis=1).reindex(ll['oracle'].index)
     bbo_user = bbo_user.reindex(all_snap_slots).loc[bbo2.index[0]:bbo2.index[-1]]
     # bbo_user['score'] = df.groupby(['direction', 'snap_slot'])['score'].sum()
-    bbo_user_score = df.groupby('snap_slot')['score'].sum().reindex(all_snap_slots).loc[bbo2.index[0]:bbo2.index[-1]]
+    bbo_user_score = df.groupby('snap_slot')[['score', 'baseAssetAmountLeft']].sum()\
+        .reindex(all_snap_slots).loc[bbo2.index[0]:bbo2.index[-1]]
     bbo_user = pd.concat([bbo_user, bbo_user_score],axis=1)
     bbo_user_avg_score = bbo_user['score'].fillna(0).mean()
+    bbo_user_median_size = bbo_user[bbo_user['score']>0]['baseAssetAmountLeft'].fillna(0).min()
+    print(bbo_user['baseAssetAmountLeft'].fillna(0))
     # if(float(bbo_user_avg_score) > 90):
     #     print(user)
     #     print(bbo_user['score'].describe())
@@ -140,9 +143,10 @@ def get_mm_stats(df, user, oracle, bbo2):
         offer_best_pct = 0
         offer_within_best_pct = 0
     bbo_stats = pd.DataFrame(
-        [[availability_pct, uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct, bbo_user_avg_score/100]],
+        [[availability_pct, uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct, 
+        bbo_user_avg_score/100, bbo_user_median_size/100]],
         index=[user],
-        columns=['availability%', 'uptime%', 'best_bid%', 'uptime_bid%', 'best_offer%', 'uptime_offer%', 'avg score']
+        columns=['availability%', 'uptime%', 'best_bid%', 'uptime_bid%', 'best_offer%', 'uptime_offer%', 'avg score', 'median size']
         ).T * 100
 
     return bbo_user, bbo_stats

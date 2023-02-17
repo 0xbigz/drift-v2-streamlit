@@ -75,6 +75,9 @@ async def insurance_fund_page(ch: ClearingHouse):
         total_n_shares = spot.insurance_fund.total_shares
         user_n_shares = spot.insurance_fund.user_shares
 
+
+        unstaking_period = spot.insurance_fund.unstaking_period
+
         factor_for_protocol = spot.insurance_fund.user_factor/spot.insurance_fund.total_factor
         protocol_n_shares = total_n_shares - user_n_shares
         spot_markets.append(spot)
@@ -124,8 +127,14 @@ async def insurance_fund_page(ch: ClearingHouse):
     precisions = [(10 ** spot_markets[r['market_index']].decimals) for i, r in stakers.iterrows()]
     stakers['cost_basis'] /= precisions 
     stakers['if_shares'] /= precisions
+    stakers['last_withdraw_request_shares'] /= precisions
+    stakers['last_withdraw_request_shares'] = stakers['last_withdraw_request_shares'].replace(0, np.nan)
+    stakers['last_withdraw_request_value'] /= 1e6
+    stakers['last_withdraw_request_value'] = stakers['last_withdraw_request_value'].replace(0, np.nan)
     stakers['total_shares'] = total_shares
     stakers['total_shares'] /= precisions
+    stakers['available_time_to_withdraw'] = stakers['last_withdraw_request_ts'].apply(lambda x: pd.to_datetime((x + unstaking_period) * 1e9) if x!=0 else x)
+    stakers['last_withdraw_request_ts'] = stakers['last_withdraw_request_ts'].apply(lambda x: pd.to_datetime(x * 1e9) if x!=0 else x)
     stakers['own %'] = stakers['if_shares']/stakers['total_shares'] * 100
     stakers['authority'] = stakers['authority'].astype(str)
     # print(stakers.columns)    
@@ -133,7 +142,7 @@ async def insurance_fund_page(ch: ClearingHouse):
 
     st.write(stakers[['authority', 'market_index', '$ balance', 'if_shares', 'total_shares', 'own %', 'cost_basis', 'last_withdraw_request_shares', 'if_base',
        'last_withdraw_request_value',
-       'last_withdraw_request_ts', 'last_valid_ts',  'key',
+       'last_withdraw_request_ts', 'available_time_to_withdraw', 'last_valid_ts',  'key',
        ]].sort_values('$ balance', ascending=False).reset_index(drop=True))
 
     df = stakers[['$ balance', 'authority', 'own %', 'market_index']]
