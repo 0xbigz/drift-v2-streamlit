@@ -42,6 +42,7 @@ async def show_user_health(clearing_house: ClearingHouse):
 
     state = await get_state_account(clearing_house.program)
     ch = clearing_house
+
     every_user_stats = await ch.program.account['UserStats'].all()
     authorities = [str(x.account.authority) for x in every_user_stats]
     user_authorities = st.multiselect(
@@ -61,7 +62,12 @@ async def show_user_health(clearing_house: ClearingHouse):
         user_stats = [x.account for x in every_user_stats if str(x.account.authority) in user_authorities]
         all_summarys = []
         balances = []
+        positions = []
 
+        url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
+        url += 'user/%s/trades/%s/%s'
+
+        st.header('MTD Trades Stats')
         for user_authority in user_authorities:
             user_authority_pk = PublicKey(user_authority)
             # print(user_stats)
@@ -73,6 +79,7 @@ async def show_user_health(clearing_house: ClearingHouse):
             #     use_cache=False
             # )
             for sub_id in range(user_stat.number_of_sub_accounts_created):
+                print('sub_id:', sub_id)
                 chu_sub = ClearingHouseUser(
                     ch, 
                     authority=user_authority_pk, 
@@ -81,9 +88,24 @@ async def show_user_health(clearing_house: ClearingHouse):
                 )
                 CACHE = None   
                 try:
-                    await chu_sub.set_cache_last(CACHE)
-                except:
+                    await chu_sub.set_cache(CACHE)
+                except Exception as e:
+                    print(e, 'fail')
                     continue
+
+                user_account_pk = get_user_account_public_key(chu_sub.clearing_house.program_id,
+                
+                chu_sub.authority,
+                sub_id)
+
+                url2 = url % (str(user_account_pk), '2023', '2')
+                st.write('data source:', url2)
+                df = pd.read_csv(url2)
+                # st.multiselect('columns:', df.columns, None)
+                trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
+                trades.columns = ['volume']
+                st.dataframe(trades)
+
                 summary = {}
                 summary['authority'] = user_authority+'-'+str(sub_id)
                 summary['total_collateral'] = (await chu_sub.get_total_collateral())/1e6
@@ -120,17 +142,77 @@ async def show_user_health(clearing_house: ClearingHouse):
                         balances.append(dd)
 
 
+                for perp_market_index in range(state.number_of_markets):
+                    pos = await chu_sub.get_user_position(perp_market_index)
+                    if pos is not None:
+                        dd = pos.__dict__
+                        # if pos.base_asset_amount != 0:
+                            # perp_market = await chu_sub.get_perp_market(pos.market_index)
+                            # try:
+                            #     oracle_price = (await chu_sub.get_perp_oracle_data(perp_market)).price / PRICE_PRECISION
+                            # except:
+                            #     oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
+                            # liq_price = await chu_sub.get_perp_liq_price(pos.market_index)
+                            # if liq_price is None: 
+                                # liq_delta = None
+                            # else:
+                            #     perp_liq_prices[pos.market_index] = perp_liq_prices.get(pos.market_index, []) + [liq_price]
+                            #     liq_delta = liq_price - oracle_price
+                            #     perp_liq_deltas[pos.market_index] = perp_liq_deltas.get(pos.market_index, []) + [(liq_delta, abs(pos.base_asset_amount), leverage/10_000)]
 
-        sub_dfs = pd.concat(all_summarys)
+                        # else: 
+                        #     liq_delta = None
 
-        st.metric('total account value:', '$'+str(int(sub_dfs['total_collateral'].sum()*100)/100))
+                        # dd['liq_price_delta'] = liq_delta
 
-        sub_dfs.index.name = 'subaccount_id'
-        st.markdown('summary')
-        st.dataframe(sub_dfs)
+                        perp = await chu_sub.get_perp_market(perp_market_index)
+                        market_name = ''.join(map(chr, perp.name)).strip(" ")
 
+                        dd2 = {
+                        'authority': user_authority+'-'+str(sub_id),
+                        'name': market_name,
+                        'base': pos.base_asset_amount/1e9,
+                        'liq price': await chu_sub.get_perp_liq_price(perp_market_index)
+                        }
+                        z = {**dd, **dd2}
+
+                        positions.append(z)
+
+        st.header('Account Health')
+        if len(all_summarys)>0:
+            sub_dfs = pd.concat(all_summarys)
+
+            st.metric('total account value:', '$'+str(int(sub_dfs['total_collateral'].sum()*100)/100))
+
+            sub_dfs.index.name = 'subaccount_id'
+            st.markdown('summary')
+
+            st.dataframe(sub_dfs)
+            
         st.markdown('assets/liabilities')
-        st.dataframe(pd.DataFrame(balances).T)
+        spotcol, perpcol = st.columns([1,3])
+        bal1 = pd.DataFrame(balances).T
+        bal1.columns = ['spot'+str(x) for x in bal1.columns]
+        df1 = pd.DataFrame(positions)
+        df1['base_asset_amount'] /= 1e9
+        df1['remainder_base_asset_amount'] /= 1e9
+        df1['open_bids'] /= 1e9
+        df1['open_asks'] /= 1e9
+        df1['settled_pnl'] /= 1e6
+
+        df1['lp_shares'] /= 1e9
+        df1['quote_asset_amount'] /= 1e6
+        df1['quote_entry_amount'] /= 1e6
+        df1['quote_break_even_amount'] /= 1e6
+
+        df1['entry_price'] = -df1['quote_entry_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
+        df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
+        df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: -1 if x==0 else x)
+
+        pos1 = df1.T
+        pos1.columns = ['perp'+str(x) for x in pos1.columns]
+        spotcol.dataframe(bal1, use_container_width=True)
+        perpcol.dataframe(pos1, use_container_width=True)
 
         st.markdown('user stats')
         st.dataframe(pd.DataFrame([x for x in user_stats]).T)

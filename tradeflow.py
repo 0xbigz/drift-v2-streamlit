@@ -104,7 +104,8 @@ def trade_flow_analysis():
     makerfee = solperp['makerFee'].sum()
     fillerfee = solperp['fillerReward'].sum()
 
-    zol1.metric(market+' Volume:', '$'+f"{(solperp['quoteAssetAmountFilled'].sum().round(2)):,}")
+    zol1.metric(market+' Volume:', '$'+f"{(solperp['quoteAssetAmountFilled'].sum().round(2)):,}", str(len(solperp)) \
+        + ' trades among '+str(len(solperp[user_type].unique()))+' unique '+ user_type+'s')
     zol2.metric(market+' Fees:', '$'+str((takerfee).round(2)), '$'+str(-makerfee.round(2))+' in liq/maker rebates, '+'$'+str(fillerfee.round(2))+' in filler rewards')
 
     showprem = zol3.radio('show premiums in plot', [True, False], 1)

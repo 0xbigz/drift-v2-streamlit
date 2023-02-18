@@ -118,13 +118,12 @@ def get_mm_stats(df, user, oracle, bbo2):
     bbo_user = pd.concat([bbo_user, bbo_user_score],axis=1)
     bbo_user_avg_score = bbo_user['score'].fillna(0).mean()
     bbo_user_median_size = bbo_user[bbo_user['score']>0]['baseAssetAmountLeft'].fillna(0).min()
-    print(bbo_user['baseAssetAmountLeft'].fillna(0))
     # if(float(bbo_user_avg_score) > 90):
     #     print(user)
     #     print(bbo_user['score'].describe())
     #     print(bbo_user['score'].fillna(0))
 
-    near_threshold = .002
+    near_threshold = .002 # 20 bps
 
     try:
         bid_up = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) >= -near_threshold)
@@ -242,6 +241,8 @@ def mm_page(clearing_house: ClearingHouse):
         mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
 
     df = df_full[(df_full.snap_slot>=values[0]) & (df_full.snap_slot<=values[1])]
+    print(df_full.snap_slot.unique())
+    print(df_full.snap_slot.max(), 'vs', values[0], values[1])
     assert(df_full.snap_slot.max() >= values[0])
     bbo = df.groupby(['direction', 'snap_slot']).agg(
         baseAssetAmount=("baseAssetAmount", "sum"),
@@ -314,19 +315,25 @@ def mm_page(clearing_house: ClearingHouse):
     with tabs[1]:
         all_stats = []
         score_emas = {}
-        top10users = df.groupby('user')['snap_slot'].count().sort_values().tail(10).index
+        top10users = df.groupby('user')['score'].sum().sort_values(ascending=False).head(10).index
+        st.title('mm leaderboard')
+        metmet1, metemet2 = st.columns(2)
         users = st.multiselect('users:', list(df.user.unique()), list(top10users))
+        [lbtable] = st.columns([1])
+        [eslid] = st.columns([1])
+        [echart] = st.columns([1])
+
+        ema_window = eslid.slider('ema window:', 0, 200, 100, 5)
         for user in users:
             bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2snippet)
-            score_emas[str(user)] = (bbo_user['score'].fillna(0).ewm(100).mean())
+            score_emas[str(user)] = (bbo_user['score'].fillna(0).ewm(ema_window).mean())
             all_stats.append(bbo_user_stats)
 
-        st.title('mm leaderboard')
-        all_stats_df = pd.concat(all_stats, axis=1).T.sort_values('best_bid%', ascending=False)
-        st.dataframe(all_stats_df)
-        topmm = all_stats_df.index.to_list()
+        all_stats_df = pd.concat(all_stats, axis=1).T.sort_values('avg score', ascending=False)
+        metmet1.metric('total avg score:', np.round(all_stats_df['avg score'].sum(),2))
+        lbtable.dataframe(all_stats_df)
         # print(topmm)
-        st.plotly_chart(pd.concat(score_emas, axis=1)[topmm[:10]].fillna(0).plot())
+        echart.plotly_chart(pd.concat(score_emas, axis=1)[users].fillna(0).plot(), use_container_width=True)
 
     with tabs[2]:
 
