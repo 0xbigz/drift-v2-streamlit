@@ -33,23 +33,40 @@ import time
 from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
 
-async def show_user_health(clearing_house: ClearingHouse):
+@st.experimental_memo
+def get_loaded_auths():
 
     query_p = st.experimental_get_query_params()
     frens = query_p.get('authority', [])
     if frens != []:
         frens = frens[0].split(',')
+    return frens
+
+# def ccc(vals):
+#     st.experimental_set_query_params(**{'authority': vals, 'tab':'User-Health'})
+
+async def show_user_health(clearing_house: ClearingHouse):
+    frens = get_loaded_auths()
+
+    # st.write('query string:', frens)
 
     state = await get_state_account(clearing_house.program)
     ch = clearing_house
 
     every_user_stats = await ch.program.account['UserStats'].all()
-    authorities = [str(x.account.authority) for x in every_user_stats]
-    user_authorities = st.multiselect(
-        'user authorities', 
-        authorities, 
-        frens
-    )
+    authorities = sorted([str(x.account.authority) for x in every_user_stats])
+
+    if len(frens)==0:
+        user_authorities = st.selectbox(
+            'user authorities', 
+            authorities, 
+            0
+            # on_change=ccc
+            # frens
+        )
+        user_authorities = [user_authorities]
+    else:
+        user_authorities = frens
     # print(user_authorities)
     # user_authority = user_authorities[0]
     if len(user_authorities):
@@ -67,7 +84,7 @@ async def show_user_health(clearing_house: ClearingHouse):
         url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
         url += 'user/%s/trades/%s/%s'
 
-        st.header('MTD Trades Stats')
+        st.header('February Trades Stats')
         for user_authority in user_authorities:
             user_authority_pk = PublicKey(user_authority)
             # print(user_stats)
@@ -100,11 +117,14 @@ async def show_user_health(clearing_house: ClearingHouse):
 
                 url2 = url % (str(user_account_pk), '2023', '2')
                 st.write('data source:', url2)
-                df = pd.read_csv(url2)
-                # st.multiselect('columns:', df.columns, None)
-                trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
-                trades.columns = ['volume']
-                st.dataframe(trades)
+                try:
+                    df = pd.read_csv(url2)
+                    # st.multiselect('columns:', df.columns, None)
+                    trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
+                    trades.columns = ['volume']
+                    st.dataframe(trades)
+                except:
+                    st.write('cannot load data')
 
                 summary = {}
                 summary['authority'] = user_authority+'-'+str(sub_id)
@@ -194,20 +214,21 @@ async def show_user_health(clearing_house: ClearingHouse):
         bal1 = pd.DataFrame(balances).T
         bal1.columns = ['spot'+str(x) for x in bal1.columns]
         df1 = pd.DataFrame(positions)
-        df1['base_asset_amount'] /= 1e9
-        df1['remainder_base_asset_amount'] /= 1e9
-        df1['open_bids'] /= 1e9
-        df1['open_asks'] /= 1e9
-        df1['settled_pnl'] /= 1e6
+        if len(df1):
+            df1['base_asset_amount'] /= 1e9
+            df1['remainder_base_asset_amount'] /= 1e9
+            df1['open_bids'] /= 1e9
+            df1['open_asks'] /= 1e9
+            df1['settled_pnl'] /= 1e6
 
-        df1['lp_shares'] /= 1e9
-        df1['quote_asset_amount'] /= 1e6
-        df1['quote_entry_amount'] /= 1e6
-        df1['quote_break_even_amount'] /= 1e6
+            df1['lp_shares'] /= 1e9
+            df1['quote_asset_amount'] /= 1e6
+            df1['quote_entry_amount'] /= 1e6
+            df1['quote_break_even_amount'] /= 1e6
 
-        df1['entry_price'] = -df1['quote_entry_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
-        df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
-        df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: -1 if x==0 else x)
+            df1['entry_price'] = -df1['quote_entry_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
+            df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
+            df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: -1 if x==0 else x)
 
         pos1 = df1.T
         pos1.columns = ['perp'+str(x) for x in pos1.columns]
