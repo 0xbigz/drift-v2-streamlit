@@ -360,7 +360,6 @@ def mm_page(clearing_house: ClearingHouse):
         slot = sol1.select_slider('individual snapshot', df.snap_slot.unique().tolist(), df.snap_slot.max())
 
         slippage = sol2.select_slider('slippage (%)', list(range(1, 100)), 5)
-
         toshow = df[['score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
         'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'snap_slot', 'orderId', 'userOrderId', 
         'baseAssetAmountFilled', 'quoteAssetAmountFilled', 'reduceOnly',
@@ -370,6 +369,9 @@ def mm_page(clearing_house: ClearingHouse):
         ]]
 
         toshow_snap = toshow[df.snap_slot.astype(int)==int(slot)]
+
+        st.metric('total score:', np.round(toshow_snap.score.sum(),2))
+
         bids = toshow_snap[toshow_snap.direction=='long'].groupby('price').sum().sort_index(ascending=False)['baseAssetAmountLeft'].cumsum()
         asks = toshow_snap[toshow_snap.direction=='short'].groupby('price').sum().sort_index(ascending=True)['baseAssetAmountLeft'].cumsum()
 
