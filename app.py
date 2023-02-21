@@ -91,8 +91,20 @@ def main():
     st.title(f'Drift v2: {tab}')
 
     if tab.lower() == 'welcome':
-        st.text('welcome to drift v2 streamlit!')
-        st.markdown('this entire website is [open source](https://github.com/0xbigz/drift-v2-streamlit)')
+        st.markdown('## welcome to [drift v2](app.drift.trade) streamlit dashboard!')
+        st.metric('since launch:', str(int((datetime.datetime.now() - pd.to_datetime('2022-11-05')).total_seconds()/(60*60*24)))+' days')
+        st.markdown("""
+        this entire website is [open source](https://github.com/0xbigz/drift-v2-streamlit) and you can run it locally:
+        ```
+        git clone https://github.com/0xbigz/drift-v2-streamlit.git
+        
+        python3.10 -m venv venv
+        source venv/bin/activate
+        pip install -r requirements.txt
+
+        streamlit run app.py 
+        ```
+        """)
 
     elif tab.lower() == 'overview':
         loop = asyncio.new_event_loop()
