@@ -180,8 +180,11 @@ def mm_page(clearing_house: ClearingHouse):
     tt = 'perp'+str(market_index)
     df_full = get_data_by_market_index(market_index)
 
+    # all_slots = df_full.snap_slot.unique()
     oldest_slot = df_full.snap_slot.min()
     newest_slot = df_full.snap_slot.max()
+
+    week_ago_slot = df_full[df_full.snap_slot>newest_slot-(2*60*60*24*7)].snap_slot.min()
 
     oracle = df_full.groupby('snap_slot')['oraclePrice'].max()
     tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot'])
@@ -230,20 +233,24 @@ def mm_page(clearing_house: ClearingHouse):
     # tzInfo = pytz.timezone('UTC')
     latest_slot_full = df_full.snap_slot.max()
 
-    range_selected = molselect.selectbox('range select:', ['daily', 'last month'], 0)
+    range_selected = molselect.selectbox('range select:', ['daily', 'weekly', 'last month'], 0)
     if range_selected == 'daily':
         lastest_date = pd.to_datetime(slot_to_timestamp_est(latest_slot_full)*1e9)
         date = mol0.date_input('select approx. date:', min_value=datetime.datetime(2022,11,4), max_value=lastest_date) #(datetime.datetime.now(tzInfo)))
         values = get_slots_for_date(date)
-    else:
+    elif range_selected == 'weekly':
+        values = mol2.slider(
+        'Select a range of slot values',
+        int(week_ago_slot), int(newest_slot), (int(week_ago_slot), int(newest_slot)))
+        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
+    elif range_selected == 'last month':
         values = mol2.slider(
         'Select a range of slot values',
         int(oldest_slot), int(newest_slot), (int(oldest_slot), int(newest_slot)))
         mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
 
     df = df_full[(df_full.snap_slot>=values[0]) & (df_full.snap_slot<=values[1])]
-    print(df_full.snap_slot.unique())
-    print(df_full.snap_slot.max(), 'vs', values[0], values[1])
+    # print(df_full.snap_slot.max(), 'vs', values[0], values[1])
     assert(df_full.snap_slot.max() >= values[0])
     bbo = df.groupby(['direction', 'snap_slot']).agg(
         baseAssetAmount=("baseAssetAmount", "sum"),
@@ -324,10 +331,10 @@ def mm_page(clearing_house: ClearingHouse):
         [eslid] = st.columns([1])
         [echart] = st.columns([1])
 
-        ema_window = eslid.slider('ema window:', 0, 200, 100, 5)
+        rolling_window = eslid.slider('rolling window:', 1, 200, 100, 5)
         for user in users:
             bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2snippet)
-            score_emas[str(user)] = (bbo_user['score'].fillna(0).ewm(ema_window).mean())
+            score_emas[str(user)] = (bbo_user['score'].fillna(0).rolling(rolling_window, min_periods=min(rolling_window, 1)).mean())
             all_stats.append(bbo_user_stats)
 
         all_stats_df = pd.concat(all_stats, axis=1).T.sort_values('avg score', ascending=False)
