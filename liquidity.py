@@ -227,12 +227,13 @@ def mm_page(clearing_house: ClearingHouse):
 
         return np.average(x, weights=weights)
 
-    tzInfo = pytz.timezone('UTC')
-
+    # tzInfo = pytz.timezone('UTC')
+    latest_slot_full = df_full.snap_slot.max()
 
     range_selected = molselect.selectbox('range select:', ['daily', 'last month'], 0)
     if range_selected == 'daily':
-        date = mol0.date_input('select approx. date:', min_value=datetime.datetime(2022,11,4), max_value=(datetime.datetime.now(tzInfo)))
+        lastest_date = pd.to_datetime(slot_to_timestamp_est(latest_slot_full)*1e9)
+        date = mol0.date_input('select approx. date:', min_value=datetime.datetime(2022,11,4), max_value=lastest_date) #(datetime.datetime.now(tzInfo)))
         values = get_slots_for_date(date)
     else:
         values = mol2.slider(
