@@ -59,9 +59,14 @@ def main():
     query_p = st.experimental_get_query_params()
     query_tab = query_p.get('tab', ['Welcome'])[0]
 
-    tab_options = ('Welcome', 'Overview', 'Simulations', 'Logs', 'Fee-Schedule', 'IF-Stakers', 
-    'User-Health', 'User-Stats', 'DLOB', 'MM', 'Trade Flow', 'IMF',
-     'Config', 'Social', 'PlatyPerps')
+    tab_options = ('Welcome', 'Overview', 
+    'Simulations', 'Logs',
+    
+     'Fee-Schedule', 'IF-Stakers', 
+     'User-Health', 'User-Stats', 'DLOB', 'MM', 'Trade Flow', 'IMF',
+     'Config',
+    #   'Social', 'PlatyPerps'
+     )
     query_index = 0
     for idx, x in enumerate(tab_options):
         if x.lower() == query_tab.lower():
@@ -92,8 +97,15 @@ def main():
 
     if tab.lower() == 'welcome':
         st.markdown('## welcome to the [Drift v2](app.drift.trade) streamlit dashboard!')
-        st.metric('since launch:', str(int((datetime.datetime.now() - pd.to_datetime('2022-11-05')).total_seconds()/(60*60*24)))+' days')
+        st.metric('protocol has been live for:', str(int((datetime.datetime.now() - pd.to_datetime('2022-11-05')).total_seconds()/(60*60*24)))+' days')
         st.markdown("""
+        Did you know you can...
+        - explore all perp/spot market stats in *Overview*.
+        - the Insurance Fund and Staker performance in *IF-Staker*.
+        - inspect historical price impact and market maker leaderboards in *MM*.
+        - view a taker trading breakdown in *Trade Flow*.
+
+
         this entire website is [open source](https://github.com/0xbigz/drift-v2-streamlit) and you can run it locally:
         ```
         git clone https://github.com/0xbigz/drift-v2-streamlit.git
