@@ -91,7 +91,7 @@ def main():
     st.title(f'Drift v2: {tab}')
 
     if tab.lower() == 'welcome':
-        st.markdown('## welcome to [drift v2](app.drift.trade) streamlit dashboard!')
+        st.markdown('## welcome to the [Drift v2](app.drift.trade) streamlit dashboard!')
         st.metric('since launch:', str(int((datetime.datetime.now() - pd.to_datetime('2022-11-05')).total_seconds()/(60*60*24)))+' days')
         st.markdown("""
         this entire website is [open source](https://github.com/0xbigz/drift-v2-streamlit) and you can run it locally:
