@@ -380,13 +380,24 @@ def mm_page(clearing_house: ClearingHouse):
 
         st.metric('total score:', np.round(toshow_snap.score.sum(),2))
 
-        bids = toshow_snap[toshow_snap.direction=='long'].groupby('price').sum().sort_index(ascending=False)['baseAssetAmountLeft'].cumsum()
-        asks = toshow_snap[toshow_snap.direction=='short'].groupby('price').sum().sort_index(ascending=True)['baseAssetAmountLeft'].cumsum()
-
+        bids1 = toshow_snap[toshow_snap.direction=='long'].groupby('price').sum().sort_index(ascending=False)
+        bids = bids1['baseAssetAmountLeft'].cumsum()
+        bscores = bids1['score'].dropna()#.cumsum()
+        asks1 = toshow_snap[toshow_snap.direction=='short'].groupby('price').sum().sort_index(ascending=True)
+        asks = asks1['baseAssetAmountLeft'].cumsum()
+        ascores = asks1['score'].dropna()#.cumsum()
         markprice = (bids.index.max()+asks.index.min()) /2
+
+        oh = pd.concat({'bid scores': bscores, 'ask scores': ascores},axis=1).sort_index().replace(0, np.nan).dropna(how='all')
+        fig2 = oh.plot(kind='line', title='book scores')
+
         ddd = pd.concat({'bids':bids, 'asks':asks},axis=1).sort_index().loc[markprice*(1-slippage/100): markprice*(1+slippage/100)].replace(0, np.nan)
         fig = ddd.plot(kind='line', title='book depth')
-        st.plotly_chart(fig)
+
+        
+        [plotly1, plotly2] = st.columns(2)
+        plotly1.plotly_chart(fig, use_container_width=True)
+        plotly2.plotly_chart(fig2, use_container_width=True)
         st.dataframe(toshow_snap)
 
 
