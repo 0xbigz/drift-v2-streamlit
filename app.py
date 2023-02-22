@@ -100,15 +100,16 @@ def main():
         st.metric('protocol has been live for:', str(int((datetime.datetime.now() - pd.to_datetime('2022-11-05')).total_seconds()/(60*60*24)))+' days')
         st.markdown("""
         On this site, did you know you can...
-        - explore all perp/spot market stats in [*Overview*](/?tab=Overview).
-        - the Insurance Fund and Staker performance in [*IF-Staker*](/?tab=IF-Staker).
-        - inspect historical price impact and market maker leaderboards in [*MM*](/?tab=MM).
-        - view a taker trading breakdown in [*Trade Flow*](/?tab=Trade-Flow).
+        - explore all perp/spot market stats in [Overview](/?tab=Overview).
+        - track the Insurance Fund and staking performance in [IF-Staker](/?tab=IF-Staker).
+        - inspect historical price impact and market maker leaderboards in [MM](/?tab=MM).
+        - view a taker trader breakdown in [Trade Flow](/?tab=Trade-Flow).
 
 
         this entire website is [open source](https://github.com/0xbigz/drift-v2-streamlit) and you can run it locally:
         ```
         git clone https://github.com/0xbigz/drift-v2-streamlit.git
+        cd drift-v2-streamlit/
         
         python3.10 -m venv venv
         source venv/bin/activate
