@@ -318,15 +318,16 @@ def mm_page(clearing_house: ClearingHouse):
         ' '+str(np.round(both_pct_within*100, 1))+' % of time',
         'buys='+str(np.round(buy_pct_within*100, 1))+'%, sells='+str(np.round(sell_pct_within*100, 1))+'%')
         
-
+    all_users = df.groupby('user')['score'].sum().sort_values(ascending=False).index
+    top10users = all_users[:10]
 
     with tabs[1]:
         all_stats = []
         score_emas = {}
-        top10users = df.groupby('user')['score'].sum().sort_values(ascending=False).head(10).index
+        # top10users = df.groupby('user')['score'].sum().sort_values(ascending=False).head(10).index
         st.title('mm leaderboard')
         metmet1, metemet2 = st.columns(2)
-        users = st.multiselect('users:', list(df.user.unique()), list(top10users))
+        users = st.multiselect('users:', list(all_users), list(top10users))
         [lbtable] = st.columns([1])
         [eslid] = st.columns([1])
         [echart] = st.columns([1])
@@ -347,7 +348,7 @@ def mm_page(clearing_house: ClearingHouse):
 
         st.title('individual mm lookup')
 
-        user = st.selectbox('individual maker', df.user.unique())
+        user = st.selectbox('individual maker', all_users, 0)
             
         bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2)
 
@@ -360,12 +361,18 @@ def mm_page(clearing_house: ClearingHouse):
         bbo_user['ema_score'] = bbo_user['score'].fillna(0).ewm(100).mean()
         st.plotly_chart(bbo_user.loc[values[0]:values[1]].plot(title='perp market index='+str(market_index)))
 
+        best_slot = bbo_user.score.idxmax()
+        worst_slot = bbo_user.score.idxmin()
+        st.write('best slot:'+str(best_slot), ' | worst slot:'+str(worst_slot))
+
     with tabs[3]:
         st.title('individual snapshot lookup')
         # print(df.columns)
 
-        sol1, sol0, sol2 = st.columns([2,1,2])
+        sol1, sol10, sol11, sol0, sol2 = st.columns([2,1,1, 1,2])
         slot = sol1.select_slider('individual snapshot', df.snap_slot.unique().tolist(), df.snap_slot.max())
+        slot = sol10.number_input('slot:', value=slot)
+        score_color = sol11.radio('show score highlights:', [True, False], 0)
 
         slippage = sol2.select_slider('slippage (%)', list(range(1, 100)), 5)
         toshow = df[['score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
@@ -398,7 +405,16 @@ def mm_page(clearing_house: ClearingHouse):
         [plotly1, plotly2] = st.columns(2)
         plotly1.plotly_chart(fig, use_container_width=True)
         plotly2.plotly_chart(fig2, use_container_width=True)
-        st.dataframe(toshow_snap)
+
+        if score_color:
+            toshow_snap = toshow_snap.replace(0, np.nan).dropna(subset=['score'],axis=0)
+        def cooling_highlight(val):
+            color = '#ACE5EE' if val=='long' else 'pink'
+            return f'background-color: {color}'
+
+        st.dataframe(toshow_snap.style.applymap(cooling_highlight, subset=['direction'])
+                    #  ,(heating_highlight, subset=['Heating inputs', 'Heating outputs'])             
+                     ,height=10530, use_container_width=True)
 
 
             
