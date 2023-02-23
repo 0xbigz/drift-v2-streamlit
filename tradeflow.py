@@ -104,10 +104,6 @@ def trade_flow_analysis():
     makerfee = solperp['makerFee'].sum()
     fillerfee = solperp['fillerReward'].sum()
 
-    zol1.metric(market+' Volume:', '$'+f"{(solperp['quoteAssetAmountFilled'].sum().round(2)):,}", str(len(solperp)) \
-        + ' trades among '+str(len(solperp[user_type].unique()))+' unique '+ user_type+'s')
-    zol2.metric(market+' Fees:', '$'+str((takerfee).round(2)), '$'+str(-makerfee.round(2))+' in liq/maker rebates, '+'$'+str(fillerfee.round(2))+' in filler rewards')
-
     showprem = zol3.radio('show premiums in plot', [True, False], 1)
     showmarkoutfees = zol3.radio('show spread vs oracle w/ markout', [True, False], 1)
 
@@ -124,15 +120,26 @@ def trade_flow_analysis():
     pol1.plotly_chart(fig)
 
 
-    retail_takers = solperp[solperp[user_type+'OrderId'] < 10000][user_type].unique()
-    bot_takers = solperp[solperp[user_type+'OrderId'] >= 10000][user_type].unique()
-
+    retail_takers = solperp[solperp[user_type+'OrderId'] < 3000][user_type].dropna().unique()
+    bot_takers = solperp[solperp[user_type+'OrderId'] >= 3000][user_type].dropna().unique()
+    
     if showmarkoutfees:
         solperp['markout_pnl_1MIN'] = -(solperp['baseAssetAmountFilled'] * (solperp['takerPremiumNextMinute']))
     else:
         solperp['markout_pnl_1MIN'] = -(solperp['baseAssetAmountFilled'] * (solperp['takerPremiumNextMinute'] - solperp['takerPremium']))
+
+    retail_trades = solperp[solperp[user_type].isin(retail_takers)]
+
+    zol1.metric(market+' Retail Volume:', '$'+f"{(retail_trades['quoteAssetAmountFilled'].sum().round(2)):,}", 
+    
+    '$' + str(solperp['quoteAssetAmountFilled'].sum().round(2)) + ' over ' + str(len(solperp)) \
+        + ' trades among '+str(len(solperp[user_type].unique()))+' unique '+ user_type+'s')
+    zol2.metric(market+' Fees:', '$'+str((takerfee).round(2)), '$'+str(-makerfee.round(2))+' in liq/maker rebates, '+'$'+str(fillerfee.round(2))+' in filler rewards')
+
+
+
     markoutdf = pd.concat({
-        'retailMarkout1MIN:': solperp[solperp[user_type].isin(retail_takers)].set_index('date').sort_index()['markout_pnl_1MIN'].resample('1MIN').last(),
+        'retailMarkout1MIN:': retail_trades.set_index('date').sort_index()['markout_pnl_1MIN'].resample('1MIN').last(),
      'botMarkout1MIN': solperp[solperp[user_type].isin(bot_takers)].set_index('date').sort_index()['markout_pnl_1MIN'].resample('1MIN').last(),
     },axis=1).cumsum().ffill()
     fig2 = markoutdf.plot().update_layout(title='markout',
@@ -153,12 +160,13 @@ def trade_flow_analysis():
             tt = pd.DataFrame(solperp[solperp[user_type].isin(user_accounts)].groupby(user_type)[['takerFee', 'quoteAssetAmountFilled', 'takerPremium', 'takerPremiumNextMinute', 'takerPremiumDollar']]\
                 .agg({'takerFee':'count', 'quoteAssetAmountFilled':'sum', 'takerPremium':'sum', 'takerPremiumNextMinute':'sum', 'takerPremiumDollar':'sum' })\
                 .sort_values(by='quoteAssetAmountFilled', ascending=False))
+            tt.index = tt.index
             tt.columns = ['count', 'volume', 'takerPremiumTotal', 'takerPremiumNextMinuteTotal', 'takerUSDPremiumSum',]
             tt['Markout'] = -(tt['takerPremiumNextMinuteTotal'] - tt['takerPremiumTotal'])
             tt['userAccount'] =  ['https://app.drift.trade?userAccount='+str(x) for x in tt.index]
             tt['userAccount'] =  tt['userAccount'].apply(make_clickable)
             zol1, zol2 = st.columns([1,4])
-            zol2.dataframe(tt.drop(['userAccount'], axis=1), height=len(tt)*40, use_container_width=True)
+            zol2.dataframe(tt.drop(['userAccount'], axis=1), height=len(tt)*60, use_container_width=True)
             zol1.write(tt[['userAccount', 'volume']].reset_index(drop=True).to_html(index=False, escape=False), unsafe_allow_html=True)
 
         df1 = solperp[solperp[user_type].isin(user_accounts)].groupby('takerOrderDirection').agg({
