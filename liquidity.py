@@ -414,7 +414,7 @@ def mm_page(clearing_house: ClearingHouse):
 
         st.dataframe(toshow_snap.style.applymap(cooling_highlight, subset=['direction'])
                     #  ,(heating_highlight, subset=['Heating inputs', 'Heating outputs'])             
-                     ,height=10530, use_container_width=True)
+                     , use_container_width=True)
 
 
             
