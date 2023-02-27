@@ -159,7 +159,8 @@ def main():
         trade_flow_analysis()
 
     elif tab.lower() == 'imf':
-        imf_page(clearing_house)
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(imf_page(clearing_house))
     elif tab.lower() == 'social':
 
         repo = "https://github.com/drift-labs/protocol-v2"

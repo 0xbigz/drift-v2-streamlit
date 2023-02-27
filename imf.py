@@ -28,13 +28,48 @@ import asyncio
 from glob import glob
 
 
-def imf_page(clearing_house: ClearingHouse):    
-    init_liability_wgt = st.select_slider('liability wgt', [.02, .03, .05, .1, .2, .5, 1])
-    maint_liability_wgt = st.select_slider('maint liability wgt', [.02, .03, .05, .1, .2, .5, 1])
+async def imf_page(clearing_house: ClearingHouse):    
+    ch = clearing_house
+    state = await get_state_account(ch.program)
+    col1, col2 = st.columns(2)
+    dd = col1.selectbox('mode:', ['custom', 'perp', 'spot'])
+    oo = 0
 
-    imf = st.select_slider('imf', [0, .000005, .00001, .00005, .0001, .0005, .001, .005, .01, .05, .1])
-    base = st.number_input('base asset amount')
-    oracle_px = st.number_input('oracle price')
+    if dd != 'custom':
+        n = state.number_of_markets
+        s = 0
+        if dd == 'spot':
+            s = 1
+            n = state.number_of_spot_markets
+        oo = col2.selectbox('market:', range(s, n), 0)
+        if dd == 'perp':
+            market = await get_perp_market_account(ch.program, oo)
+            init_liability_wgt = market.margin_ratio_initial/1e4
+            maint_liability_wgt = market.margin_ratio_maintenance/1e4
+            ogimf = market.imf_factor/1e6
+            oracle_px = market.amm.historical_oracle_data.last_oracle_price/1e6
+
+        else:
+            market = await get_spot_market_account(ch.program, oo)
+            init_liability_wgt = (market.initial_liability_weight/1e4 - 1)
+            maint_liability_wgt = (market.maintenance_liability_weight/1e4 - 1)
+            ogimf = market.imf_factor/1e6
+            oracle_px = market.historical_oracle_data.last_oracle_price/1e6
+
+        st.write(bytes(market.name).decode('utf-8'))
+        imf = st.slider('imf', 0.0, .001, ogimf, step=.00001)
+        st.write('imf factor=', ogimf, '->', imf)
+        st.write('init_liability_wgt=', init_liability_wgt)
+        st.write('maint_liability_wgt=', maint_liability_wgt)
+
+    else:
+        init_liability_wgt = st.select_slider('liability wgt', [.02, .03, .05, .1, .2, .5, 1])
+        maint_liability_wgt = st.select_slider('maint liability wgt', [.02, .03, .05, .1, .2, .5, 1])
+
+        imf = st.select_slider('imf', [0, .000005, .00001, .00005, .0001, .0005, .001, .005, .01, .05, .1])
+        oracle_px = st.number_input('oracle price')
+    base = st.number_input('base asset amount', value=1)
+
     st.text('notional='+str(oracle_px * base))
 
     liability_wgt_n = init_liability_wgt
