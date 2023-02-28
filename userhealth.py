@@ -117,14 +117,39 @@ async def show_user_health(clearing_house: ClearingHouse):
 
                 url2 = url % (str(user_account_pk), '2023', '2')
                 st.write('data source:', url2)
-                try:
+                if sub_id==0:
+                    # try:
                     df = pd.read_csv(url2)
+                    df = df.drop_duplicates(['fillerReward', 'baseAssetAmountFilled', 'quoteAssetAmountFilled',
+                                            'takerPnl', 'makerPnl', 'takerFee', 'makerRebate', 'refereeDiscount',
+                                            'quoteAssetAmountSurplus', 'takerOrderBaseAssetAmount',
+                                            'takerOrderCumulativeBaseAssetAmountFilled',
+                                            'takerOrderCumulativeQuoteAssetAmountFilled', 'takerOrderFee',
+                                            'makerOrderBaseAssetAmount',
+                                            'makerOrderCumulativeBaseAssetAmountFilled',
+                                            'makerOrderCumulativeQuoteAssetAmountFilled', 'makerOrderFee',
+                                            'oraclePrice', 'makerFee', 'txSig', 'slot', 'ts', 'action',
+                                            'actionExplanation', 'marketIndex', 'marketType', 'filler',
+                                            'fillRecordId', 'taker', 'takerOrderId', 'takerOrderDirection', 'maker',
+                                            'makerOrderId', 'makerOrderDirection', 'spotFulfillmentMethodFee',
+                                            ]).reset_index(drop=True)
+                    df['baseAssetAmountSignedFilled'] = df['baseAssetAmountFilled'] \
+                        * df['takerOrderDirection'].apply(lambda x: 2*(x=='long')-1) \
+                        * df['taker'].apply(lambda x: 2*(str(x)==user_account_pk)-1)
                     # st.multiselect('columns:', df.columns, None)
+                    ot = df.pivot_table(index='slot', columns=['marketType', 'marketIndex'], values='baseAssetAmountSignedFilled', aggfunc='sum').cumsum().ffill()
+                    ot.columns = [str(x) for x in ot.columns]
+                    st.plotly_chart(ot.plot(title='base asset amount over month (WIP)'))
+
+                    tt = df.groupby(['takerOrderId', 'takerOrderDirection']).count().iloc[:,0].reset_index()
+                    tt1 = tt.groupby('takerOrderDirection').count()
+                    st.dataframe(tt1)
+
                     trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
                     trades.columns = ['volume']
                     st.dataframe(trades)
-                except:
-                    st.write('cannot load data')
+                    # except:
+                    #     st.write('cannot load data')
 
                 summary = {}
                 summary['authority'] = user_authority+'-'+str(sub_id)
