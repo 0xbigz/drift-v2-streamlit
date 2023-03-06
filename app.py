@@ -30,6 +30,8 @@ from liquidity import mm_page
 from imf import imf_page
 from userhealth import show_user_health
 from tradeflow import trade_flow_analysis
+from gpt import gpt_page
+
 
 def main():
     st.set_page_config(
@@ -63,7 +65,10 @@ def main():
     'Simulations', 'Logs',
     
      'Fee-Schedule', 'IF-Stakers', 
-     'User-Health', 'User-Stats', 'DLOB', 'MM', 'Trade Flow', 'IMF',
+     'User-Health', 'User-Stats', 'DLOB', 'MM', 'Trade Flow', 
+     'Drift-GPT',
+     
+     'IMF',
      'Config',
     #   'Social', 'PlatyPerps'
      )
@@ -104,6 +109,7 @@ def main():
         - track the Insurance Fund and staking performance in [IF-Staker](/?tab=IF-Staker).
         - inspect historical price impact and market maker leaderboards in [MM](/?tab=MM).
         - view a taker trader breakdown in [Trade Flow](/?tab=Trade-Flow).
+        - talk to an AI at [Drift-GPT](/?tab=Drift-GPT).
 
 
         this entire website is [open source](https://github.com/0xbigz/drift-v2-streamlit) and you can run it locally:
@@ -176,6 +182,11 @@ def main():
     elif tab.lower() == 'platyperps':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_platyperps(clearing_house))
+
+    elif tab.lower() == 'drift-gpt':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(gpt_page(clearing_house))
+        
 
     hide_streamlit_style = """
             <style>
