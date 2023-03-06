@@ -257,7 +257,7 @@ async def gpt_page(clearing_house: ClearingHouse):
         if mode == 'cheeky':
             user_q = 'answer tongue-in-cheek and party casual style. ' + user_q
         elif mode == 'uberzahl':
-            user_q = 'answer in style of like an 1800s european mad-scientist. ' + user_q
+            user_q = 'answer in style of sophisticated mid-century mad-scientist. ' + user_q
 
         completion = openai.ChatCompletion.create(
         model="gpt-3.5-turbo", 
