@@ -175,7 +175,7 @@ def get_data_by_market_index(market_index):
 
 def mm_page(clearing_house: ClearingHouse):    
     mol1, molselect, mol0, mol2 = st.columns([3, 3, 3, 10])
-    market_index = mol1.selectbox('market index', [0, 1, 2, 3])
+    market_index = mol1.selectbox('perp market index', [0, 1, 2, 3, 4])
     
     tt = 'perp'+str(market_index)
     df_full = get_data_by_market_index(market_index)

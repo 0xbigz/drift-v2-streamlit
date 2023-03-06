@@ -57,7 +57,7 @@ async def imf_page(clearing_house: ClearingHouse):
             oracle_px = market.historical_oracle_data.last_oracle_price/1e6
 
         st.write(bytes(market.name).decode('utf-8'))
-        imf = st.slider('imf', 0.0, .001, ogimf, step=.00001)
+        imf = st.slider('imf', 0.0, .01, ogimf, step=.00005)
         st.write('imf factor=', ogimf, '->', imf)
         st.write('init_liability_wgt=', init_liability_wgt)
         st.write('maint_liability_wgt=', maint_liability_wgt)
@@ -76,7 +76,8 @@ async def imf_page(clearing_house: ClearingHouse):
 
 
     if(imf!=0):
-        liability_wgt_n = init_liability_wgt - init_liability_wgt/(1/ imf)
+        liability_wgt_n = liability_wgt_n * .8 
+
     dd = np.sqrt(np.abs(base))
     res = max(init_liability_wgt, liability_wgt_n + imf * dd)
     st.text('max('+str(liability_wgt_n)+' + '+ str(imf) + ' * ' + str(dd)+', '+str(init_liability_wgt)+')')
@@ -93,7 +94,16 @@ async def imf_page(clearing_house: ClearingHouse):
         res = max(wgt, liability_wgt_n + imf * dd)
         return res
 
-    index = np.linspace(0, max(10000, base * oracle_px), 1000)
+    oo = max(10000/oracle_px, base)
+
+    step = 1000 #int(np.round(oo/1000) * 1000)
+    if oo > 100000:
+        step *= 10
+    if oo > 1000000:
+        step *= 10
+
+
+    index = np.linspace(0, oo, step)
     df = pd.Series([
         1/calc_size_liab(init_liability_wgt, imf, x) 
         for x in index
@@ -108,5 +118,16 @@ async def imf_page(clearing_house: ClearingHouse):
     )
     df2.index = index
 
-    st.plotly_chart(pd.concat({'init': df, 'maint': df2},axis=1).plot(kind='line'))
+    imf_df = pd.concat({'init': df, 'maint': df2},axis=1)
+    imf_df.index *= oracle_px
+
+    fig = imf_df.plot(kind='line')
+
+    fig.update_layout(
+    title="IMF Discount",
+    xaxis_title="$ Notional",
+    yaxis_title="Leverage",
+    )
+
+    st.plotly_chart(fig)
 
