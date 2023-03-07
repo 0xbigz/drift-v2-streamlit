@@ -152,9 +152,9 @@ def get_mm_stats(df, user, oracle, bbo2):
 
 
 @st.experimental_memo  # No need for TTL this time. It's static data :)
-def get_data_by_market_index(market_index):
+def get_data_by_market_index(market_type, market_index):
     dfs = []
-    tt = 'perp'+str(market_index)
+    tt = market_type+str(market_index)
     # ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
 
     df = None
@@ -174,11 +174,16 @@ def get_data_by_market_index(market_index):
     return df
 
 def mm_page(clearing_house: ClearingHouse):    
-    mol1, molselect, mol0, mol2 = st.columns([3, 3, 3, 10])
-    market_index = mol1.selectbox('perp market index', [0, 1, 2, 3, 4])
+    mol00, mol1, molselect, mol0, mol2 = st.columns([2, 3, 3, 3, 10])
+
+    market_type = mol00.selectbox('market type', ['perp', 'spot'])
+    market_indexes = [1]
+    if market_type == 'perp':
+        market_indexes = [0, 1, 2, 3, 4]
+    market_index = mol1.selectbox(market_type+' market index', market_indexes)
     
-    tt = 'perp'+str(market_index)
-    df_full = get_data_by_market_index(market_index)
+    tt = market_type+str(market_index)
+    df_full = get_data_by_market_index(market_type, market_index)
 
     # all_slots = df_full.snap_slot.unique()
     oldest_slot = df_full.snap_slot.min()
@@ -282,7 +287,7 @@ def mm_page(clearing_house: ClearingHouse):
     with tabs[0]:
         (summarytxt,summarytxt2) = st.columns(2)
         plot1, plot0, plot2 = st.columns([4, 1, 4])
-        plot1.plotly_chart(bbo2snippet.plot(title='perp market index='+str(market_index)))
+        plot1.plotly_chart(bbo2snippet.plot(title=market_type+' market index='+str(market_index)))
         df1 = pd.concat({
             'buy offset + impact': (bbo2snippet['long fill'] - bbo2snippet['oracle'])/bbo2snippet['oracle'],
             'buy impact': (bbo2snippet['long fill'] - bbo2snippet['best dlob offer'])/bbo2snippet['best dlob offer'],
@@ -359,7 +364,7 @@ def mm_page(clearing_house: ClearingHouse):
         # st.text('user uptime='+str(np.round(uptime_pct*100, 2))+'%')
         bbo_user['score'] = bbo_user['score'].fillna(0)
         bbo_user['ema_score'] = bbo_user['score'].fillna(0).ewm(100).mean()
-        st.plotly_chart(bbo_user.loc[values[0]:values[1]].plot(title='perp market index='+str(market_index)))
+        st.plotly_chart(bbo_user.loc[values[0]:values[1]].plot(title=market_type+' market index='+str(market_index)))
 
         best_slot = bbo_user.score.idxmax()
         worst_slot = bbo_user.score.idxmin()

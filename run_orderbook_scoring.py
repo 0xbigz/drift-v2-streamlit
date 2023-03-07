@@ -88,3 +88,17 @@ for mi in market_indexes:
         dfs.append(df)
     df = pd.concat(dfs, axis=0)
     df.to_csv('data/'+tt+'.csv.gz', index=False, compression='gzip')
+
+
+market_indexes = [1]
+for mi in market_indexes:
+    tt = 'spot'+str(mi)
+    ggs = glob('drift-v2-orderbook-snap/'+tt+'/*.csv')
+    dfs = []
+    for x in sorted(ggs)[-3500:]:
+        df = pd.read_csv(x) 
+        df['snap_slot'] = int(x.split('_')[-1].split('.')[0])
+        df = get_mm_score_for_snap_slot(df)
+        dfs.append(df)
+    df = pd.concat(dfs, axis=0)
+    df.to_csv('data/'+tt+'.csv.gz', index=False, compression='gzip')

@@ -286,7 +286,8 @@ async def gpt_page(clearing_house: ClearingHouse):
             user_q = 'answer tongue-in-cheek and party casual style. ' + user_q
         elif mode == 'uberzahl':
             user_q = 'answer in style of sophisticated mid-century mad-scientist. ' + user_q
-
+        elif mode == 'boring':
+            user_q = 'answer in style of a know-it-all smart contract developer. ' + user_q
         completion = openai.ChatCompletion.create(
         model="gpt-3.5-turbo", 
         messages=[{"role": "user", "content": context + user_q}]
