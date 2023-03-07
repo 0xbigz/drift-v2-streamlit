@@ -12,6 +12,7 @@ from solana.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from driftpy.clearing_house import ClearingHouse
 from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.math.positions import calculate_position_funding_pnl
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
@@ -115,6 +116,9 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                     except:
                         oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
                     liq_price = await chu.get_perp_liq_price(pos.market_index)
+                    upnl = await chu.get_unrealized_pnl(False, pos.market_index)
+                    upnl_funding = calculate_position_funding_pnl(perp_market, pos)
+
                     if liq_price is None: 
                         liq_delta = None
                     else:
@@ -126,6 +130,8 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                     liq_delta = None
 
                 dd['liq_price_delta'] = liq_delta
+                dd['upnl'] = upnl
+                dd['funding_upnl'] = upnl_funding
 
                 dfs[key].append(pd.Series(dd))
             dfs[key] = pd.concat(dfs[key],axis=1) 
@@ -171,8 +177,9 @@ async def show_pid_positions(clearing_house: ClearingHouse):
         'total_withdraws', 'total_social_loss',  'settled_perp_pnl',
         'cumulative_spot_fees', 'cumulative_perp_funding',]:
             user_leaderboard[x]/=1e6
-            st.text('user leaderboard')
-            st.dataframe(user_leaderboard)
+
+        st.text('user leaderboard')
+        st.dataframe(user_leaderboard)
 
     col1, col2, col3, col4 = st.columns(4)
     col2.metric("Unique Driftoors", str((state.number_of_authorities)),str((state.number_of_sub_accounts))+" SubAccounts")

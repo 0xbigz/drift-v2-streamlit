@@ -54,6 +54,10 @@ every deposited token is eligible for yield on deposits from borrows and provide
 borrowers are only able eligible to borrow from depositors in an over-collateralised fashion while passing multiple safety measures
 The protocol's orderbook, liquidity, and liquidation layer is powered by a validator-like Keeper Network. Keepers are a network of agents and market-makers incentivized to provide the best order execution (i.e. Just-In-Time (JIT) liquidity, order matching, etc.) to traders on Drift. The Keepers can route orders throughout the multi-sourced liquidity mechanisms that are designed to effectively scale and offer competitive pricing even with larger order sizes.
 
+the core contributors are @davidjlu @cindyleow (who do BD & Product), and @bigz_Pubkey @crispheaney (exchange design and smart contracts).
+
+@wphan, @luketheduke, @strokeszn, @evan, @perpetualnudge also work on engineer/product side
+
 """
 
 INSURANCE_POOL_CONTEXT = """"
