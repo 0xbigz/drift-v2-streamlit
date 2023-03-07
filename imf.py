@@ -94,7 +94,10 @@ async def imf_page(clearing_house: ClearingHouse):
         res = max(wgt, liability_wgt_n + imf * dd)
         return res
 
-    oo = max(10000/oracle_px, base)
+    if oracle_px != 0:
+        oo = max(10000/oracle_px, base)
+    else:
+        oo = base
 
     step = 1000 #int(np.round(oo/1000) * 1000)
     if oo > 100000:
