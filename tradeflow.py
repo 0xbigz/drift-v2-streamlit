@@ -78,7 +78,7 @@ def trade_flow_analysis():
     tzInfo = pytz.timezone('UTC')
 
     col1, col2, col3 = st.columns(3)
-    market = col1.selectbox('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP', 'SOL'])
+    market = col1.selectbox('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP', '1MBONK-PERP', 'SOL'])
 
     date = col2.date_input('select date:', min_value=datetime.datetime(2022,11,4), max_value=(datetime.datetime.now(tzInfo)))
     markets_data = load_s3_data([market], date.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))

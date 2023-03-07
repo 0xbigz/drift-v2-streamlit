@@ -28,7 +28,33 @@ import asyncio
 from glob import glob
 import openai
 
+DRIFT_CONTEXT = """
+```
+Drift Protocol is an open-sourced, decentralised exchange built on the Solana blockchain, enabling transparent and non-custodial trading on cryptocurrencies.
 
+
+# Welcome to Drift Protocol
+
+
+## What is Drift?
+Drift Protocol is an open-sourced, decentralised exchange built on the Solana blockchain, enabling transparent and non-custodial trading on cryptocurrencies.
+By depositing collateral into Drift Protocol, users can: 
+- trade perpetual swaps with up to 10x leverage,
+- borrow or lend at variable rate yields, 
+- stake / provide liquidity,
+- swap spot tokens
+
+## Why use Drift?
+The full suite of DeFi tools within the protocol are powered by Drift's robust cross-margined risk engine, designed to give traders a balance of both capital efficiency and protection (more details of the cross-margin engine design are detailed throughout "Technical Explanations").﻿
+
+Under the cross-margin engine, each tool extends functionality within the protocol without over-extending risk. For instance:
+
+the borrow / lend markets also enable cross-collateral on perpetual futures and more efficient margin trading on spot assets
+every deposited token is eligible for yield on deposits from borrows and provides margin for perpetual swaps
+borrowers are only able eligible to borrow from depositors in an over-collateralised fashion while passing multiple safety measures
+The protocol's orderbook, liquidity, and liquidation layer is powered by a validator-like Keeper Network. Keepers are a network of agents and market-makers incentivized to provide the best order execution (i.e. Just-In-Time (JIT) liquidity, order matching, etc.) to traders on Drift. The Keepers can route orders throughout the multi-sourced liquidity mechanisms that are designed to effectively scale and offer competitive pricing even with larger order sizes.
+
+"""
 
 INSURANCE_POOL_CONTEXT = """"
     
@@ -250,6 +276,8 @@ async def gpt_page(clearing_house: ClearingHouse):
         context = ""
         if 'insurance' in user_q or 'pool' in user_q or 'pnl' in user_q.lower():
             context = INSURANCE_POOL_CONTEXT
+        else:
+            context = DRIFT_CONTEXT
 
         if '?' not in user_q:
             user_q+='?'
