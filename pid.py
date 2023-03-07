@@ -193,6 +193,8 @@ async def show_pid_positions(clearing_house: ClearingHouse):
         num_markets = state.number_of_spot_markets
 
     tabs = st.tabs([str(x) for x in range(num_markets)])
+    usdc_market = await get_spot_market_account(ch.program, 0)
+
     for market_index, tab in enumerate(tabs):
         market_index = int(market_index)
         with tab:
@@ -228,6 +230,9 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 # my_bar = st.progress(sentiment)
                 st.text('User Perp Positions ('+ str((market.number_of_users_with_base)) +')')
                 st.text(f'vAMM Liquidity (bids= {(market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9} | asks={(market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9})')
+                st.text(f'Ext. Insurance: {(market.insurance_claim.quote_max_insurance-market.insurance_claim.quote_settled_insurance)/1e6}')
+                st.text(f'Int. Insurance: {(market.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)}')
+
                 if df1 is not None:
                     df1['base_asset_amount'] /= 1e9
                     df1['remainder_base_asset_amount'] /= 1e9
