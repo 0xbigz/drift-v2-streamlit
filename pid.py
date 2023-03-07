@@ -108,7 +108,6 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 dd['authority'] = str(x.account.authority)
                 dd['name'] = name 
                 dd['leverage'] = leverage / 10_000
-
                 if pos.base_asset_amount != 0:
                     perp_market = await chu.get_perp_market(pos.market_index)
                     try:
@@ -128,6 +127,8 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
                 else: 
                     liq_delta = None
+                    upnl = 0
+                    upnl_funding = 0
 
                 dd['liq_price_delta'] = liq_delta
                 dd['upnl'] = upnl
