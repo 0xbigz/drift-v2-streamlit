@@ -255,6 +255,9 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                     df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
                     df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: -1 if x==0 else x)
 
+
+                    agg_desc = df1.sum()
+
                     toshow = df1[[
                         'authority', 
                         'name', 
@@ -268,10 +271,13 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                         'breakeven_price', 
                         'cost_basis',
                         'upnl',
-                        'upnl_funding',
+                        'funding_upnl',
                         'public_key', 
                     ]]
                     st.dataframe(toshow)
+                    with st.expander('user summary stats'):
+                        st.dataframe(agg_desc)
+
 
                 # visualize perp liquidations 
                 perp_liq_prices_m = perp_liq_prices.get(market_index, None)
