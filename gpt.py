@@ -4,7 +4,7 @@ from tokenize import tabsize
 import driftpy
 import pandas as pd 
 import numpy as np 
-
+import csv 
 pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
@@ -273,6 +273,7 @@ async def gpt_page(clearing_house: ClearingHouse):
     user_q = col1.text_area('ask drift-gpt:')
 
     def do_gpt(user_q, mode='boring'):
+        og_user_q = str(user_q)
         user_q = str(user_q)
         context = ""
         if 'insurance' in user_q or 'pool' in user_q or 'pnl' in user_q.lower():
@@ -293,6 +294,13 @@ async def gpt_page(clearing_house: ClearingHouse):
         model="gpt-3.5-turbo", 
         messages=[{"role": "user", "content": context + user_q}]
         )
+
+        with open('gpt_database.csv','a', newline='') as f:
+            writer = csv.writer(f)
+            cont = str(completion.choices[0].message.content)
+            createtime = (completion.created)
+            writer.writerow([og_user_q, mode, createtime, cont])
+
         return completion
      
     is_clicked = col2.button('submit')  

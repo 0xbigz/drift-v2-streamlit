@@ -133,6 +133,15 @@ def main():
         with st.expander(f"pid={clearing_house.program_id} config"):
             st.json(config.__dict__)
 
+        if os.path.exists('gpt_database.csv'):
+            gpt_database = pd.read_csv('gpt_database.csv').to_csv().encode('utf-8')
+            st.download_button(
+                label="share browser statistics [bytes="+str(len(gpt_database))+"]",
+                data=gpt_database,
+                file_name='gpt_database.csv',
+                mime='text/csv',
+            )
+
     elif tab.lower() == 'logs':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(log_page(rpc, clearing_house))
