@@ -31,7 +31,7 @@ from imf import imf_page
 from userhealth import show_user_health
 from tradeflow import trade_flow_analysis
 from gpt import gpt_page
-
+from uservolume import show_user_volume
 
 def main():
     st.set_page_config(
@@ -65,10 +65,7 @@ def main():
     'Simulations', 'Logs',
     
      'Fee-Schedule', 'IF-Stakers', 
-     'User-Health', 'User-Stats', 'DLOB', 'MM', 'Trade Flow', 
-     'Drift-GPT',
-     
-     'IMF',
+     'User-Health', 'User-Volume', 'User-Stats', 'DLOB', 'MM', 'Trade Flow',   'Drift-GPT', 'IMF',
      'Config',
     #   'Social', 'PlatyPerps'
      )
@@ -167,6 +164,11 @@ def main():
     
     elif tab.lower() == 'dlob':
         orders_page(clearing_house)
+    
+    elif tab.lower() == 'user-volume':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(show_user_volume(clearing_house))
+
     elif tab.lower() == 'mm':
         mm_page(clearing_house)
 
