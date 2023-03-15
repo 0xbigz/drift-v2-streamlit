@@ -180,7 +180,7 @@ def mm_page(clearing_house: ClearingHouse):
     market_type = mol00.selectbox('market type', ['perp', 'spot'])
     market_indexes = [1]
     if market_type == 'perp':
-        market_indexes = [0, 1, 2, 3, 4]
+        market_indexes = [0, 1, 2, 3, 4, 5]
     market_index = mol1.selectbox(market_type+' market index', market_indexes)
     
     tt = market_type+str(market_index)
@@ -381,7 +381,7 @@ def mm_page(clearing_house: ClearingHouse):
         score_color = sol11.radio('show score highlights:', [True, False], 0)
 
         slippage = sol2.select_slider('slippage (%)', list(range(1, 100)), 5)
-        toshow = df[['score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
+        toshow = df[['level', 'score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
         'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'snap_slot', 'orderId', 'userOrderId', 
         'baseAssetAmountFilled', 'quoteAssetAmountFilled', 'reduceOnly',
         'triggerPrice', 'triggerCondition', 'existingPositionDirection',
@@ -418,7 +418,23 @@ def mm_page(clearing_house: ClearingHouse):
             color = '#ACE5EE' if val=='long' else 'pink'
             return f'background-color: {color}'
 
+        def level_highlight(val):
+            kk = val.split('-')[0]
+            gradient = {
+                'A': '#FFA500',  # orange
+                'B': '#FFB347',
+                'C': '#FFC58B',
+                'D': '#FFE0AD',
+                'E': '#FFFFE0',
+                'F': '#FFFF00'   # yellow
+            }
+
+            color = gradient[kk]
+
+            return f'background-color: {color}'
+
         st.dataframe(toshow_snap.style.applymap(cooling_highlight, subset=['direction'])
+                .applymap(level_highlight, subset=['level'])
                     #  ,(heating_highlight, subset=['Heating inputs', 'Heating outputs'])             
                      , use_container_width=True)
 

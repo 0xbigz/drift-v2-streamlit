@@ -48,6 +48,7 @@ def get_mm_score_for_snap_slot(df):
         return res
 
     d['priceRounded'] = d.apply(lambda x: rounded_threshold(x['price'], x['direction']), axis=1)
+    d['level'] = np.nan
     # print(d)
 
     top6bids = d[d.direction=='long'].groupby('priceRounded').sum().sort_values('priceRounded', ascending=False)[['baseAssetAmountLeft']]
@@ -63,20 +64,24 @@ def get_mm_score_for_snap_slot(df):
     # target bps of for scoring [1,3,5,10,15,20]
 
     score_scale = score_scale * pd.Series([2, .75, .5, .4, .3, .2]) #, .09, .08, .07])
-
+    chars = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
     for i,x in enumerate(top6bids.index[:6]):
+        char = chars[i]
         ba = d.loc[(d.priceRounded==x)  & (d.direction=='long'), 'baseAssetAmountLeft']
         ba /= ba.sum()
         d.loc[(d.priceRounded==x)  & (d.direction=='long'), 'score'] = score_scale.values[i] * ba
+        d.loc[(d.priceRounded==x)  & (d.direction=='long'), 'level'] = char+'-bid'
     for i,x in enumerate(top6asks.index[:6]):
+        char = chars[i]
         ba = d.loc[(d.priceRounded==x)  & (d.direction=='short'), 'baseAssetAmountLeft']
         ba /= ba.sum()
         d.loc[(d.priceRounded==x) & (d.direction=='short'), 'score'] = score_scale.values[i] * ba
+        d.loc[(d.priceRounded==x) & (d.direction=='short'), 'level'] = char+'-ask'
     
     return d
 
 
-market_indexes = [0,1,2,3,4]
+market_indexes = [0,1,2,3,4,5]
 for mi in market_indexes:
     tt = 'perp'+str(mi)
     ggs = glob('drift-v2-orderbook-snap/'+tt+'/*.csv')
