@@ -136,6 +136,7 @@ def trade_flow_analysis():
         + ' trades among '+str(len(solperp[user_type].unique()))+' unique '+ user_type+'s')
     zol2.metric(market+' Fees:', '$'+str((takerfee).round(2)), '$'+str(-makerfee.round(2))+' in liq/maker rebates, '+'$'+str(fillerfee.round(2))+' in filler rewards')
 
+    st.code('Note: bot classfication is for users who have placed 3000+ orders in a single market')
 
 
     markoutdf = pd.concat({
