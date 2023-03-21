@@ -50,7 +50,7 @@ def get_tx_request(sig):
         "method": "getTransaction",
         "params": [
             sig,
-            "json"
+            {"encoding": "json", "maxSupportedTransactionVersion": 0}
         ]
     }
 
@@ -150,7 +150,8 @@ async def log_page(url: str, ch: ClearingHouse):
     connection = ch.program.provider.connection
     tx_sig = st.text_input("lookup tx sig:")
     if tx_sig != '':
-        tx = await connection.get_transaction(tx_sig)
+        # tx = await connection.get_transaction(tx_sig)
+        tx = batch_get_txs(url, [tx_sig])[0]
         logs = []
         def call_b(evt): logs.append(evt)
         parser.parse_logs(tx['result']['meta']['logMessages'], call_b)
