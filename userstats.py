@@ -68,7 +68,7 @@ async def show_user_stats(clearing_house: ClearingHouse):
 
 
 
-    tabs = st.tabs(['Volume', 'Refferals'])
+    tabs = st.tabs(['Volume', 'Refferals', 'Fillers'])
     with tabs[0]:
         pie1, pie2 = st.columns(2)
 
@@ -141,3 +141,8 @@ async def show_user_stats(clearing_house: ClearingHouse):
         tt = tt.sort_values('number reffered', ascending=False)
         st.dataframe(tt)
         
+    with tabs[2]:
+        st.write('filler leaderboard')
+        df2 = df[df.filler_volume30d>0]
+        df2 = df2.set_index('authority')[['filler_volume30d']].sort_values(by='filler_volume30d', ascending=False)
+        st.dataframe(df2)
