@@ -33,7 +33,7 @@ from tradeflow import trade_flow_analysis
 from gpt import gpt_page
 from uservolume import show_user_volume
 from refs import ref_page
-
+from userstatus import userstatus_page
 def main():
     st.set_page_config(
         'Drift v2',
@@ -67,6 +67,7 @@ def main():
     
      'Fee-Schedule', 'IF-Stakers', 
      'User-Health', 'User-Volume', 'User-Stats', 'DLOB', 'Refs', 'MM', 'Trade Flow',   'Drift-GPT', 'IMF',
+     'User-Status',
      'Config',
     #   'Social', 'PlatyPerps'
      )
@@ -163,6 +164,10 @@ def main():
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_health(clearing_house))
 
+    elif tab.lower() == 'user-status':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(userstatus_page(clearing_house))
+        
     elif tab.lower() == 'user-stats':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_stats(clearing_house))
