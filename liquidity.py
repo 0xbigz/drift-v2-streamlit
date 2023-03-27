@@ -34,7 +34,8 @@ def slot_to_timestamp_est(slot):
     # ts = X - (Y - slot)/2
     # X - ts = (Y - slot)/2
     # slot = Y - 2 * (X - ts)
-    return 1678888672 - (182733090-slot) * .484
+    return 1679940031 - (185018514-slot) * .484
+    # return 1678888672 - (182733090-slot) * .484
     # return 1676400329 - (177774625-slot)*.5
 
 def get_slots_for_date(date: datetime.date):
