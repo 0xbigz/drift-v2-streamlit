@@ -181,7 +181,7 @@ def mm_page(clearing_house: ClearingHouse):
     market_type = mol00.selectbox('market type', ['perp', 'spot'])
     market_indexes = [1]
     if market_type == 'perp':
-        market_indexes = [0, 1, 2, 3, 4, 5]
+        market_indexes = [0, 1, 2, 3, 4, 5, 6]
     market_index = mol1.selectbox(market_type+' market index', market_indexes)
     
     tt = market_type+str(market_index)
