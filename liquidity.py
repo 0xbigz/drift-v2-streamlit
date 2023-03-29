@@ -147,9 +147,9 @@ def get_mm_stats(df, user, oracle, bbo2):
         offer_within_best_pct = 0
     bbo_stats = pd.DataFrame(
         [[availability_pct, uptime_pct, bid_best_pct, bid_within_best_pct, offer_best_pct, offer_within_best_pct, 
-        bbo_user_avg_score/100, bbo_user_median_size/100]],
+        bbo_user_avg_score/100, bbo_user_median_size/100, bbo_user_min_size/100]],
         index=[user],
-        columns=['availability%', 'uptime%', 'best_bid%', 'uptime_bid%', 'best_offer%', 'uptime_offer%', 'avg score', 'median size']
+        columns=['availability%', 'uptime%', 'best_bid%', 'uptime_bid%', 'best_offer%', 'uptime_offer%', 'avg score', 'median size', 'min size']
         ).T * 100
 
     return bbo_user, bbo_stats
