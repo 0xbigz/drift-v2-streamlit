@@ -28,6 +28,55 @@ from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
 from glob import glob
+import requests
+
+def load_realtime_book(market_index):
+    x = requests.get('https://dlob.drift.trade/orders/json').json()
+    market_to_oracle_map = pd.DataFrame(x['oracles']).set_index('marketIndex').to_dict()['price']
+    market_to_oracle_map
+
+    df = pd.DataFrame([order['order'] for order in x['orders']])
+    user = pd.DataFrame([order['user'] for order in x['orders']], columns=['user'])
+    df = pd.concat([df, user],axis=1)
+    df['oraclePrice'] = None
+    df.loc[df.marketType=='perp', 'oraclePrice'] = df.loc[df.marketType=='perp', 'marketIndex'].apply(lambda x: market_to_oracle_map.get(x, 0))
+
+    #todo, invariant may change w/ future spot markets
+    df.loc[df.marketType=='spot', 'oraclePrice'] = df.loc[df.marketType=='spot', 'marketIndex'].apply(lambda x: market_to_oracle_map.get(int(x)-1, 0))
+
+    df1 = df[(df.orderType=='limit')]
+    df1.loc[((df1['price'].astype(int)==0) & (df1['oraclePrice'].astype(int)!=0)), 'price'] = df1['oraclePrice'].astype(int) + df1['oraclePriceOffset'].astype(int)
+
+    for col in ['price', 'oraclePrice', 'oraclePriceOffset']:
+        df1[col] = df1[col].astype(int)
+        df1[col] /= 1e6
+        
+    for col in ['quoteAssetAmountFilled']:
+        df1[col] = df1[col].astype(int)
+        df1[col] /= 1e6 
+
+    for col in ['baseAssetAmount', 'baseAssetAmountFilled']:
+        df1[col] = df1[col].astype(int)
+        df1[col] /= 1e9
+        
+
+    # market_types = sorted(df.marketType.unique())
+    # market_indexes = sorted(df.marketIndex.unique())
+    
+    mdf = df1[((df1.marketType=='perp') & (df1.marketIndex==market_index))]
+    if len(mdf)==0:
+        return mdf
+
+    mdf = mdf[['price', 'baseAssetAmount', 'direction', 'user', 'status', 'orderType', 'marketType', 'slot', 'orderId', 'userOrderId',
+'marketIndex',  'baseAssetAmountFilled',
+'quoteAssetAmountFilled',  'reduceOnly', 'triggerPrice',
+'triggerCondition', 'existingPositionDirection', 'postOnly',
+'immediateOrCancel', 'oraclePriceOffset', 'auctionDuration',
+'auctionStartPrice', 'auctionEndPrice', 'maxTs', 'oraclePrice']]
+    mdf = mdf.sort_values('price').reset_index(drop=True)
+
+    return mdf
+
 
 
 def slot_to_timestamp_est(slot):
@@ -43,6 +92,7 @@ def get_slots_for_date(date: datetime.date):
     start = 177774625-2*(1676400329-utimestamp)
     end = start + 60*60*24*2
     return [start, end]
+
 
 def get_mm_score_for_snap_slot(df):
     d = df[(df.orderType=='limit') 
@@ -62,15 +112,35 @@ def get_mm_score_for_snap_slot(df):
             best_ask = best_bid
 
     mark_price = (best_bid+best_ask)/2
-    within_bps_of_price = (mark_price * .0005)
 
-    if market_index == 1 or market_index == 2:
-        within_bps_of_price = (mark_price * .00025)
+    mbps = .0005 # 5 bps
+    mbpsA = mbps/5
+    mbpsB = mbps*3/5
 
-    def rounded_threshold(x):
-        return np.round(float(x)/within_bps_of_price) * within_bps_of_price
+    within_bps_of_price = (mark_price * mbps)
 
-    d['priceRounded'] = d['price'].apply(rounded_threshold)
+    # if market_index == 1 or market_index == 2:
+    #     within_bps_of_price = (mark_price * .00025)
+
+    def rounded_threshold(x, direction):
+        within_bps_of_price = (mark_price * mbps)
+        if direction == 'long':
+            if x >= best_bid*(1-mbpsA):
+                within_bps_of_price = (mark_price * mbpsA)
+            elif x >= best_bid*(1-mbpsB):
+                within_bps_of_price = (mark_price * mbpsB)
+        else:
+            if x <= best_ask*(1+mbpsA):
+                within_bps_of_price = (mark_price * mbpsA)
+            elif x <= best_ask*(1+mbpsB):
+                within_bps_of_price = (mark_price * mbpsB)
+
+        res = np.round(float(x)/within_bps_of_price) * within_bps_of_price
+
+        return res
+
+    d['priceRounded'] = d.apply(lambda x: rounded_threshold(x['price'], x['direction']), axis=1)
+    d['level'] = np.nan
     # print(d)
 
     top6bids = d[d.direction=='long'].groupby('priceRounded').sum().sort_values('priceRounded', ascending=False)[['baseAssetAmountLeft']]
@@ -83,16 +153,22 @@ def get_mm_score_for_snap_slot(df):
     q = ((tts['bs']+tts['as'])/2).apply(lambda x: max(x, min_q)).max()
     # print('q=', q)
     score_scale = tts.min(axis=1)/q * 100
-    score_scale = score_scale * pd.Series([2, .75, .5, .4, .3, .2]) #, .09, .08, .07])
+    # target bps of for scoring [1,3,5,10,15,20]
 
+    score_scale = score_scale * pd.Series([2, .75, .5, .4, .3, .2]) #, .09, .08, .07])
+    chars = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
     for i,x in enumerate(top6bids.index[:6]):
+        char = chars[i]
         ba = d.loc[(d.priceRounded==x)  & (d.direction=='long'), 'baseAssetAmountLeft']
         ba /= ba.sum()
         d.loc[(d.priceRounded==x)  & (d.direction=='long'), 'score'] = score_scale.values[i] * ba
+        d.loc[(d.priceRounded==x)  & (d.direction=='long'), 'level'] = char+'-bid'
     for i,x in enumerate(top6asks.index[:6]):
+        char = chars[i]
         ba = d.loc[(d.priceRounded==x)  & (d.direction=='short'), 'baseAssetAmountLeft']
         ba /= ba.sum()
         d.loc[(d.priceRounded==x) & (d.direction=='short'), 'score'] = score_scale.values[i] * ba
+        d.loc[(d.priceRounded==x) & (d.direction=='short'), 'level'] = char+'-ask'
     
     return d
 
@@ -196,7 +272,7 @@ def mm_page(clearing_house: ClearingHouse):
     week_ago_slot = df_full[df_full.snap_slot>newest_slot-(2*60*60*24*7)].snap_slot.min()
 
     oracle = df_full.groupby('snap_slot')['oraclePrice'].max()
-    tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot'])
+    tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot', 'real time'])
 
     # st.write('slot range:', values)
     with tabs[0]:
@@ -374,6 +450,25 @@ def mm_page(clearing_house: ClearingHouse):
         worst_slot = bbo_user.score.idxmin()
         st.write('best slot:'+str(best_slot), ' | worst slot:'+str(worst_slot))
 
+    def cooling_highlight(val):
+        color = '#ACE5EE' if val=='long' else 'pink'
+        return f'background-color: {color}'
+
+    def level_highlight(val):
+        kk = str(val).split('-')[0]
+        gradient = {
+            'A': '#FFA500',  # orange
+            'B': '#FFB347',
+            'C': '#FFC58B',
+            'D': '#FFE0AD',
+            'E': '#FFFFE0',
+            'F': '#FFFF00'   # yellow
+        }
+
+        color = gradient.get(kk, None)
+
+        return f'background-color: {color}'
+
     with tabs[3]:
         st.title('individual snapshot lookup')
         # print(df.columns)
@@ -417,24 +512,7 @@ def mm_page(clearing_house: ClearingHouse):
 
         if score_color:
             toshow_snap = toshow_snap.replace(0, np.nan).dropna(subset=['score'],axis=0)
-        def cooling_highlight(val):
-            color = '#ACE5EE' if val=='long' else 'pink'
-            return f'background-color: {color}'
 
-        def level_highlight(val):
-            kk = val.split('-')[0]
-            gradient = {
-                'A': '#FFA500',  # orange
-                'B': '#FFB347',
-                'C': '#FFC58B',
-                'D': '#FFE0AD',
-                'E': '#FFFFE0',
-                'F': '#FFFF00'   # yellow
-            }
-
-            color = gradient[kk]
-
-            return f'background-color: {color}'
 
         st.dataframe(toshow_snap.style.applymap(cooling_highlight, subset=['direction'])
                 .applymap(level_highlight, subset=['level'])
@@ -442,5 +520,20 @@ def mm_page(clearing_house: ClearingHouse):
                      , use_container_width=True)
 
 
-            
-        
+    with tabs[4]:
+        df = load_realtime_book(market_index)
+        df['snap_slot'] = 'current'
+        scored_df = get_mm_score_for_snap_slot(df)
+        scored_df = scored_df.dropna(subset=['score'])
+        toshow = scored_df[['level', 'score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
+        'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'snap_slot', 'orderId', 'userOrderId', 
+        'baseAssetAmountFilled', 'quoteAssetAmountFilled', 'reduceOnly',
+        'triggerPrice', 'triggerCondition', 'existingPositionDirection',
+        'postOnly', 'immediateOrCancel', 'oraclePriceOffset', 'auctionDuration',
+        'auctionStartPrice', 'auctionEndPrice', 'maxTs', 
+        ]]
+        st.metric('total score:', np.round(toshow['score'].sum(),2))
+        st.table(toshow.groupby('user')['score'].sum().sort_values(ascending=False))
+
+        st.dataframe(toshow.style.applymap(cooling_highlight, subset=['direction'])
+                .applymap(level_highlight, subset=['level'])  , use_container_width=True)
