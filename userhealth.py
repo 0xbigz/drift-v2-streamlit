@@ -84,6 +84,29 @@ async def show_user_health(clearing_house: ClearingHouse):
         url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
         url += 'user/%s/trades/%s/%s'
 
+        userAccountKeys = []
+        for user_authority in user_authorities:
+                user_authority_pk = PublicKey(user_authority)
+                # print(user_stats)
+                user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
+                # chu = ClearingHouseUser(
+                #     ch, 
+                #     authority=user_authority_pk, 
+                #     subaccount_id=0, 
+                #     use_cache=False
+                # )
+                for sub_id in range(user_stat.number_of_sub_accounts_created):    
+                    user_account_pk = get_user_account_public_key(clearing_house.program_id,
+                    user_authority_pk,
+                    sub_id)
+                    userAccountKeys.append(user_account_pk)
+
+        st.write('Authority owned Drift User Accounts:',)
+        uak_df = pd.DataFrame(userAccountKeys, columns=['userAccountPublicKey'])
+        uak_df.index = ['subaccount_'+str(x) for x in uak_df.index]
+        st.dataframe(uak_df)
+
+
         st.header('March Trades Stats')
         for user_authority in user_authorities:
             user_authority_pk = PublicKey(user_authority)
@@ -111,9 +134,8 @@ async def show_user_health(clearing_house: ClearingHouse):
                     continue
 
                 user_account_pk = get_user_account_public_key(chu_sub.clearing_house.program_id,
-                
-                chu_sub.authority,
-                sub_id)
+                    chu_sub.authority,
+                    sub_id)
 
                 url2 = url % (str(user_account_pk), '2023', '3')
                 st.write('data source:', url2)
