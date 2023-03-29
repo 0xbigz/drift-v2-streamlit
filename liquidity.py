@@ -8,6 +8,7 @@ import numpy as np
 pd.options.plotting.backend = "plotly"
 import datetime
 import pytz
+import time
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
@@ -521,31 +522,45 @@ def mm_page(clearing_house: ClearingHouse):
 
 
     with tabs[4]:
-       
-        
-        now = datetime.datetime.now()
-        try:
-            df = load_realtime_book(market_index)
-        except:
-            df = pd.DataFrame()
-        df['snap_slot'] = 'current'
-        scored_df = get_mm_score_for_snap_slot(df)
-        scored_df = scored_df.dropna(subset=['score'])
-        toshow = scored_df[['level', 'score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
-        'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'snap_slot', 'orderId', 'userOrderId', 
-        'baseAssetAmountFilled', 'quoteAssetAmountFilled', 'reduceOnly',
-        'triggerPrice', 'triggerCondition', 'existingPositionDirection',
-        'postOnly', 'immediateOrCancel', 'oraclePriceOffset', 'auctionDuration',
-        'auctionStartPrice', 'auctionEndPrice', 'maxTs', 
-        ]]
         st_tscore, liveness_switch = st.columns([4, 1])
+        st_tscore.button('refresh')
+        is_live = liveness_switch.radio('liveness', ['on', 'off'], index=1, horizontal=True)
+        def count_down(ts, live=False):
+            def do_it():
+                now = datetime.datetime.now()
+                try:
+                    df = load_realtime_book(market_index)
+                except:
+                    df = pd.DataFrame()
+                df['snap_slot'] = 'current'
+                scored_df = get_mm_score_for_snap_slot(df)
+                scored_df = scored_df.dropna(subset=['score'])
+                toshow = scored_df[['level', 'score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
+                'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'snap_slot', 'orderId', 'userOrderId', 
+                'baseAssetAmountFilled', 'quoteAssetAmountFilled', 'reduceOnly',
+                'triggerPrice', 'triggerCondition', 'existingPositionDirection',
+                'postOnly', 'immediateOrCancel', 'oraclePriceOffset', 'auctionDuration',
+                'auctionStartPrice', 'auctionEndPrice', 'maxTs', 
+                ]]
+                st.metric('total score:', np.round(toshow['score'].sum(), 2))
+                st.write('as of: ' + str(now))
+                st.table(toshow.groupby('user')['score'].sum().sort_values(ascending=False))
+                st.dataframe(toshow.style.applymap(cooling_highlight, subset=['direction'])
+                        .applymap(level_highlight, subset=['level'])  , use_container_width=True)
 
-        st_tscore.metric('total score:', np.round(toshow['score'].sum(), 2))
-        is_live = liveness_switch.radio('liveness', ['on', 'off'], index=1)
-
-        st.write('as of: ' + str(now))
-        st.table(toshow.groupby('user')['score'].sum().sort_values(ascending=False))
-        
-
-        st.dataframe(toshow.style.applymap(cooling_highlight, subset=['direction'])
-                .applymap(level_highlight, subset=['level'])  , use_container_width=True)
+            if live:
+                with st.empty():
+                     while ts:
+                        # mins, secs = divmod(ts, 60)
+                        # time_now = '{:02d}:{:02d}'.format(mins, secs)
+                        # st.header(f"{time_now}")
+                        do_it()
+                        time.sleep(10)
+                        ts -= 1
+            else:
+                do_it()
+        time_in_seconds = 60
+        if is_live == 'on':
+            count_down(int(time_in_seconds), True)
+        else:
+            count_down(int(time_in_seconds))
