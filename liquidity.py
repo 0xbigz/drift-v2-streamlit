@@ -521,7 +521,13 @@ def mm_page(clearing_house: ClearingHouse):
 
 
     with tabs[4]:
-        df = load_realtime_book(market_index)
+       
+        
+        now = datetime.datetime.now()
+        try:
+            df = load_realtime_book(market_index)
+        except:
+            df = pd.DataFrame()
         df['snap_slot'] = 'current'
         scored_df = get_mm_score_for_snap_slot(df)
         scored_df = scored_df.dropna(subset=['score'])
@@ -532,8 +538,14 @@ def mm_page(clearing_house: ClearingHouse):
         'postOnly', 'immediateOrCancel', 'oraclePriceOffset', 'auctionDuration',
         'auctionStartPrice', 'auctionEndPrice', 'maxTs', 
         ]]
-        st.metric('total score:', np.round(toshow['score'].sum(),2))
+        st_tscore, liveness_switch = st.columns([4, 1])
+
+        st_tscore.metric('total score:', np.round(toshow['score'].sum(), 2))
+        is_live = liveness_switch.radio('liveness', ['on', 'off'], index=1)
+
+        st.write('as of: ' + str(now))
         st.table(toshow.groupby('user')['score'].sum().sort_values(ascending=False))
+        
 
         st.dataframe(toshow.style.applymap(cooling_highlight, subset=['direction'])
                 .applymap(level_highlight, subset=['level'])  , use_container_width=True)
