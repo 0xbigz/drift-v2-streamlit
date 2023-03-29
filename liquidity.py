@@ -119,7 +119,9 @@ def get_mm_stats(df, user, oracle, bbo2):
         .reindex(all_snap_slots).loc[bbo2.index[0]:bbo2.index[-1]]
     bbo_user = pd.concat([bbo_user, bbo_user_score],axis=1)
     bbo_user_avg_score = bbo_user['score'].fillna(0).mean()
-    bbo_user_median_size = bbo_user[bbo_user['score']>0]['baseAssetAmountLeft'].fillna(0).min()
+    bbo_user_sizes = bbo_user[bbo_user['score']>0]['baseAssetAmountLeft'].fillna(0)
+    bbo_user_median_size = bbo_user_sizes.median()
+    bbo_user_min_size = bbo_user_sizes.min()
     # if(float(bbo_user_avg_score) > 90):
     #     print(user)
     #     print(bbo_user['score'].describe())
