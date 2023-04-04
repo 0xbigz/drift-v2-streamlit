@@ -32,7 +32,13 @@ from glob import glob
 import requests
 
 def load_realtime_book(market_index):
-    x = requests.get('https://dlob.drift.trade/orders/json').json()
+    x = requests.get('https://dlob.drift.trade/orders/json')
+    
+    try:
+        x = x.json()
+    except:
+        print(x)
+        
     market_to_oracle_map = pd.DataFrame(x['oracles']).set_index('marketIndex').to_dict()['price']
     market_to_oracle_map
 
@@ -522,6 +528,7 @@ def mm_page(clearing_house: ClearingHouse):
 
 
     with tabs[4]:
+        warning_text = ''
         st_tscore, liveness_switch = st.columns([4, 1])
         st_tscore.button('refresh')
         is_live = liveness_switch.radio('liveness', ['on', 'off'], index=1, horizontal=True)
@@ -530,7 +537,10 @@ def mm_page(clearing_house: ClearingHouse):
                 now = datetime.datetime.now()
                 try:
                     df = load_realtime_book(market_index)
-                except:
+                except Exception as e:
+                    warning_text = 'load_realtime_book error: ' + str(e)
+                    if warning_text:
+                        st.warning(warning_text)
                     df = pd.DataFrame()
                 df['snap_slot'] = 'current'
                 scored_df = get_mm_score_for_snap_slot(df)
