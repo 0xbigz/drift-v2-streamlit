@@ -268,10 +268,11 @@ async def gpt_page(clearing_house: ClearingHouse):
 
     ch = clearing_house
     # state = await get_state_account(ch.program)
-    col1, col2, col3 = st.columns([6,2,1])
-    OPENAI_API_KEY = st.text_input('OPENAI_API_KEY', '')
+    col1, col2, col22, col3 = st.columns([6,2,2,1])
+    OPENAI_API_KEY = col22.text_input('OPENAI_API_KEY', '')
     if OPENAI_API_KEY!='' and len(OPENAI_API_KEY) > 4:
         os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
+        openai.api_key = OPENAI_API_KEY
 
     user_q = col1.text_area('ask drift-gpt:')
 
