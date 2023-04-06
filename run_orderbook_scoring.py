@@ -80,13 +80,15 @@ def get_mm_score_for_snap_slot(df):
     
     return d
 
+approx_one_month_lookback = -3500
+approx_two_week_lookback = -1700
 
-market_indexes = [0,1,2,3,4,5]
+market_indexes = [0,1,2,3,4,5,6]
 for mi in market_indexes:
     tt = 'perp'+str(mi)
     ggs = glob('drift-v2-orderbook-snap/'+tt+'/*.csv')
     dfs = []
-    for x in sorted(ggs)[-3500:]:
+    for x in sorted(ggs)[approx_two_week_lookback:]:
         df = pd.read_csv(x) 
         df['snap_slot'] = int(x.split('_')[-1].split('.')[0])
         df = get_mm_score_for_snap_slot(df)
@@ -100,7 +102,8 @@ for mi in market_indexes:
     tt = 'spot'+str(mi)
     ggs = glob('drift-v2-orderbook-snap/'+tt+'/*.csv')
     dfs = []
-    for x in sorted(ggs)[-3500:]:
+
+    for x in sorted(ggs)[approx_two_week_lookback:]:
         df = pd.read_csv(x) 
         df['snap_slot'] = int(x.split('_')[-1].split('.')[0])
         df = get_mm_score_for_snap_slot(df)
