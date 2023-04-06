@@ -238,8 +238,8 @@ def get_mm_stats(df, user, oracle, bbo2):
     return bbo_user, bbo_stats
 
 
-@st.experimental_memo  # No need for TTL this time. It's static data :)
-def get_data_by_market_index(market_type, market_index):
+@st.experimental_memo(ttl=3600*2)  # 2 hr TTL this time
+def get_data_by_market_index(market_type, market_index, source):
     dfs = []
     tt = market_type+str(market_index)
     # ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
@@ -256,7 +256,12 @@ def get_data_by_market_index(market_type, market_index):
         df.to_csv('data/'+tt+'.csv.gz', index=False, compression='gzip')
     else:
         print('reading csv')
-        df = pd.read_csv('data/'+tt+'.csv.gz')
+        if source == '':
+            source = 'data/'+tt+'.csv.gz'
+        else:
+            source = source+tt+'.csv.gz'
+        # df = pd.read_csv('data/'+tt+'.csv.gz')
+        df = pd.read_csv(source)
     df = df.reset_index(drop=True)
     return df
 
@@ -270,7 +275,8 @@ def mm_page(clearing_house: ClearingHouse):
     market_index = mol1.selectbox(market_type+' market index', market_indexes)
     
     tt = market_type+str(market_index)
-    df_full = get_data_by_market_index(market_type, market_index)
+    source = st.text_input('source:', 'https://github.com/0xbigz/drift-v2-orderbook-scored/raw/main/data/')
+    df_full = get_data_by_market_index(market_type, market_index, source if 'data' in source else '')
 
     # all_slots = df_full.snap_slot.unique()
     oldest_slot = df_full.snap_slot.min()
@@ -279,7 +285,7 @@ def mm_page(clearing_house: ClearingHouse):
     week_ago_slot = df_full[df_full.snap_slot>newest_slot-(2*60*60*24*7)].snap_slot.min()
 
     oracle = df_full.groupby('snap_slot')['oraclePrice'].max()
-    tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot', 'real time'])
+    tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot', 'real time', 'csv reader'])
 
     # st.write('slot range:', values)
     with tabs[0]:
@@ -574,3 +580,9 @@ def mm_page(clearing_house: ClearingHouse):
             count_down(int(time_in_seconds), True)
         else:
             count_down(int(time_in_seconds))
+
+    with tabs[5]:
+        url = st.text_input('url to csv:', '')
+        if url!='':
+            df = pd.read_csv(url)
+            st.dataframe(df)
