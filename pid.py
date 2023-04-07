@@ -238,6 +238,23 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 # my_bar = st.progress(sentiment)
                 st.text('User Perp Positions ('+ str((market.number_of_users_with_base)) +')')
                 st.text(f'vAMM Liquidity (bids= {(market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9} | asks={(market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9})')
+                t0, t1, t2 = st.columns([1,1,5])
+                dir = t0.selectbox('direction:', ['buy', 'sell'], key='selectbox-'+str(market_index))
+                ba = t1.number_input('base amount:', value=1, key='numin-'+str(market_index))
+                bid_price = market.amm.bid_quote_asset_reserve/market.amm.bid_base_asset_reserve * market.amm.peg_multiplier/1e6
+                ask_price = market.amm.ask_quote_asset_reserve/market.amm.ask_base_asset_reserve * market.amm.peg_multiplier/1e6
+                def px_impact(dir, ba):
+                    f = ba / (market.amm.base_asset_reserve/1e9)
+                    if dir == 'buy':
+                        pct_impact = (1/((1-f)**2) - 1) * 100
+                    else:
+                        pct_impact = (1 - 1/((1+f)**2)) * 100
+                    return pct_impact
+                px_impact = px_impact(dir, ba)
+                price = (ask_price * (1+px_impact/100)) if dir=='buy' else (bid_price * (1-px_impact/100))
+                t2.text(f'vAMM stats: \n px={price} \n px_impact={px_impact}%')
+            
+                
                 st.text(f'Ext. Insurance: {(market.insurance_claim.quote_max_insurance-market.insurance_claim.quote_settled_insurance)/1e6}')
                 st.text(f'Int. Insurance: {(market.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)}')
 
