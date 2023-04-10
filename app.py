@@ -34,6 +34,8 @@ from gpt import gpt_page
 from uservolume import show_user_volume
 from refs import ref_page
 from userstatus import userstatus_page
+from network import show_network
+
 def main():
     st.set_page_config(
         'Drift v2',
@@ -67,6 +69,7 @@ def main():
     
      'Fee-Schedule', 'IF-Stakers', 
      'User-Health', 'User-Volume', 'User-Stats', 'DLOB', 'Refs', 'MM', 'Trade Flow',   'Drift-GPT', 'IMF',
+     'Network',
      'User-Status',
      'Config',
     #   'Social', 'PlatyPerps'
@@ -178,6 +181,10 @@ def main():
     elif tab.lower() == 'user-volume':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_volume(clearing_house))
+
+    elif tab.lower() == 'network':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(show_network(clearing_house))
 
     elif tab.lower() == 'mm':
         mm_page(clearing_house)

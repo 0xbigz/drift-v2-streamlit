@@ -189,3 +189,10 @@ async def insurance_fund_page(ch: ClearingHouse):
     rot = rot.set_index('ts')
     rot.index = pd.to_datetime((rot.index * 1e9).astype(int))
     st.dataframe(rot)
+
+
+    for x in all_stakers:
+        if str(x.account.authority)==selected:
+            with st.expander(str(x.public_key)):
+                st.write(str(x.account.__dict__))
+
