@@ -77,26 +77,33 @@ def convert_df(df):
 def trade_flow_analysis():
     tzInfo = pytz.timezone('UTC')
 
-    col1, col2, col3 = st.columns(3)
-    market = col1.selectbox('select market:', ["SOL-PERP", "BTC-PERP", "ETH-PERP", "1MBONK-PERP", "MATIC-PERP", "ARB-PERP", "DOGE-PERP", "SOL"])
+    modecol, col1, col2, col3 = st.columns([1,3,3,3])
+    selection = modecol.radio('mode:', ['summary', 'per-market'], index=1)
 
+    markets = ["SOL-PERP", "BTC-PERP", "ETH-PERP", "1MBONK-PERP", "MATIC-PERP", "ARB-PERP", "DOGE-PERP", "SOL"]
+    market = None
+    if selection == 'per-market':
+        market = col1.selectbox('select market:', markets)
+        market_selected = [market]
+    else:
+        market_selected = markets
     date = col2.date_input('select date:', min_value=datetime.datetime(2022,11,4), max_value=(datetime.datetime.now(tzInfo)))
-    markets_data = load_s3_data([market], date.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
+    markets_data = load_s3_data(market_selected, date.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
 
+    if market is not None:
+        csv = convert_df(markets_data[market])
 
-    csv = convert_df(markets_data[market])
-
-    col3.download_button(
-        label="Download CSV",
-        data=csv,
-        file_name='drift-v2-'+market+'-'+date.strftime('%Y-%m-%d')+'.csv',
-        mime='text/csv',
-    )
+        col3.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name='drift-v2-'+market+'-'+date.strftime('%Y-%m-%d')+'.csv',
+            mime='text/csv',
+        )
 
     solect1, solect2 = st.columns(2)
     lookahead = solect1.slider('markout lookahead:', 0, 3600, 60, 10)
     user_type = solect2.radio('user type:', ['taker', 'maker'], 0)
-    solperp = dedupdf(markets_data, market, lookahead)
+    solperp = pd.concat([dedupdf(markets_data, nom, lookahead) for nom in market_selected])
 
     zol1, zol2, zol3 = st.columns(3)
 
@@ -129,12 +136,19 @@ def trade_flow_analysis():
         solperp['markout_pnl_1MIN'] = -(solperp['baseAssetAmountFilled'] * (solperp['takerPremiumNextMinute'] - solperp['takerPremium']))
 
     retail_trades = solperp[solperp[user_type].isin(retail_takers)]
+    retail_volume = (retail_trades['quoteAssetAmountFilled'].sum().round(2))
+    total_volume = solperp['quoteAssetAmountFilled'].sum().round(2)
+    num_trades = len(solperp)
+    unique_user_types = len(solperp[user_type].unique())
 
-    zol1.metric(market+' Retail Volume:', '$'+f"{(retail_trades['quoteAssetAmountFilled'].sum().round(2)):,}", 
+    tt = market if market is not None else ''
+    zol1.metric(tt+' Retail Volume:', '$'+f"{retail_volume:,}", 
     
-    '$' + str(solperp['quoteAssetAmountFilled'].sum().round(2)) + ' over ' + str(len(solperp)) \
-        + ' trades among '+str(len(solperp[user_type].unique()))+' unique '+ user_type+'s')
-    zol2.metric(market+' Fees:', '$'+str((takerfee).round(2)), '$'+str(-makerfee.round(2))+' in liq/maker rebates, '+'$'+str(fillerfee.round(2))+' in filler rewards')
+    '$' + str(total_volume) + ' over ' + str(num_trades) \
+        + ' trades among '+str(unique_user_types)+' unique '+ str(user_type)+'s')
+
+
+    zol2.metric(tt+' Fees:', '$'+str((takerfee).round(2)), '$'+str(-makerfee.round(2))+' in liq/maker rebates, '+'$'+str(fillerfee.round(2))+' in filler rewards')
 
     st.code('Note: bot classfication is for users who have placed 3000+ orders in a single market')
 
