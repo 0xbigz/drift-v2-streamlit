@@ -337,6 +337,11 @@ async def show_user_volume(clearing_house: ClearingHouse):
                     axis=1,
                 )
                 reward_volume = reward_volume.reset_index()
+                reward_volume['taker'] = reward_volume['taker'].astype(str)
+                reward_volume.index = reward_volume['taker'].apply(lambda x: str(user_stats_df[user_stats_df['subAccounts'].str.contains(x)]['referrer'].dropna().values[0]))
+                reward_volume.index.name = 'referrer'
+                reward_volume.columns = ['taker', 'referred taker volume']
+                reward_volume = reward_volume.reset_index().groupby('referrer').sum()
                 
             st.dataframe(reward_volume)
 
