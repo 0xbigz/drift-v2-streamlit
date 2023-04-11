@@ -125,7 +125,7 @@ def get_mm_score_for_snap_slot(df):
     mbpsA = mbps/5
     mbpsB = mbps*3/5
 
-    within_bps_of_price = (mark_price * mbps)
+    # within_bps_of_price = (mark_price * mbps)
 
     # if market_index == 1 or market_index == 2:
     #     within_bps_of_price = (mark_price * .00025)
@@ -137,13 +137,14 @@ def get_mm_score_for_snap_slot(df):
                 within_bps_of_price = (mark_price * mbpsA)
             elif x >= best_bid*(1-mbpsB):
                 within_bps_of_price = (mark_price * mbpsB)
+            res = np.floor(float(x)/within_bps_of_price) * within_bps_of_price
         else:
             if x <= best_ask*(1+mbpsA):
                 within_bps_of_price = (mark_price * mbpsA)
             elif x <= best_ask*(1+mbpsB):
                 within_bps_of_price = (mark_price * mbpsB)
 
-        res = np.round(float(x)/within_bps_of_price) * within_bps_of_price
+            res = np.ceil(float(x)/within_bps_of_price) * within_bps_of_price
 
         return res
 
@@ -151,7 +152,7 @@ def get_mm_score_for_snap_slot(df):
     d['level'] = np.nan
     # print(d)
 
-    top6bids = d[d.direction=='long'].groupby('priceRounded').sum().sort_values('priceRounded', ascending=False)[['baseAssetAmountLeft']]
+    top6bids = d[d.direction=='long'].groupby('priceRounded').sum().sort_index(ascending=False)[['baseAssetAmountLeft']]
     top6asks = d[d.direction=='short'].groupby('priceRounded').sum()[['baseAssetAmountLeft']]
 
     tts = pd.concat([top6bids['baseAssetAmountLeft'].reset_index(drop=True), top6asks['baseAssetAmountLeft'].reset_index(drop=True)],axis=1)
