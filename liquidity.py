@@ -333,11 +333,16 @@ def mm_page(clearing_house: ClearingHouse):
     tzInfo = pytz.timezone('UTC')
     latest_slot_full = df_full.snap_slot.max()
 
-    range_selected = molselect.selectbox('range select:', ['daily', 'weekly', 'last month'], 0)
+    range_selected = molselect.selectbox('range select:', ['daily', 'range', 'weekly', 'last month'], 0)
     if range_selected == 'daily':
         lastest_date = pd.to_datetime(slot_to_timestamp_est(latest_slot_full)*1e9, utc=True)
         date = mol0.date_input('select approx. date:', lastest_date, min_value=datetime.datetime(2022,11,4), max_value=lastest_date) #(datetime.datetime.now(tzInfo)))
         values = get_slots_for_date(date)
+    elif range_selected == 'range':
+        start_slot = mol2.number_input('start slot:', oldest_slot, newest_slot, oldest_slot)
+        end_slot = mol2.number_input('end slot:', oldest_slot, newest_slot, newest_slot)
+        values = [start_slot, end_slot]
+        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
     elif range_selected == 'weekly':
         values = mol2.slider(
         'Select a range of slot values',
