@@ -81,7 +81,7 @@ async def insurance_fund_page(ch: ClearingHouse):
         unstaking_period = spot.insurance_fund.unstaking_period
 
         if spot.insurance_fund.total_factor:
-            factor_for_protocol = spot.insurance_fund.user_factor/spot.insurance_fund.total_factor
+            factor_for_protocol = 1 - spot.insurance_fund.user_factor/spot.insurance_fund.total_factor
         else:
             factor_for_protocol = 0 
         protocol_n_shares = total_n_shares - user_n_shares
@@ -119,7 +119,7 @@ async def insurance_fund_page(ch: ClearingHouse):
         #capped at 1000% APR
         next_payment = min(rev_pool_tokens/5, (v_amount*10/365/24))
         if v_amount > 0:
-            staker_apr = (next_payment*24*365.25 * factor_for_protocol)/v_amount
+            staker_apr = (next_payment*24*365 * (1-factor_for_protocol))/v_amount
         else:
             staker_apr = 0
 
