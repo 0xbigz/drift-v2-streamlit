@@ -149,7 +149,7 @@ async def show_user_volume(clearing_house: ClearingHouse):
         auth_taker_df = dfs[dfs["taker"] == authority]
 
         st.text(
-            "Price improvement is defined as 'execPrice/oraclePrice - 1' if pubKey is long, and ' oraclePrice/execPrice - 1' if pubKey is short."
+            "Price improvement is defined as `oraclePrice/execPrice - 1` if pubKey is long, and `execPrice/oraclePrice - 1` if pubKey is short."
         )
         start_date = dt.fromtimestamp(auth_maker_df["ts"].min())
         end_date = dt.fromtimestamp(auth_maker_df["ts"].max())
@@ -185,15 +185,15 @@ async def show_user_volume(clearing_house: ClearingHouse):
 
             def calc_maker_price_improvement(row):
                 if row["makerOrderDirection"] == "long":
-                    return (row["execPrice"] / row["oraclePrice"]) - 1
-                elif row["makerOrderDirection"] == "short":
                     return (row["oraclePrice"] / row["execPrice"]) - 1
+                elif row["makerOrderDirection"] == "short":
+                    return (row["execPrice"] / row["oraclePrice"]) - 1
 
             def calc_taker_price_improvement(row):
                 if row["takerOrderDirection"] == "long":
-                    return (row["execPrice"] / row["oraclePrice"]) - 1
-                elif row["takerOrderDirection"] == "short":
                     return (row["oraclePrice"] / row["execPrice"]) - 1
+                elif row["takerOrderDirection"] == "short":
+                    return (row["execPrice"] / row["oraclePrice"]) - 1
 
             def calc_color(row):
                 if float(row["priceImprovement"]) > 0:
@@ -213,16 +213,25 @@ async def show_user_volume(clearing_house: ClearingHouse):
                 calc_maker_price_improvement, axis=1
             )
             auth_maker_df["color"] = auth_maker_df.apply(calc_color, axis=1)
+
             st.dataframe(
                 pd.DataFrame(
                     {
                         "ts": auth_maker_df["ts"],
                         "slot": auth_maker_df["slot"],
                         "maker": auth_maker_df["maker"],
+                        "makerOrderId": auth_maker_df["makerOrderId"],
+                        "makerOrderDirection": auth_maker_df["makerOrderDirection"],
                         "taker": auth_maker_df["taker"],
+                        "takerOrderId": auth_maker_df["takerOrderId"],
+                        "takerOrderDirection": auth_maker_df["takerOrderDirection"],
+                        "baseAssetAmountFilled": auth_maker_df["baseAssetAmountFilled"],
+                        "quoteAssetAmountFilled": auth_maker_df["quoteAssetAmountFilled"],
                         "execPrice": auth_maker_df["execPrice"],
                         "oraclePrice": auth_maker_df["oraclePrice"],
                         "priceImprovement": auth_maker_df["priceImprovement"],
+                        "actionExplanation": auth_maker_df["actionExplanation"],
+                        "txSig": auth_maker_df["txSig"],
                         "color": auth_maker_df["color"],
                     }
                 )
@@ -274,10 +283,18 @@ async def show_user_volume(clearing_house: ClearingHouse):
                         "ts": auth_taker_df["ts"],
                         "slot": auth_taker_df["slot"],
                         "maker": auth_taker_df["maker"],
+                        "makerOrderId": auth_taker_df["makerOrderId"],
+                        "makerOrderDirection": auth_taker_df["makerOrderDirection"],
                         "taker": auth_taker_df["taker"],
+                        "takerOrderId": auth_taker_df["takerOrderId"],
+                        "takerOrderDirection": auth_taker_df["takerOrderDirection"],
+                        "baseAssetAmountFilled": auth_taker_df["baseAssetAmountFilled"],
+                        "quoteAssetAmountFilled": auth_taker_df["quoteAssetAmountFilled"],
                         "execPrice": auth_taker_df["execPrice"],
                         "oraclePrice": auth_taker_df["oraclePrice"],
                         "priceImprovement": auth_taker_df["priceImprovement"],
+                        "actionExplanation": auth_taker_df["actionExplanation"],
+                        "txSig": auth_taker_df["txSig"],
                         "color": auth_taker_df["color"],
                     }
                 )
