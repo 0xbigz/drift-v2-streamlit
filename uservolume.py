@@ -73,7 +73,7 @@ async def get_user_stats(clearing_house: ClearingHouse):
     return user_stats_df
 
 
-def load_volumes(dates, market_name):
+def load_volumes(dates, market_name, with_urls=False):
     url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
     url += "market/%s/trades/%s/%s/%s"
     dfs = []
@@ -84,6 +84,10 @@ def load_volumes(dates, market_name):
         data_urls.append(data_url)
         dfs.append(pd.read_csv(data_url))
     dfs = pd.concat(dfs)
+
+    if with_urls:
+        return dfs, data_urls
+
     return dfs
 
 async def show_user_volume(clearing_house: ClearingHouse):
@@ -121,7 +125,7 @@ async def show_user_volume(clearing_house: ClearingHouse):
         )  # (datetime.datetime.now(tzInfo)))
         dates = pd.date_range(start_date, end_date)
 
-    dfs = load_volumes(dates, market_name)
+    dfs, data_urls = load_volumes(dates, market_name, with_urls=True)
     dd, _ = st.columns([6, 5])
     with dd.expander("data sources"):
         st.write(data_urls)
