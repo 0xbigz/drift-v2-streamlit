@@ -200,15 +200,19 @@ def get_mm_stats(df, user, oracle, bbo2):
     near_threshold = .002 # 20 bps
 
     try:
-        bid_up = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) >= -near_threshold)
-        ask_up = ((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) <= near_threshold
+        bid_up = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']))
+        ask_up = ((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) 
         availability_pct = len(bbo_user.dropna())/len(bbo_user)
         bid_best_pct = (((bbo_user['best dlob bid']-bbo2['best dlob bid'])/bbo2['best dlob bid']) == 0).mean()
-        bid_within_best_pct = (bid_up).mean()
+        bid_within_best_pct = (bid_up >= -near_threshold).mean()
         offer_best_pct = (((bbo_user['best dlob offer']-bbo2['best dlob offer'])/bbo2['best dlob offer']) == 0).mean()
-        offer_within_best_pct = (ask_up).mean()
-        uptime_pct = (bid_up & ask_up).mean()
+        offer_within_best_pct = (ask_up <= near_threshold).mean()
+        uptime_pct = ((bid_up >= -near_threshold) & (ask_up <= near_threshold)).mean()
+        bbo_user['bid_vs_best(%)'] = bid_up.astype(float)
+        bbo_user['ask_vs_best(%)'] = ask_up.astype(float)
     except:
+        bid_up = 0
+        ask_up = 0
         uptime_pct = 0
         availability_pct = 0
         bid_best_pct = 0
