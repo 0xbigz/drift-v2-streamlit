@@ -30,6 +30,7 @@ from anchorpy import EventParser
 import asyncio
 from glob import glob
 import requests
+from uservolume import load_volumes
 
 def load_realtime_book(market_index):
     x = requests.get('https://dlob.drift.trade/orders/json')
@@ -84,22 +85,6 @@ def load_realtime_book(market_index):
 
     return mdf
 
-
-
-def slot_to_timestamp_est(slot):
-    # ts = X - (Y - slot)/2
-    # X - ts = (Y - slot)/2
-    # slot = Y - 2 * (X - ts)
-    return 1681152470 - (187674632-slot) * .484
-    # return 1679940031 - (185018514-slot) * .484
-    # return 1678888672 - (182733090-slot) * .484
-    # return 1676400329 - (177774625-slot)*.5
-
-def get_slots_for_date(date: datetime.date):
-    utimestamp = (date - datetime.date(1970,1,1)).total_seconds()
-    start = 177774625-2*(1676400329-utimestamp)
-    end = start + 60*60*24*2
-    return [start, end]
 
 
 def get_mm_score_for_snap_slot(df):
@@ -240,6 +225,8 @@ def get_mm_stats(df, user, oracle, bbo2):
     return bbo_user, bbo_stats
 
 
+
+
 @st.experimental_memo(ttl=3600*2)  # 2 hr TTL this time
 def get_data_by_market_index(market_type, market_index, source):
     dfs = []
@@ -268,6 +255,31 @@ def get_data_by_market_index(market_type, market_index, source):
     return df
 
 def mm_page(clearing_house: ClearingHouse):    
+
+    ss1, ss2, ss3 = st.columns([3,1,1])
+    source = ss1.text_input('source:', 'https://github.com/0xbigz/drift-v2-orderbook-scored/raw/main/data/')
+    SLOT1 = ss2.number_input('slot ref:', 188028154)
+    TS1 = ss3.number_input('ts ref:', 1681315516)
+    def slot_to_timestamp_est(slot, ts_for_latest_slot=None, latest_slot=None):
+        # ts = X - (Y - slot)/2
+        # X - ts = (Y - slot)/2
+        # slot = Y - 2 * (X - ts)
+        if ts_for_latest_slot is not None:
+            return ts_for_latest_slot - (latest_slot-slot) * .484
+
+        return TS1 - (SLOT1-slot) * .484
+        return 1681152470 - (187674632-slot) * .484
+        # return 1679940031 - (185018514-slot) * .484
+        # return 1678888672 - (182733090-slot) * .484
+        # return 1676400329 - (177774625-slot)*.5
+
+    def get_slots_for_date(date: datetime.date):
+        utimestamp = (date - datetime.date(1970,1,1)).total_seconds()
+        start = SLOT1-2*(TS1-utimestamp)
+        end = start + 60*60*24*2
+        return [start, end]
+
+
     mol00, mol1, molselect, mol0, mol2 = st.columns([2, 3, 3, 3, 10])
 
     market_type = mol00.selectbox('market type', ['perp', 'spot'])
@@ -275,14 +287,24 @@ def mm_page(clearing_house: ClearingHouse):
     if market_type == 'perp':
         market_indexes = [0, 1, 2, 3, 4, 5, 6]
     market_index = mol1.selectbox(market_type+' market index', market_indexes)
-    
+    now = datetime.datetime.now()
+    current_ts = time.mktime(now.timetuple())
     tt = market_type+str(market_index)
-    source = st.text_input('source:', 'https://github.com/0xbigz/drift-v2-orderbook-scored/raw/main/data/')
     df_full = get_data_by_market_index(market_type, market_index, source if 'data' in source else '')
 
     # all_slots = df_full.snap_slot.unique()
     oldest_slot = df_full.snap_slot.min()
     newest_slot = df_full.snap_slot.max()
+
+    # load_volumes([now], 'SOL-PERP')
+    latest_slot = None
+    ts_for_latest_slot = None
+    # latest_slot = s2.number_input('latest slot:', value=newest_slot)
+    # s2.write('https://explorer.solana.com/block/'+str(latest_slot))
+    # ts_for_latest_slot = s3.number_input('latest slot ts:')
+    # s3.write('current ts='+ str(int(current_ts)))
+    # if ts_for_latest_slot == 0:
+        # ts_for_latest_slot = None
 
     week_ago_slot = df_full[df_full.snap_slot>newest_slot-(2*60*60*24*7)].snap_slot.min()
 
@@ -335,27 +357,28 @@ def mm_page(clearing_house: ClearingHouse):
 
     range_selected = molselect.selectbox('range select:', ['daily', 'range', 'weekly', 'last month'], 0)
     if range_selected == 'daily':
-        lastest_date = pd.to_datetime(slot_to_timestamp_est(latest_slot_full)*1e9, utc=True)
+        lastest_date = pd.to_datetime(slot_to_timestamp_est(latest_slot_full, ts_for_latest_slot, latest_slot)*1e9, utc=True)
         date = mol0.date_input('select approx. date:', lastest_date, min_value=datetime.datetime(2022,11,4), max_value=lastest_date) #(datetime.datetime.now(tzInfo)))
         values = get_slots_for_date(date)
     elif range_selected == 'range':
         start_slot = mol2.number_input('start slot:', oldest_slot, newest_slot, oldest_slot)
         end_slot = mol2.number_input('end slot:', oldest_slot, newest_slot, newest_slot)
         values = [start_slot, end_slot]
-        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
+        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
     elif range_selected == 'weekly':
         values = mol2.slider(
         'Select a range of slot values',
         int(week_ago_slot), int(newest_slot), (int(week_ago_slot), int(newest_slot)))
-        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
+        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
     elif range_selected == 'last month':
         values = mol2.slider(
         'Select a range of slot values',
         int(oldest_slot), int(newest_slot), (int(oldest_slot), int(newest_slot)))
-        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x)*1e9 for x in values]))))
+        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
 
     df = df_full[(df_full.snap_slot>=values[0]) & (df_full.snap_slot<=values[1])]
     # print(df_full.snap_slot.max(), 'vs', values[0], values[1])
+    st.write(df_full.snap_slot.max())
     assert(df_full.snap_slot.max() >= values[0])
     bbo = df.groupby(['direction', 'snap_slot']).agg(
         baseAssetAmount=("baseAssetAmount", "sum"),
@@ -374,7 +397,7 @@ def mm_page(clearing_house: ClearingHouse):
     bbo2.columns = ['short fill', 'best dlob bid', 'oracle', 'best dlob offer', 'long fill']
     last_slot_update = bbo2.index[-1]
 
-    st.text('stats last updated at slot: ' + str(bbo2.index[-1]) +' (approx. '+ str(pd.to_datetime(slot_to_timestamp_est(last_slot_update)*1e9))+')')
+    st.text('stats last updated at slot: ' + str(bbo2.index[-1]) +' (approx. '+ str(pd.to_datetime(slot_to_timestamp_est(last_slot_update, ts_for_latest_slot, latest_slot)*1e9))+')')
    
 
 

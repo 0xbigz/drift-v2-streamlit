@@ -73,6 +73,19 @@ async def get_user_stats(clearing_house: ClearingHouse):
     return user_stats_df
 
 
+def load_volumes(dates, market_name):
+    url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
+    url += "market/%s/trades/%s/%s/%s"
+    dfs = []
+    data_urls = []
+    for date in dates:
+        (year, month, day) = (date.strftime("%Y"), str(date.month), str(date.day))
+        data_url = url % (market_name, year, month, day)
+        data_urls.append(data_url)
+        dfs.append(pd.read_csv(data_url))
+    dfs = pd.concat(dfs)
+    return dfs
+
 async def show_user_volume(clearing_house: ClearingHouse):
     url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
     url += "market/%s/trades/%s/%s/%s"
@@ -107,14 +120,8 @@ async def show_user_volume(clearing_house: ClearingHouse):
             max_value=lastest_date,
         )  # (datetime.datetime.now(tzInfo)))
         dates = pd.date_range(start_date, end_date)
-    dfs = []
-    data_urls = []
-    for date in dates:
-        (year, month, day) = (date.strftime("%Y"), str(date.month), str(date.day))
-        data_url = url % (market_name, year, month, day)
-        data_urls.append(data_url)
-        dfs.append(pd.read_csv(data_url))
-    dfs = pd.concat(dfs)
+
+    dfs = load_volumes(dates, market_name)
     dd, _ = st.columns([6, 5])
     with dd.expander("data sources"):
         st.write(data_urls)
