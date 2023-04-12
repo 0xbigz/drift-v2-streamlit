@@ -168,19 +168,28 @@ async def show_user_volume(clearing_house: ClearingHouse):
                     return (row["quoteAssetAmountFilled"] - row["makerFee"]) / row[
                         "baseAssetAmountFilled"
                     ]
+                else:
+                    return (row["quoteAssetAmountFilled"]) / row[
+                        "baseAssetAmountFilled"
+                    ]
                 # return row["quoteAssetAmountFilled"] / row["baseAssetAmountFilled"]
 
             def calc_taker_exec_price(row):
                 if row["takerOrderDirection"] == "long":
                     # user is long, paying more is bad, add fee to quoteAmt (negative fee is rebate)
-                    return (row["quoteAssetAmountFilled"] + row["makerFee"]) / row[
+                    return (row["quoteAssetAmountFilled"] + row["takerFee"]) / row[
                         "baseAssetAmountFilled"
                     ]
                 elif row["takerOrderDirection"] == "short":
                     # user is short, recv more is good, sub fee from quoteAmt (negative fee is rebate)
-                    return (row["quoteAssetAmountFilled"] - row["makerFee"]) / row[
+                    return (row["quoteAssetAmountFilled"] - row["takerFee"]) / row[
                         "baseAssetAmountFilled"
                     ]
+                else:
+                    return (row["quoteAssetAmountFilled"]) / row[
+                        "baseAssetAmountFilled"
+                    ]
+
                 # return row["quoteAssetAmountFilled"] / row["baseAssetAmountFilled"]
 
             def calc_maker_price_improvement(row):
@@ -203,133 +212,139 @@ async def show_user_volume(clearing_house: ClearingHouse):
 
             color_discrete_map = {"green": "rgb(255,0,50)", "green": "rgb(0,255,50)"}
 
-            auth_maker_df["execPrice"] = auth_maker_df.apply(calc_maker_exec_price, axis=1)
-            auth_taker_df["execPrice"] = auth_taker_df.apply(calc_taker_exec_price, axis=1)
 
             st.markdown("## Maker fills:")
-            col1, col2 = st.columns(2)
-            auth_maker_df["ts"] = pd.to_datetime(auth_maker_df["ts"], unit="s", utc=True)
-            auth_maker_df["priceImprovement"] = auth_maker_df.apply(
-                calc_maker_price_improvement, axis=1
-            )
-            auth_maker_df["color"] = auth_maker_df.apply(calc_color, axis=1)
-
-            st.dataframe(
-                pd.DataFrame(
-                    {
-                        "ts": auth_maker_df["ts"],
-                        "slot": auth_maker_df["slot"],
-                        "maker": auth_maker_df["maker"],
-                        "makerOrderId": auth_maker_df["makerOrderId"],
-                        "makerOrderDirection": auth_maker_df["makerOrderDirection"],
-                        "taker": auth_maker_df["taker"],
-                        "takerOrderId": auth_maker_df["takerOrderId"],
-                        "takerOrderDirection": auth_maker_df["takerOrderDirection"],
-                        "baseAssetAmountFilled": auth_maker_df["baseAssetAmountFilled"],
-                        "quoteAssetAmountFilled": auth_maker_df["quoteAssetAmountFilled"],
-                        "execPrice": auth_maker_df["execPrice"],
-                        "oraclePrice": auth_maker_df["oraclePrice"],
-                        "priceImprovement": auth_maker_df["priceImprovement"],
-                        "actionExplanation": auth_maker_df["actionExplanation"],
-                        "txSig": auth_maker_df["txSig"],
-                        "color": auth_maker_df["color"],
-                    }
+            if not auth_maker_df.empty:
+                col1, col2 = st.columns(2)
+                auth_maker_df["execPrice"] = auth_maker_df.apply(calc_maker_exec_price, axis=1)
+                auth_maker_df["ts"] = pd.to_datetime(auth_maker_df["ts"], unit="s", utc=True)
+                auth_maker_df["priceImprovement"] = auth_maker_df.apply(
+                    calc_maker_price_improvement, axis=1
                 )
-            )
+                auth_maker_df["color"] = auth_maker_df.apply(calc_color, axis=1)
 
-            fig = px.histogram(
-                auth_maker_df,
-                x=auth_maker_df["priceImprovement"],
-                y=auth_maker_df["baseAssetAmountFilled"],
-                nbins=n_bins,
-                labels={"x": "priceImprovement", "y": "baseAssetAmountFilled"},
-                color="color",
-                color_discrete_map=color_discrete_map,
-                opacity=0.3,
-            )
-            fig.add_vline(x=0, line_color="red", annotation_text="OraclePrice")
-            fig = fig.update_layout(
-                xaxis_title="Price Improvement on Maker Fills (positive is better)",
-                yaxis_title="Base amount filled at this price improvement",
-            )
-            col1.plotly_chart(fig)
+                st.dataframe(
+                    pd.DataFrame(
+                        {
+                            "ts": auth_maker_df["ts"],
+                            "slot": auth_maker_df["slot"],
+                            "maker": auth_maker_df["maker"],
+                            "makerOrderId": auth_maker_df["makerOrderId"],
+                            "makerOrderDirection": auth_maker_df["makerOrderDirection"],
+                            "taker": auth_maker_df["taker"],
+                            "takerOrderId": auth_maker_df["takerOrderId"],
+                            "takerOrderDirection": auth_maker_df["takerOrderDirection"],
+                            "baseAssetAmountFilled": auth_maker_df["baseAssetAmountFilled"],
+                            "quoteAssetAmountFilled": auth_maker_df["quoteAssetAmountFilled"],
+                            "execPrice": auth_maker_df["execPrice"],
+                            "oraclePrice": auth_maker_df["oraclePrice"],
+                            "priceImprovement": auth_maker_df["priceImprovement"],
+                            "actionExplanation": auth_maker_df["actionExplanation"],
+                            "txSig": auth_maker_df["txSig"],
+                            "color": auth_maker_df["color"],
+                        }
+                    )
+                )
 
-            fig = px.scatter(
-                auth_maker_df,
-                x=auth_maker_df["ts"],
-                y=auth_maker_df["priceImprovement"],
-                labels={"x": "ts", "y": "priceImprovement"},
-                color="color",
-                color_discrete_map=color_discrete_map,
-                opacity=0.3,
-            )
-            fig = fig.update_layout(
-                xaxis_title="Price Improvement over time",
-                yaxis_title="Price improvement (positive is better))",
-            )
-            col2.plotly_chart(fig)
+                fig = px.histogram(
+                    auth_maker_df,
+                    x=auth_maker_df["priceImprovement"],
+                    y=auth_maker_df["baseAssetAmountFilled"],
+                    nbins=n_bins,
+                    labels={"x": "priceImprovement", "y": "baseAssetAmountFilled"},
+                    color="color",
+                    color_discrete_map=color_discrete_map,
+                    opacity=0.3,
+                )
+                fig.add_vline(x=0, line_color="red", annotation_text="OraclePrice")
+                fig = fig.update_layout(
+                    xaxis_title="Price Improvement on Maker Fills (positive is better)",
+                    yaxis_title="Base amount filled at this price improvement",
+                )
+                col1.plotly_chart(fig)
+
+                fig = px.scatter(
+                    auth_maker_df,
+                    x=auth_maker_df["ts"],
+                    y=auth_maker_df["priceImprovement"],
+                    labels={"x": "ts", "y": "priceImprovement"},
+                    color="color",
+                    color_discrete_map=color_discrete_map,
+                    opacity=0.3,
+                )
+                fig = fig.update_layout(
+                    xaxis_title="Price Improvement over time",
+                    yaxis_title="Price improvement (positive is better))",
+                )
+                col2.plotly_chart(fig)
+            else:
+                st.write("No maker fills")
 
             st.markdown("## Taker fills:")
-            col1, col2 = st.columns(2)
-            auth_taker_df["ts"] = pd.to_datetime(auth_taker_df["ts"], unit="s", utc=True)
-            auth_taker_df["priceImprovement"] = auth_taker_df.apply(
-                calc_taker_price_improvement, axis=1
-            )
-            auth_taker_df["color"] = auth_taker_df.apply(calc_color, axis=1)
-
-            st.dataframe(
-                pd.DataFrame(
-                    {
-                        "ts": auth_taker_df["ts"],
-                        "slot": auth_taker_df["slot"],
-                        "maker": auth_taker_df["maker"],
-                        "makerOrderId": auth_taker_df["makerOrderId"],
-                        "makerOrderDirection": auth_taker_df["makerOrderDirection"],
-                        "taker": auth_taker_df["taker"],
-                        "takerOrderId": auth_taker_df["takerOrderId"],
-                        "takerOrderDirection": auth_taker_df["takerOrderDirection"],
-                        "baseAssetAmountFilled": auth_taker_df["baseAssetAmountFilled"],
-                        "quoteAssetAmountFilled": auth_taker_df["quoteAssetAmountFilled"],
-                        "execPrice": auth_taker_df["execPrice"],
-                        "oraclePrice": auth_taker_df["oraclePrice"],
-                        "priceImprovement": auth_taker_df["priceImprovement"],
-                        "actionExplanation": auth_taker_df["actionExplanation"],
-                        "txSig": auth_taker_df["txSig"],
-                        "color": auth_taker_df["color"],
-                    }
+            if not auth_taker_df.empty:
+                col1, col2 = st.columns(2)
+                auth_taker_df["execPrice"] = auth_taker_df.apply(calc_taker_exec_price, axis=1)
+                auth_taker_df["ts"] = pd.to_datetime(auth_taker_df["ts"], unit="s", utc=True)
+                auth_taker_df["priceImprovement"] = auth_taker_df.apply(
+                    calc_taker_price_improvement, axis=1
                 )
-            )
-            fig = px.histogram(
-                auth_taker_df,
-                x="priceImprovement",
-                y="baseAssetAmountFilled",
-                nbins=n_bins,
-                labels={"x": "priceImprovement", "y": "baseAssetAmountFilled"},
-                color="color",
-                color_discrete_map=color_discrete_map,
-                opacity=0.3,
-            )
-            fig.add_vline(x=0, line_color="red", annotation_text="OraclePrice")
-            fig = fig.update_layout(
-                xaxis_title="Price Improvement on Taker Fills (positive is better)",
-                yaxis_title="Base amount filled at this price improvement",
-            )
-            col1.plotly_chart(fig)
+                auth_taker_df["color"] = auth_taker_df.apply(calc_color, axis=1)
 
-            fig = px.scatter(
-                auth_taker_df,
-                x=auth_taker_df["ts"],
-                y=auth_taker_df["priceImprovement"],
-                labels={"x": "ts", "y": "priceImprovement"},
-                color="color",
-                color_discrete_map=color_discrete_map,
-                opacity=0.3,
-            )
-            fig = fig.update_layout(
-                xaxis_title="Price Improvement over time",
-                yaxis_title="Price improvement (positive is better))",
-            )
-            col2.plotly_chart(fig)
+                st.dataframe(
+                    pd.DataFrame(
+                        {
+                            "ts": auth_taker_df["ts"],
+                            "slot": auth_taker_df["slot"],
+                            "maker": auth_taker_df["maker"],
+                            "makerOrderId": auth_taker_df["makerOrderId"],
+                            "makerOrderDirection": auth_taker_df["makerOrderDirection"],
+                            "taker": auth_taker_df["taker"],
+                            "takerOrderId": auth_taker_df["takerOrderId"],
+                            "takerOrderDirection": auth_taker_df["takerOrderDirection"],
+                            "baseAssetAmountFilled": auth_taker_df["baseAssetAmountFilled"],
+                            "quoteAssetAmountFilled": auth_taker_df["quoteAssetAmountFilled"],
+                            "execPrice": auth_taker_df["execPrice"],
+                            "oraclePrice": auth_taker_df["oraclePrice"],
+                            "priceImprovement": auth_taker_df["priceImprovement"],
+                            "actionExplanation": auth_taker_df["actionExplanation"],
+                            "txSig": auth_taker_df["txSig"],
+                            "color": auth_taker_df["color"],
+                        }
+                    )
+                )
+                fig = px.histogram(
+                    auth_taker_df,
+                    x="priceImprovement",
+                    y="baseAssetAmountFilled",
+                    nbins=n_bins,
+                    labels={"x": "priceImprovement", "y": "baseAssetAmountFilled"},
+                    color="color",
+                    color_discrete_map=color_discrete_map,
+                    opacity=0.3,
+                )
+                fig.add_vline(x=0, line_color="red", annotation_text="OraclePrice")
+                fig = fig.update_layout(
+                    xaxis_title="Price Improvement on Taker Fills (positive is better)",
+                    yaxis_title="Base amount filled at this price improvement",
+                )
+                col1.plotly_chart(fig)
+
+                fig = px.scatter(
+                    auth_taker_df,
+                    x=auth_taker_df["ts"],
+                    y=auth_taker_df["priceImprovement"],
+                    labels={"x": "ts", "y": "priceImprovement"},
+                    color="color",
+                    color_discrete_map=color_discrete_map,
+                    opacity=0.3,
+                )
+                fig = fig.update_layout(
+                    xaxis_title="Price Improvement over time",
+                    yaxis_title="Price improvement (positive is better))",
+                )
+                col2.plotly_chart(fig)
+            else:
+                st.write("No taker fills")
 
         else:
             st.markdown(f"public key not found...")
