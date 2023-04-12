@@ -259,7 +259,9 @@ def mm_page(clearing_house: ClearingHouse):
     ss1, ss2, ss3 = st.columns([3,1,1])
     source = ss1.text_input('source:', 'https://github.com/0xbigz/drift-v2-orderbook-scored/raw/main/data/')
     SLOT1 = ss2.number_input('slot ref:', 188028154)
-    TS1 = ss3.number_input('ts ref:', 1681315516)
+    ss2.write('https://explorer.solana.com/block/'+str(SLOT1))
+
+    TS1 = ss3.number_input('unix_timestamp ref:', 1681315516)
     def slot_to_timestamp_est(slot, ts_for_latest_slot=None, latest_slot=None):
         # ts = X - (Y - slot)/2
         # X - ts = (Y - slot)/2
@@ -300,7 +302,6 @@ def mm_page(clearing_house: ClearingHouse):
     latest_slot = None
     ts_for_latest_slot = None
     # latest_slot = s2.number_input('latest slot:', value=newest_slot)
-    # s2.write('https://explorer.solana.com/block/'+str(latest_slot))
     # ts_for_latest_slot = s3.number_input('latest slot ts:')
     # s3.write('current ts='+ str(int(current_ts)))
     # if ts_for_latest_slot == 0:
