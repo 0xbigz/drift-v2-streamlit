@@ -236,7 +236,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 # if len(df1):
                 #     sentiment = df1['base_asset_amount'].pipe(np.sign).sum()/len(df1) + .5
                 # my_bar = st.progress(sentiment)
-                st.text('User Perp Positions  (Base/Base|Quote) '+ str((market.number_of_users_with_base)) +' / ' + str((market.number_of_users)))
+                st.text('User Perp Positions  (Base /|Quote) '+ str((market.number_of_users_with_base)) +' / ' + str((market.number_of_users)))
                 st.text(f'vAMM Liquidity (bids= {(market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9} | asks={(market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9})')
                 t0, t1, t2 = st.columns([1,1,5])
                 dir = t0.selectbox('direction:', ['buy', 'sell'], key='selectbox-'+str(market_index))
@@ -254,9 +254,13 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 price = (ask_price * (1+px_impact/100)) if dir=='buy' else (bid_price * (1-px_impact/100))
                 t2.text(f'vAMM stats: \n px={price} \n px_impact={px_impact}%')
             
-                
+                fee_pool = (market.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
+                pnl_pool = (market.pnl_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
+                excess_pnl = fee_pool+pnl_pool - market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm + market.amm.base_asset_amount_with_unsettled_lp)/1e9  * market.amm.historical_oracle_data.last_oracle_price/1e6
                 st.text(f'Ext. Insurance: {(market.insurance_claim.quote_max_insurance-market.insurance_claim.quote_settled_insurance)/1e6}')
-                st.text(f'Int. Insurance: {(market.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)}')
+                st.text(f'Int. Insurance: {fee_pool}')
+                st.text(f'PnL Pool: {pnl_pool}')
+                st.text(f'Excess PnL: {excess_pnl} ({fee_pool+pnl_pool} - {market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm/1e9 * market.amm.historical_oracle_data.last_oracle_price/1e6)})')
 
                 if df1 is not None:
                     df1['base_asset_amount'] /= 1e9
