@@ -236,7 +236,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 # if len(df1):
                 #     sentiment = df1['base_asset_amount'].pipe(np.sign).sum()/len(df1) + .5
                 # my_bar = st.progress(sentiment)
-                st.text('User Perp Positions ('+ str((market.number_of_users_with_base)) +')')
+                st.text('User Perp Positions  (Base/Base|Quote) '+ str((market.number_of_users_with_base)) +' / ' + str((market.number_of_users)))
                 st.text(f'vAMM Liquidity (bids= {(market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9} | asks={(market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9})')
                 t0, t1, t2 = st.columns([1,1,5])
                 dir = t0.selectbox('direction:', ['buy', 'sell'], key='selectbox-'+str(market_index))
