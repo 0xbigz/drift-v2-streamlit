@@ -34,7 +34,7 @@ from gpt import gpt_page
 from uservolume import show_user_volume
 from refs import ref_page
 from userstatus import userstatus_page
-from network import show_network
+# from network import show_network
 
 def main():
     st.set_page_config(
@@ -67,7 +67,7 @@ def main():
     tab_options = ('Welcome', 'Overview', 
     'Simulations', 'Logs',
     
-     'Fee-Schedule', 'IF-Stakers', 
+     'Fee-Schedule', 'Insurance-Fund', 
      'User-Health', 'User-Volume', 'User-Stats', 'DLOB', 'Refs', 'MM', 'Trade Flow',   'Drift-GPT', 'IMF',
      'Network',
      'User-Status',
@@ -103,12 +103,13 @@ def main():
     st.title(f'Drift v2: {tab}')
 
     if tab.lower() == 'welcome':
+        st.warning('DISCLAIMER: INFORMATIONAL PURPOSES ONLY. USE EXPERIMENTAL SOFTWARE AT YOUR OWN RISK.')
         st.markdown('## welcome to the [Drift v2](app.drift.trade) streamlit dashboard!')
         st.metric('protocol has been live for:', str(int((datetime.datetime.now() - pd.to_datetime('2022-11-05')).total_seconds()/(60*60*24)))+' days')
         st.markdown("""
         On this site, did you know you can...
         - explore all perp/spot market stats in [Overview](/?tab=Overview).
-        - track the Insurance Fund and staking performance in [IF-Staker](/?tab=IF-Staker).
+        - track the Insurance Fund and balances in [Insurance Fund](/?tab=Insurance-Fund).
         - inspect historical price impact and market maker leaderboards in [MM](/?tab=MM).
         - view a taker trader breakdown in [Trade Flow](/?tab=Trade-Flow).
         - talk to an AI at [Drift-GPT](/?tab=Drift-GPT).
@@ -159,7 +160,7 @@ def main():
         loop = asyncio.new_event_loop()
         loop.run_until_complete(ref_page(clearing_house))
 
-    elif tab.lower() == 'if-stakers':
+    elif tab.lower() == 'insurance-fund':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(insurance_fund_page(clearing_house))
 
@@ -182,9 +183,9 @@ def main():
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_volume(clearing_house))
 
-    elif tab.lower() == 'network':
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(show_network(clearing_house))
+    # elif tab.lower() == 'network':
+    #     loop = asyncio.new_event_loop()
+    #     loop.run_until_complete(show_network(clearing_house))
 
     elif tab.lower() == 'mm':
         mm_page(clearing_house)
