@@ -90,6 +90,97 @@ def load_volumes(dates, market_name, with_urls=False):
 
     return dfs
 
+def calc_maker_exec_price(row):
+    if row["makerOrderDirection"] == "long":
+        # user is long, paying more is bad, add fee to quoteAmt (negative fee is rebate)
+        return (row["quoteAssetAmountFilled"] + row["makerFee"]) / row[
+            "baseAssetAmountFilled"
+        ]
+    elif row["makerOrderDirection"] == "short":
+        # user is short, recv more is good, sub fee from quoteAmt (negative fee is rebate)
+        return (row["quoteAssetAmountFilled"] - row["makerFee"]) / row[
+            "baseAssetAmountFilled"
+        ]
+    else:
+        return (row["quoteAssetAmountFilled"]) / row[
+            "baseAssetAmountFilled"
+        ]
+    # return row["quoteAssetAmountFilled"] / row["baseAssetAmountFilled"]
+
+def calc_taker_exec_price(row):
+    if row["takerOrderDirection"] == "long":
+        # user is long, paying more is bad, add fee to quoteAmt (negative fee is rebate)
+        return (row["quoteAssetAmountFilled"] + row["takerFee"]) / row[
+            "baseAssetAmountFilled"
+        ]
+    elif row["takerOrderDirection"] == "short":
+        # user is short, recv more is good, sub fee from quoteAmt (negative fee is rebate)
+        return (row["quoteAssetAmountFilled"] - row["takerFee"]) / row[
+            "baseAssetAmountFilled"
+        ]
+    else:
+        return (row["quoteAssetAmountFilled"]) / row[
+            "baseAssetAmountFilled"
+        ]
+
+    # return row["quoteAssetAmountFilled"] / row["baseAssetAmountFilled"]
+
+def calc_maker_price_improvement(row):
+    if row["makerOrderDirection"] == "long":
+        return (row["oraclePrice"] / row["execPrice"]) - 1
+    elif row["makerOrderDirection"] == "short":
+        return (row["execPrice"] / row["oraclePrice"]) - 1
+
+def calc_taker_price_improvement(row):
+    if row["takerOrderDirection"] == "long":
+        return (row["oraclePrice"] / row["execPrice"]) - 1
+    elif row["takerOrderDirection"] == "short":
+        return (row["execPrice"] / row["oraclePrice"]) - 1
+
+def calc_color(row):
+    if float(row["priceImprovement"]) > 0:
+        return "green"
+    else:
+        return "red"
+
+def calculate_agg_counterparty_volume(fills_df: pd.DataFrame, user_make_or_taker: str):
+    '''
+    Returns a dataframe with the counterparty of each trade, and total base asset traded
+    '''
+    if user_make_or_taker == "maker":
+        counterparty = "taker"
+    else:
+        counterparty = "maker"
+
+    # only keep the top 10 rows sorted by base asset traded, group remainder into "other"
+
+    agg_df = fills_df.groupby([counterparty]).agg(
+        {
+            "baseAssetAmountFilled": "sum",
+            "quoteAssetAmountFilled": "sum",
+        }
+    )
+    agg_df[counterparty] = agg_df.index
+    agg_df[counterparty] = agg_df[counterparty].fillna("vAMM")
+    agg_df.reset_index(drop=True, inplace=True)
+    top_10 = agg_df.sort_values(by="baseAssetAmountFilled", ascending=False).head(10)
+    other = agg_df.sort_values(by="baseAssetAmountFilled", ascending=False).tail(-10)
+    other = pd.DataFrame(
+        {
+            "baseAssetAmountFilled": [other["baseAssetAmountFilled"].sum()],
+            "quoteAssetAmountFilled": [other["quoteAssetAmountFilled"].sum()],
+            counterparty: ["other"],
+        },
+        index=["other"],
+    )
+    base_total = agg_df["baseAssetAmountFilled"].sum()
+    quote_total = agg_df["quoteAssetAmountFilled"].sum()
+    res_df = pd.concat([top_10, other])
+    res_df["basePercentage"] = res_df['baseAssetAmountFilled'] / base_total * 100.0
+    res_df["quotePercentage"] = res_df['quoteAssetAmountFilled'] / quote_total * 100.0
+    return res_df
+
+
 async def show_user_volume(clearing_house: ClearingHouse):
     url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
     url += "market/%s/trades/%s/%s/%s"
@@ -156,66 +247,12 @@ async def show_user_volume(clearing_house: ClearingHouse):
         st.text(f"Start date: {start_date} -> end date: {end_date}")
 
         if auth_maker_df.shape[0] > 0 or auth_taker_df.shape[0] > 0:
-
-            def calc_maker_exec_price(row):
-                if row["makerOrderDirection"] == "long":
-                    # user is long, paying more is bad, add fee to quoteAmt (negative fee is rebate)
-                    return (row["quoteAssetAmountFilled"] + row["makerFee"]) / row[
-                        "baseAssetAmountFilled"
-                    ]
-                elif row["makerOrderDirection"] == "short":
-                    # user is short, recv more is good, sub fee from quoteAmt (negative fee is rebate)
-                    return (row["quoteAssetAmountFilled"] - row["makerFee"]) / row[
-                        "baseAssetAmountFilled"
-                    ]
-                else:
-                    return (row["quoteAssetAmountFilled"]) / row[
-                        "baseAssetAmountFilled"
-                    ]
-                # return row["quoteAssetAmountFilled"] / row["baseAssetAmountFilled"]
-
-            def calc_taker_exec_price(row):
-                if row["takerOrderDirection"] == "long":
-                    # user is long, paying more is bad, add fee to quoteAmt (negative fee is rebate)
-                    return (row["quoteAssetAmountFilled"] + row["takerFee"]) / row[
-                        "baseAssetAmountFilled"
-                    ]
-                elif row["takerOrderDirection"] == "short":
-                    # user is short, recv more is good, sub fee from quoteAmt (negative fee is rebate)
-                    return (row["quoteAssetAmountFilled"] - row["takerFee"]) / row[
-                        "baseAssetAmountFilled"
-                    ]
-                else:
-                    return (row["quoteAssetAmountFilled"]) / row[
-                        "baseAssetAmountFilled"
-                    ]
-
-                # return row["quoteAssetAmountFilled"] / row["baseAssetAmountFilled"]
-
-            def calc_maker_price_improvement(row):
-                if row["makerOrderDirection"] == "long":
-                    return (row["oraclePrice"] / row["execPrice"]) - 1
-                elif row["makerOrderDirection"] == "short":
-                    return (row["execPrice"] / row["oraclePrice"]) - 1
-
-            def calc_taker_price_improvement(row):
-                if row["takerOrderDirection"] == "long":
-                    return (row["oraclePrice"] / row["execPrice"]) - 1
-                elif row["takerOrderDirection"] == "short":
-                    return (row["execPrice"] / row["oraclePrice"]) - 1
-
-            def calc_color(row):
-                if float(row["priceImprovement"]) > 0:
-                    return "green"
-                else:
-                    return "red"
-
             color_discrete_map = {"green": "rgb(255,0,50)", "green": "rgb(0,255,50)"}
 
 
             st.markdown("## Maker fills:")
             if not auth_maker_df.empty:
-                col1, col2 = st.columns(2)
+                col11, col12 = st.columns(2)
                 auth_maker_df["execPrice"] = auth_maker_df.apply(calc_maker_exec_price, axis=1)
                 auth_maker_df["ts"] = pd.to_datetime(auth_maker_df["ts"], unit="s", utc=True)
                 auth_maker_df["priceImprovement"] = auth_maker_df.apply(
@@ -261,7 +298,7 @@ async def show_user_volume(clearing_house: ClearingHouse):
                     xaxis_title="Price Improvement on Maker Fills (positive is better)",
                     yaxis_title="Base amount filled at this price improvement",
                 )
-                col1.plotly_chart(fig)
+                col11.plotly_chart(fig)
 
                 fig = px.scatter(
                     auth_maker_df,
@@ -276,13 +313,35 @@ async def show_user_volume(clearing_house: ClearingHouse):
                     xaxis_title="Price Improvement over time",
                     yaxis_title="Price improvement (positive is better))",
                 )
-                col2.plotly_chart(fig)
+                col12.plotly_chart(fig)
+
+                st.markdown("### Counterparty fills:")
+                col21, col22 = st.columns(2)
+                counterparty_df = calculate_agg_counterparty_volume(auth_maker_df, 'maker')
+
+                fig = px.pie(counterparty_df, values='baseAssetAmountFilled', title='Counterparty Base Volume', names='taker')
+                col21.plotly_chart(fig)
+
+                fig = px.pie(counterparty_df, values='quoteAssetAmountFilled', title='Counterparty Quote Volume', names='taker')
+                col22.plotly_chart(fig)
+
+                st.dataframe(
+                    pd.DataFrame(
+                        {
+                            "taker": counterparty_df["taker"],
+                            "baseAssetAmountFilled": counterparty_df["baseAssetAmountFilled"],
+                            "quoteAssetAmountFilled": counterparty_df["quoteAssetAmountFilled"],
+                            "basePercentage": counterparty_df['basePercentage'],
+                            "quotePercentage": counterparty_df['quotePercentage'],
+                        }
+                    )
+                )
             else:
                 st.write("No maker fills")
 
             st.markdown("## Taker fills:")
             if not auth_taker_df.empty:
-                col1, col2 = st.columns(2)
+                col11, col12 = st.columns(2)
                 auth_taker_df["execPrice"] = auth_taker_df.apply(calc_taker_exec_price, axis=1)
                 auth_taker_df["ts"] = pd.to_datetime(auth_taker_df["ts"], unit="s", utc=True)
                 auth_taker_df["priceImprovement"] = auth_taker_df.apply(
@@ -327,7 +386,7 @@ async def show_user_volume(clearing_house: ClearingHouse):
                     xaxis_title="Price Improvement on Taker Fills (positive is better)",
                     yaxis_title="Base amount filled at this price improvement",
                 )
-                col1.plotly_chart(fig)
+                col11.plotly_chart(fig)
 
                 fig = px.scatter(
                     auth_taker_df,
@@ -342,7 +401,29 @@ async def show_user_volume(clearing_house: ClearingHouse):
                     xaxis_title="Price Improvement over time",
                     yaxis_title="Price improvement (positive is better))",
                 )
-                col2.plotly_chart(fig)
+                col12.plotly_chart(fig)
+
+                st.markdown("### Counterparty fills:")
+                col21, col22 = st.columns(2)
+                counterparty_df = calculate_agg_counterparty_volume(auth_maker_df, 'taker')
+
+                fig = px.pie(counterparty_df, values='baseAssetAmountFilled', title='Counterparty Base Volume', names='maker')
+                col21.plotly_chart(fig)
+
+                fig = px.pie(counterparty_df, values='quoteAssetAmountFilled', title='Counterparty Quote Volume', names='maker')
+                col22.plotly_chart(fig)
+
+                st.dataframe(
+                    pd.DataFrame(
+                        {
+                            "maker": counterparty_df["maker"],
+                            "baseAssetAmountFilled": counterparty_df["baseAssetAmountFilled"],
+                            "quoteAssetAmountFilled": counterparty_df["quoteAssetAmountFilled"],
+                            "basePercentage": counterparty_df['basePercentage'],
+                            "quotePercentage": counterparty_df['quotePercentage'],
+                        }
+                    )
+                )
             else:
                 st.write("No taker fills")
 
