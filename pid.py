@@ -3,6 +3,7 @@ import sys
 import driftpy
 import pandas as pd 
 import numpy as np 
+import plotly.express as px
 
 pd.options.plotting.backend = "plotly"
 
@@ -37,7 +38,9 @@ async def show_pid_positions(clearing_house: ClearingHouse):
     with st.expander('state'):
         st.json(state.__dict__)
     
-    see_user_breakdown = st.radio('see users breakdown:', [True, False], 1)
+    col1, col2, col3, col4 = st.columns(4)
+
+    see_user_breakdown = col1.radio('see users breakdown:', [True, False], 1)
 
     all_users = None
 
@@ -182,8 +185,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
         st.text('user leaderboard')
         st.dataframe(user_leaderboard)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col2.metric("Unique Driftoors", str((state.number_of_authorities)),str((state.number_of_sub_accounts))+" SubAccounts")
+    col3.metric("Unique Driftoors", str((state.number_of_authorities)),str((state.number_of_sub_accounts))+" SubAccounts")
 
     if all_users is not None:
         perps = pd.concat(dfs,axis=1).T
@@ -194,7 +196,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
         spots.index = spots.index.set_names(['public_key', 'idx2'])
         spots = spots.reset_index()
         
-    markettype = col1.radio("MarketType", ('Perp', 'Spot'))
+    markettype = col2.radio("MarketType", ('Perp', 'Spot'))
     if markettype == 'Perp':
         num_markets = state.number_of_markets
     else:
@@ -225,18 +227,21 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                             ].sort_values('base_asset_amount', ascending=False).reset_index(drop=True)
 
                 pct_long = market.amm.base_asset_amount_long / (market.amm.base_asset_amount_long - market.amm.base_asset_amount_short + 1e-10) 
-                col3.text(f'user long: {np.round(pct_long*100, 2) }%')
-                my_bar = col3.progress(pct_long)
+                
+                st.text('User Perp Positions  (Base /|Quote) '+ str((market.number_of_users_with_base)) +' / ' + str((market.number_of_users)))
+
+                cc1, cc2, cc3, cc4 = st.columns(4)
+                cc1.text(f'user long: {np.round(pct_long*100, 2) }%')
+                my_bar = cc1.progress(pct_long)
                 imbalance = (market.amm.base_asset_amount_with_amm) /1e9
-                col3.text(f'user imbalance: {np.round(imbalance, 2) } base')
-                my_bar2 = col3.progress(abs(market.amm.base_asset_amount_with_amm)/((market.amm.base_asset_amount_long - market.amm.base_asset_amount_short + 1e-10)))
+                cc1.text(f'user imbalance: {np.round(imbalance, 2) } base')
+                my_bar2 = cc1.progress(abs(market.amm.base_asset_amount_with_amm)/((market.amm.base_asset_amount_long - market.amm.base_asset_amount_short + 1e-10)))
 
                 # st.text('user long % sentiment:')
                 # sentiment = 0
                 # if len(df1):
                 #     sentiment = df1['base_asset_amount'].pipe(np.sign).sum()/len(df1) + .5
                 # my_bar = st.progress(sentiment)
-                st.text('User Perp Positions  (Base /|Quote) '+ str((market.number_of_users_with_base)) +' / ' + str((market.number_of_users)))
                 st.text(f'vAMM Liquidity (bids= {(market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9} | asks={(market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9})')
                 t0, t1, t2 = st.columns([1,1,5])
                 dir = t0.selectbox('direction:', ['buy', 'sell'], key='selectbox-'+str(market_index))
@@ -254,10 +259,36 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 price = (ask_price * (1+px_impact/100)) if dir=='buy' else (bid_price * (1-px_impact/100))
                 t2.text(f'vAMM stats: \n px={price} \n px_impact={px_impact}%')
             
+
+                rev_pool = usdc_market.revenue_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10/(1e9)
+
                 fee_pool = (market.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
                 pnl_pool = (market.pnl_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
                 excess_pnl = fee_pool+pnl_pool - market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm + market.amm.base_asset_amount_with_unsettled_lp)/1e9  * market.amm.historical_oracle_data.last_oracle_price/1e6
-                st.text(f'Ext. Insurance: {(market.insurance_claim.quote_max_insurance-market.insurance_claim.quote_settled_insurance)/1e6}')
+                
+                dfff = pd.DataFrame({'pnl_pool': pnl_pool, 'fee_pool': fee_pool, 'rev_pool': rev_pool}, index=[0]).T.reset_index()
+                dfff['color'] = 'balance'
+
+                df_flow = pd.DataFrame({
+                'pnl_pool': market.amm.net_revenue_since_last_funding/1e6,
+                 'fee_pool': market.insurance_claim.revenue_withdraw_since_last_settle/1e6, 
+                 'rev_pool': -(market.insurance_claim.revenue_withdraw_since_last_settle/1e6)
+                 }, index=[0]
+                 ).T.reset_index()
+                df_flow['color'] = 'flows'
+
+                df_flow_max = pd.DataFrame({
+                'pnl_pool': market.unrealized_pnl_max_imbalance/1e6,
+                 'fee_pool': market.insurance_claim.max_revenue_withdraw_per_period/1e6, 
+                 'rev_pool': -(market.insurance_claim.max_revenue_withdraw_per_period/1e6)
+                 }, index=[0]
+                 ).T.reset_index()
+                df_flow_max['color'] = 'max_flow'
+                dfff = pd.concat([dfff, df_flow, df_flow_max]).reset_index(drop=True)
+                # print(dfff)
+                fig = px.funnel(dfff, y='index', x=0, color='color')
+                st.plotly_chart(fig)
+                st.text(f'Ext. Insurance: {(market.insurance_claim.quote_max_insurance-market.insurance_claim.quote_settled_insurance)/1e6} ({market.insurance_claim.quote_settled_insurance/1e6}/{market.insurance_claim.quote_max_insurance/1e6})')
                 st.text(f'Int. Insurance: {fee_pool}')
                 st.text(f'PnL Pool: {pnl_pool}')
                 st.text(f'Excess PnL: {excess_pnl} ({fee_pool+pnl_pool} - {market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm/1e9 * market.amm.historical_oracle_data.last_oracle_price/1e6)})')

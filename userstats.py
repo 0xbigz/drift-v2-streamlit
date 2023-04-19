@@ -48,11 +48,15 @@ async def show_user_stats(clearing_house: ClearingHouse):
     current_ts = time.time()
     # print(current_ts)
     df['last_trade_seconds_ago'] = int(current_ts) - df[['last_taker_volume30d_ts', 'last_maker_volume30d_ts']].max(axis=1).astype(int)
+    df['last_fill_seconds_ago'] = int(current_ts) - df['last_filler_volume30d_ts'].astype(int)
 
     volume_scale = (1 - df['last_trade_seconds_ago']/(60*60*24*30)).apply(lambda x: max(0, x))
+    fill_scale =  (1 - df['last_fill_seconds_ago']/(60*60*24*30)).apply(lambda x: max(0, x))
     # print(volume_scale)
 
     
+    df['filler_volume30d_calc'] = df[['filler_volume30d']].sum(axis=1)\
+        .mul(fill_scale, axis=0)
     df['taker_volume30d_calc'] = df[['taker_volume30d']].sum(axis=1)\
         .mul(volume_scale, axis=0)
     df['maker_volume30d_calc'] = df[['maker_volume30d']].sum(axis=1)\
@@ -62,8 +66,9 @@ async def show_user_stats(clearing_house: ClearingHouse):
     df['authority'] = df['authority'].astype(str)
     df['referrer'] = df['referrer'].astype(str)
     df = df[['authority', 'total_30d_volume_calc', 'taker_volume30d_calc', 'maker_volume30d_calc', 'last_trade_seconds_ago', 'taker_volume30d', 'maker_volume30d', 
-    'filler_volume30d', 'total_fee_paid', 'total_fee_rebate', 
+    'filler_volume30d_calc', 'filler_volume30d', 'total_fee_paid', 'total_fee_rebate', 
     'number_of_sub_accounts', 'is_referrer', 'if_staked_quote_asset_amount', 'referrer', 'total_referrer_reward',
+    'last_fill_seconds_ago',
     ]].sort_values('last_trade_seconds_ago').reset_index(drop=True)
 
 
@@ -144,5 +149,5 @@ async def show_user_stats(clearing_house: ClearingHouse):
     with tabs[2]:
         st.write('filler leaderboard')
         df2 = df[df.filler_volume30d>0]
-        df2 = df2.set_index('authority')[['filler_volume30d']].sort_values(by='filler_volume30d', ascending=False)
+        df2 = df2.set_index('authority')[['filler_volume30d_calc', 'last_fill_seconds_ago']].sort_values(by='filler_volume30d_calc', ascending=False)
         st.dataframe(df2)
