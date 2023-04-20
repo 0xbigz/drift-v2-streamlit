@@ -43,8 +43,99 @@ def get_loaded_auths():
         frens = frens[0].split(',')
     return frens
 
-# def ccc(vals):
-#     st.experimental_set_query_params(**{'authority': vals, 'tab':'User-Health'})
+def build_liquidity_status_df(df, user_account_pk):
+    def stitch_liq_status():
+        user_takersd = make_liq_status_df('taker', False)
+        user_taker_liqsd = make_liq_status_df('taker', True)
+        user_makersd = make_liq_status_df('maker', None)
+
+        lls = []
+        if len(user_takersd):
+            lls.append(user_takersd)
+        if len(user_taker_liqsd):
+            lls.append(user_taker_liqsd)
+            # user_trades_full = pd.concat([user_takersd, user_taker_liqsd, user_makersd])
+        if len(user_makersd):
+            lls.append(user_makersd)
+        user_trades_full = pd.concat(lls)
+        user_trades_full = user_trades_full.sort_values(['first_ts'])
+        if 'takerOrderDirection' in user_trades_full.columns:
+            user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'direction'] = user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'takerOrderDirection']
+            user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'size'] = user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'takerOrderCumulativeBaseAssetAmountFilled']
+            user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'notional'] = user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'takerOrderCumulativeQuoteAssetAmountFilled']
+            user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'fee'] = user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'cumulativeTakerFee']
+        if 'makerOrderDirection' in user_trades_full.columns:
+            user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'direction'] = user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'makerOrderDirection']
+            user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'size'] = user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'makerOrderCumulativeBaseAssetAmountFilled']
+            user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'notional'] = user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'makerOrderCumulativeQuoteAssetAmountFilled']
+            user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'fee'] = user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'cumulativeMakerFee']
+
+        return user_trades_full
+
+    def make_liq_status_df(status, is_liq=None):
+        assert(status in ['taker', 'maker'])
+        user_takers = df[(df[status].astype(str)==str(user_account_pk))]
+        if is_liq is not None:
+            if is_liq:
+                liq_filt = user_takers.actionExplanation=='liquidation'
+            else:
+                liq_filt = user_takers.actionExplanation!='liquidation'
+            user_takers = user_takers[(((liq_filt)))]
+
+        if is_liq == True:
+            if 'liquidationId' in user_takers:
+                user_takersd = user_takers.groupby('liquidationId')
+            else:
+                user_takersd = pd.DataFrame()
+        else:
+            user_takersd = user_takers.groupby(status+'OrderId')
+
+        if len(user_takersd) == 0:
+            return user_takersd
+
+        user_takersd = pd.concat([user_takersd.agg(
+        {
+        'marketType': 'last',
+        'marketIndex': 'last',
+        'takerOrderDirection': 'last',
+        'actionExplanation': 'last',
+        status+'OrderCumulativeBaseAssetAmountFilled': 'last',
+        status+'OrderCumulativeQuoteAssetAmountFilled': 'last',
+        }
+        ), 
+        user_takersd.agg(
+            cumulativeTakerFee=('takerFee', 'sum'),
+            cumulativeMakerFee=('makerFee', 'sum'),
+            first_ts=('ts', 'min'),
+            last_ts=('ts', 'max'),
+            oraclePriceMax=('oraclePrice', 'max'),
+            oraclePriceMin=('oraclePrice', 'min')
+            )
+        ],axis=1)
+
+        user_takersd['orderFillPrice'] = user_takersd[status+'OrderCumulativeQuoteAssetAmountFilled']/user_takersd[status+'OrderCumulativeBaseAssetAmountFilled']
+        user_takersd['liquidityStatus'] = status
+
+        return user_takersd
+
+    return stitch_liq_status()
+
+def filter_dups(df):
+    df = df.drop_duplicates(['fillerReward', 'baseAssetAmountFilled', 'quoteAssetAmountFilled',
+        'takerPnl', 'makerPnl', 'takerFee', 'makerRebate', 'refereeDiscount',
+        'quoteAssetAmountSurplus', 'takerOrderBaseAssetAmount',
+        'takerOrderCumulativeBaseAssetAmountFilled',
+        'takerOrderCumulativeQuoteAssetAmountFilled', 'takerOrderFee',
+        'makerOrderBaseAssetAmount',
+        'makerOrderCumulativeBaseAssetAmountFilled',
+        'makerOrderCumulativeQuoteAssetAmountFilled', 'makerOrderFee',
+        'oraclePrice', 'makerFee', 'txSig', 'slot', 'ts', 'action',
+        'actionExplanation', 'marketIndex', 'marketType', 'filler',
+        'fillRecordId', 'taker', 'takerOrderId', 'takerOrderDirection', 'maker',
+        'makerOrderId', 'makerOrderDirection', 'spotFulfillmentMethodFee',
+        ]).reset_index(drop=True)
+    return df
+
 
 def load_user_settlepnl(dates, user_key, with_urls=False):
     url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
@@ -56,7 +147,11 @@ def load_user_settlepnl(dates, user_key, with_urls=False):
         data_url = url % (user_key, year, month)
         if data_url not in data_urls:
             data_urls.append(data_url)
-            dfs.append(pd.read_csv(data_url))
+            try:
+                dd = pd.read_csv(data_url)
+                dfs.append(dd)
+            except:
+                pass
     dfs = pd.concat(dfs)
 
     if with_urls:
@@ -76,17 +171,17 @@ def load_user_trades(dates, user_key, with_urls=False):
         (year, month, _) = (date.strftime("%Y"), str(date.month), str(date.day))
         data_url = url % (user_key, year, month)
         if data_url not in data_urls:
-            # try:
+            data_urls.append(data_url)
+            try:
                 dd = pd.read_csv(data_url)
-                data_urls.append(data_url)
                 if 'liquidation' in dd['actionExplanation'].unique():
                     data_liq_url = liq_url % (user_key, year, month)
                     data_urls.append(data_liq_url)
                     dd1 = pd.read_csv(data_liq_url)
                     dd = dd.merge(dd1, suffixes=('', '_l'), how='outer', on='txSig')
                 dfs.append(dd)
-            # except:
-            #     pass
+            except:
+                pass
     dfs = pd.concat(dfs)
 
     if with_urls:
@@ -192,133 +287,25 @@ async def show_user_perf(clearing_house: ClearingHouse):
 
                 if sub_id==int(sub):
                     # try:
-                    micol, srccol = st.columns(2)
-                    mi = micol.selectbox('market index:', [0])
+                    mtcol, micol, srccol = st.columns(3)
+                    mt = mtcol.selectbox('market type:', ['perp', 'spot'])
+                    mi = micol.selectbox('market index:', [0, 1, 2])
                     source = srccol.selectbox('source:', ['trades', 'settledPnl'])
 
                     if source == 'trades':
                         df, urls = load_user_trades(dates, str(user_account_pk), True)
-                        with st.expander('data source(s):'):
-                            for x in urls:
-                                st.write(x)
-                             # st.dataframe(sdf_tot['pnl'].sum())
-
-                        df = df.drop_duplicates(['fillerReward', 'baseAssetAmountFilled', 'quoteAssetAmountFilled',
-                                            'takerPnl', 'makerPnl', 'takerFee', 'makerRebate', 'refereeDiscount',
-                                            'quoteAssetAmountSurplus', 'takerOrderBaseAssetAmount',
-                                            'takerOrderCumulativeBaseAssetAmountFilled',
-                                            'takerOrderCumulativeQuoteAssetAmountFilled', 'takerOrderFee',
-                                            'makerOrderBaseAssetAmount',
-                                            'makerOrderCumulativeBaseAssetAmountFilled',
-                                            'makerOrderCumulativeQuoteAssetAmountFilled', 'makerOrderFee',
-                                            'oraclePrice', 'makerFee', 'txSig', 'slot', 'ts', 'action',
-                                            'actionExplanation', 'marketIndex', 'marketType', 'filler',
-                                            'fillRecordId', 'taker', 'takerOrderId', 'takerOrderDirection', 'maker',
-                                            'makerOrderId', 'makerOrderDirection', 'spotFulfillmentMethodFee',
-                                            ]).reset_index(drop=True)
-                    
-                        # st.dataframe(df[['ts', 'baseAssetAmountFilled', 'taker', 'takerOrderDirection']])
+                        df = df[df.marketIndex==mi]
+                        df = df[df.marketType==mt]
+                        df = filter_dups(df)
                         df['baseAssetAmountSignedFilled'] = df['baseAssetAmountFilled'] \
                             * df['takerOrderDirection'].apply(lambda x: 2*(x=='long')-1) \
                             * df['taker'].apply(lambda x: 2*(str(x)==str(user_account_pk))-1)
-                        # st.dataframe(df)
 
-                        df = df[df.marketIndex==mi]
-                        df = df[df.marketType=='perp']
-                        user_takers = df[((df.taker.astype(str)==str(user_account_pk)) & ((df.actionExplanation!='liquidation')))]
-                        user_makers = df[df.maker.astype(str)==str(user_account_pk)]
-                        user_taker_liqs = df[((df.taker.astype(str)==str(user_account_pk)) & ((df.actionExplanation=='liquidation')))]
+                        with st.expander('data source(s):'):
+                            for x in urls:
+                                st.write(x)
 
-                        user_takersd = user_takers.groupby('takerOrderId')
-                        user_makersd = user_makers.groupby('makerOrderId')
-
-                        user_takersd = pd.concat([user_takersd.agg(
-                            {
-                            'marketType': 'last',
-                            'marketIndex': 'last',
-                            'takerOrderDirection': 'last',
-                            'actionExplanation': 'last',
-                            'takerOrderCumulativeBaseAssetAmountFilled': 'last',
-                            'takerOrderCumulativeQuoteAssetAmountFilled': 'last',
-                            # 'takerFee': 'sum'
-                            }
-                        ), 
-                        user_takersd.agg(cumulativeTakerFee=('takerFee', 'sum'),
-                            first_ts=('ts', 'min'),
-                            last_ts=('ts', 'max'),
-                            oraclePriceMax=('oraclePrice', 'max'),
-                            oraclePriceMin=('oraclePrice', 'min')
-                            )
-                        ],axis=1)
-
-                        user_takersd['orderFillPrice'] = user_takersd['takerOrderCumulativeQuoteAssetAmountFilled']/user_takersd['takerOrderCumulativeBaseAssetAmountFilled']
-                        
-                        if len(user_taker_liqs):
-                            user_taker_liqsd = user_taker_liqs.groupby('liquidationId')
-                            user_taker_liqsd = pd.concat([user_taker_liqsd.agg(
-                                {
-                                'marketType': 'last',
-                                'marketIndex': 'last',
-                                'takerOrderDirection': 'last',
-                                'actionExplanation': 'last',
-                                'takerOrderCumulativeBaseAssetAmountFilled': 'sum',
-                                'takerOrderCumulativeQuoteAssetAmountFilled': 'sum',
-                                }
-                            ), 
-                            user_taker_liqsd.agg(
-                                cumulativeTakerFee=('takerFee', 'sum'),
-                                first_ts=('ts', 'min'),
-                                last_ts=('ts', 'max'),
-                                oraclePriceMax=('oraclePrice', 'max'),
-                                oraclePriceMin=('oraclePrice', 'min')
-                                )
-                            ],axis=1)
-                            user_taker_liqsd['orderFillPrice'] = user_taker_liqsd['takerOrderCumulativeQuoteAssetAmountFilled']/user_taker_liqsd['takerOrderCumulativeBaseAssetAmountFilled']
-                            user_taker_liqsd['liquidityStatus'] = 'taker'
-
-                            st.write(user_taker_liqsd)
-
-                        
-                        user_makersd = pd.concat([user_makersd.agg(
-                            {
-                            'marketType': 'last',
-                            'marketIndex': 'last',
-                            'makerOrderDirection': 'last',
-                            'actionExplanation': 'last',
-                            'makerOrderCumulativeBaseAssetAmountFilled': 'last',
-                            'makerOrderCumulativeQuoteAssetAmountFilled': 'last',
-                            #  'makerFee':'sum',
-                            }
-                        ), 
-                        user_makersd.agg(cumulativeMakerFee=('makerFee', 'sum'),
-                            first_ts=('ts', 'min'),
-                            last_ts=('ts', 'max'),
-                            oraclePriceMax=('oraclePrice', 'max'),
-                            oraclePriceMin=('oraclePrice', 'min')
-                            )
-                        ],axis=1)
-                        user_makersd['orderFillPrice'] = user_makersd['makerOrderCumulativeQuoteAssetAmountFilled']/user_makersd['makerOrderCumulativeBaseAssetAmountFilled']
-                        user_makersd['liquidityStatus'] = 'maker'
-                        user_takersd['liquidityStatus'] = 'taker'
-
-                        lls = []
-                        if len(user_takers):
-                            lls.append(user_takersd)
-                        if len(user_taker_liqs):
-                            lls.append(user_taker_liqsd)
-                            # user_trades_full = pd.concat([user_takersd, user_taker_liqsd, user_makersd])
-                        if len(user_makers):
-                            lls.append(user_makersd)
-                        user_trades_full = pd.concat(lls)
-                        user_trades_full = user_trades_full.sort_values(['first_ts'])
-                        user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'direction'] = user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'takerOrderDirection']
-                        user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'direction'] = user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'makerOrderDirection']
-                        user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'size'] = user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'takerOrderCumulativeBaseAssetAmountFilled']
-                        user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'size'] = user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'makerOrderCumulativeBaseAssetAmountFilled']
-                        user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'notional'] = user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'takerOrderCumulativeQuoteAssetAmountFilled']
-                        user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'notional'] = user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'makerOrderCumulativeQuoteAssetAmountFilled']
-                        user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'fee'] = user_trades_full.loc[user_trades_full.liquidityStatus=='taker', 'cumulativeTakerFee']
-                        user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'fee'] = user_trades_full.loc[user_trades_full.liquidityStatus=='maker', 'cumulativeMakerFee']
+                        user_trades_full = build_liquidity_status_df(df, user_account_pk)
 
                         st.dataframe(user_trades_full[['direction', 'liquidityStatus', 'size', 'notional', 'orderFillPrice', 'fee', 'actionExplanation']])
 
