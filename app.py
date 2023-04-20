@@ -8,7 +8,6 @@ import json
 from urllib.request import urlopen
 import numpy as np
 import os
-# os.environ['REQUESTS_CA_BUNDLE'] = '/private/etc/ssl/cert.pem'
 # import ssl
 # import urllib.request
 # ssl._create_default_https_context = ssl._create_unverified_context
