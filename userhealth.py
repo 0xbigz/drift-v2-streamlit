@@ -107,11 +107,12 @@ async def show_user_health(clearing_house: ClearingHouse):
         st.dataframe(uak_df)
 
 
-        st.header('March Trades Stats')
+        st.header('April Trades Stats')
         for user_authority in user_authorities:
             user_authority_pk = PublicKey(user_authority)
             # print(user_stats)
             user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
+            st.write(user_stat)
             # chu = ClearingHouseUser(
             #     ch, 
             #     authority=user_authority_pk, 

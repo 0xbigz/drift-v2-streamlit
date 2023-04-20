@@ -8,6 +8,9 @@ import json
 from urllib.request import urlopen
 import numpy as np
 import os
+# import ssl
+# import urllib.request
+# ssl._create_default_https_context = ssl._create_unverified_context
 
 import asyncio
 import datetime
@@ -28,6 +31,7 @@ from orders import orders_page
 from platyperps import show_platyperps
 from liquidity import mm_page
 from imf import imf_page
+from userperf import show_user_perf
 from userhealth import show_user_health
 from tradeflow import trade_flow_analysis
 from gpt import gpt_page
@@ -68,6 +72,7 @@ def main():
     'Simulations', 'Logs',
     
      'Fee-Schedule', 'Insurance-Fund', 
+     'User-Performance',
      'User-Health', 'User-Volume', 'User-Stats', 'DLOB', 'Refs', 'MM', 'Trade Flow',   'Drift-GPT', 'IMF',
      'Network',
      'User-Status',
@@ -163,7 +168,9 @@ def main():
     elif tab.lower() == 'insurance-fund':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(insurance_fund_page(clearing_house))
-
+    elif tab.lower() == 'user-performance':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(show_user_perf(clearing_house))
     elif tab.lower() == 'user-health':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_health(clearing_house))
