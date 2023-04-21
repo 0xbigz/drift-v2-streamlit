@@ -258,6 +258,7 @@ async def show_user_perf(clearing_house: ClearingHouse):
             # frens
         )
         # user_authorities = ['4FbQvke11D4EdHVsCD3xej2Pncp4LFMTXWJUXv7irxTj']
+        user_authorities = [user_authorities]
     else:
         user_authorities = authority0.selectbox(
             'user authorities', 
