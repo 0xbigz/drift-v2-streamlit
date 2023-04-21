@@ -195,7 +195,10 @@ def load_user_settlepnl(dates, user_key, with_urls=False):
                 dfs.append(dd)
             except:
                 pass
-    dfs = pd.concat(dfs)
+    if len(dfs):
+        dfs = pd.concat(dfs)
+    else:
+        dfs = pd.DataFrame()
 
     if with_urls:
         return dfs, data_urls
@@ -216,17 +219,19 @@ def load_user_trades(dates, user_key, with_urls=False):
         if data_url not in data_urls:
             data_urls.append(data_url)
             try:
-                dd = pd.read_csv(data_url)
+                dd = pd.read_csv(data_url, nrows=50000)
                 if 'liquidation' in dd['actionExplanation'].unique():
                     data_liq_url = liq_url % (user_key, year, month)
                     data_urls.append(data_liq_url)
                     dd1 = pd.read_csv(data_liq_url)
                     dd = dd.merge(dd1, suffixes=('', '_l'), how='outer', on='txSig')
                 dfs.append(dd)
-            except:
-                st.warning(data_url+ ' failed to load')
-    dfs = pd.concat(dfs)
-
+            except Exception as e:
+                st.warning(data_url+ ' failed to load ('+str(e)+')')
+    if len(dfs):
+        dfs = pd.concat(dfs)
+    else:
+        dfs = pd.DataFrame()
     if with_urls:
         return dfs, data_urls
 
@@ -336,97 +341,131 @@ async def show_user_perf(clearing_house: ClearingHouse):
 
                 if sub_id==int(sub):
                     # try:
-                    mtcol, micol, srccol = st.columns(3)
-                    mt = mtcol.selectbox('market type:', ['perp', 'spot'])
-                    mi = micol.selectbox('market index:', [0, 1, 2])
-                    source = srccol.selectbox('source:', ['trades', 'settledPnl'])
 
-                    if source == 'trades':
-                        df, urls = load_user_trades(dates, str(user_account_pk), True)
-                        df = df[df.marketIndex==mi]
-                        df = df[df.marketType==mt]
-                        df = filter_dups(df)
-                        df['baseAssetAmountSignedFilled'] = df['baseAssetAmountFilled'] \
-                            * df['takerOrderDirection'].apply(lambda x: 2*(x=='long')-1) \
-                            * df['taker'].apply(lambda x: 2*(str(x)==str(user_account_pk))-1)
+                    tabs = st.tabs(['per market', 'all time stats'])
 
-                        with st.expander('data source(s):'):
-                            for x in urls:
-                                st.write(x)
+                    with tabs[1]:
+                        user_acct = await get_user_account(clearing_house.program, user_authority_pk, sub_id)
+                        atnd = (user_acct.total_deposits - user_acct.total_withdraws)/1e6
+                        atpp = user_acct.settled_perp_pnl/1e6
+                        atfp = user_acct.cumulative_perp_funding/1e6
+                        atsf = user_acct.cumulative_spot_fees/1e6
 
-                        user_trades_full = build_liquidity_status_df(df, user_account_pk)
-                        if len(user_trades_full):
-                            usr_to_show = user_trades_full[['direction', 'liquidityStatus', 'size', 'notional', 'orderFillPrice', 'fee', 'actionExplanation', 'first_ts', 'last_ts']]
-                            
-                            def highlight_survived(s):
-                                return ['background-color: #90EE90']*len(s) if s.direction=='long' else ['background-color: pink']*len(s)
 
-                            m1, m2, m3 = st.columns(3)
-                            m3.metric('total fees paid:', f'${usr_to_show["fee"].sum():,.2f}',
-                            f'${usr_to_show[usr_to_show.actionExplanation == "liquidation"]["fee"].sum():,.2f} in liquidation fees')
+                        atsp =  atpp + atfp + atsf
+                        s1,s2,s3,s4 = st.columns(4)
+                        s1.metric('all time settled pnl:', atsp)
 
-                            m2.metric('total volume:', 
-                            f'${usr_to_show["notional"].sum():,.2f}',
-                            f'${usr_to_show[usr_to_show.liquidityStatus == "maker"]["notional"].sum():,.2f} was maker volume')
-                            
+                        if user_acct.spot_positions[0].market_index == 0:
+                            s2.metric('all time usdc deposits:', user_acct.spot_positions[0].cumulative_deposits/1e6)
 
-                            st.dataframe(usr_to_show.reset_index(drop=True).style.apply(highlight_survived, axis=1))
+                        if user_acct.spot_positions[1].market_index == 1:
+                            s3.metric('all time sol deposits:', user_acct.spot_positions[1].cumulative_deposits/1e6)
 
-                            # # st.multiselect('columns:', df.columns, None)
-                            ot = df.pivot_table(index='ts', columns=['marketType', 'marketIndex'], values='baseAssetAmountSignedFilled', aggfunc='sum').cumsum().ffill()
-                            ot = ot.round(6)
-                            ot.columns = [str(x) for x in ot.columns]
-                            ot.index = pd.to_datetime((ot.index*1e9).astype(int), utc=True)
-                            # ot = ot.resample('1MIN').ffill()
-                            st.plotly_chart(ot.plot(title='position over time'))
 
-                            st.plotly_chart(make_buy_sell_chart(usr_to_show))
+                        s1,s2,s3,s4 = st.columns(4)
+                        s1.metric('all time net deposits:', atnd)
+                        s2.metric('all time perp pnl:', atpp)
+                        s3.metric('all time funding pnl:', atfp)
+                        s4.metric('all time spot fees:', -atsf)
+
+                    with tabs[0]:
+                        mtcol, micol, srccol = st.columns(3)
+                        mt = mtcol.selectbox('market type:', ['perp', 'spot'])
+                        if mt == 'perp':
+                            mi = micol.selectbox('market index:', range(0, state.number_of_markets))
                         else:
-                            st.write('no history for this market')
+                            mi = micol.selectbox('market index:', range(1, state.number_of_spot_markets))
+                        source = srccol.selectbox('source:', ['trades', 'settledPnl'])
+
+                        if source == 'trades':
+                            df, urls = load_user_trades(dates, str(user_account_pk), True)
+                            if len(df) == 0:
+                                continue
+                            df = df[df.marketIndex==mi]
+                            df = df[df.marketType==mt]
+                            df = filter_dups(df)
+                            df['baseAssetAmountSignedFilled'] = df['baseAssetAmountFilled'] \
+                                * df['takerOrderDirection'].apply(lambda x: 2*(x=='long')-1) \
+                                * df['taker'].apply(lambda x: 2*(str(x)==str(user_account_pk))-1)
+
+                            with st.expander('data source(s):'):
+                                for x in urls:
+                                    st.write(x)
+
+                            user_trades_full = build_liquidity_status_df(df, user_account_pk)
+                            if len(user_trades_full):
+                                usr_to_show = user_trades_full[['direction', 'liquidityStatus', 'size', 'notional', 'orderFillPrice', 'fee', 'actionExplanation', 'first_ts', 'last_ts']]
+                                
+                                def highlight_survived(s):
+                                    return ['background-color: #90EE90']*len(s) if s.direction=='long' else ['background-color: pink']*len(s)
+
+                                m1, m2, m3 = st.columns(3)
+                                m3.metric('total fees paid:', f'${usr_to_show["fee"].sum():,.2f}',
+                                f'${usr_to_show[usr_to_show.actionExplanation == "liquidation"]["fee"].sum():,.2f} in liquidation fees')
+
+                                m2.metric('total volume:', 
+                                f'${usr_to_show["notional"].sum():,.2f}',
+                                f'${usr_to_show[usr_to_show.liquidityStatus == "maker"]["notional"].sum():,.2f} was maker volume')
+                                
+
+                                st.dataframe(usr_to_show.reset_index(drop=True).style.apply(highlight_survived, axis=1))
+
+                                # # st.multiselect('columns:', df.columns, None)
+                                ot = df.pivot_table(index='ts', columns=['marketType', 'marketIndex'], values='baseAssetAmountSignedFilled', aggfunc='sum').cumsum().ffill()
+                                ot = ot.round(6)
+                                ot.columns = [str(x) for x in ot.columns]
+                                ot.index = pd.to_datetime((ot.index*1e9).astype(int), utc=True)
+                                # ot = ot.resample('1MIN').ffill()
+                                st.plotly_chart(ot.plot(title='position over time'))
+
+                                st.plotly_chart(make_buy_sell_chart(usr_to_show))
+                            else:
+                                st.write('no history for this market')
 
 
 
-                        # tt = df.groupby(['takerOrderId', 'takerOrderDirection']).count().iloc[:,0].reset_index()
-                        # tt1 = tt.groupby('takerOrderDirection').count()
-                        # # st.dataframe(tt1)
+                            # tt = df.groupby(['takerOrderId', 'takerOrderDirection']).count().iloc[:,0].reset_index()
+                            # tt1 = tt.groupby('takerOrderDirection').count()
+                            # # st.dataframe(tt1)
 
-                        # takerfee_trades = df[df.taker.astype(str)==str(user_account_pk)]['takerFee']
-                        # # st.plotly_chart(takerfee_trades.plot())
+                            # takerfee_trades = df[df.taker.astype(str)==str(user_account_pk)]['takerFee']
+                            # # st.plotly_chart(takerfee_trades.plot())
 
-                        # trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
-                        # trades.columns = ['volume']
-                        # st.dataframe(trades)
-                        # except:
-                        #     st.write('cannot load data')
-                    else:
-                        sdf = load_user_settlepnl(dates, str(user_account_pk))
-                        # st.dataframe(sdf)
-                        sdf_tot = sdf.pivot_table(index='ts', columns='marketIndex', 
-                                                values=['pnl', 'baseAssetAmount', 'quoteEntryAmount', 'settlePrice'])
-                        sdf_tot = sdf_tot.swaplevel(axis=1)
-                        
-                        sdf_tot = sdf_tot[mi]
-                        # st.dataframe(sdf_tot)
+                            # trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
+                            # trades.columns = ['volume']
+                            # st.dataframe(trades)
+                            # except:
+                            #     st.write('cannot load data')
+                        else:
+                            sdf = load_user_settlepnl(dates, str(user_account_pk))
+                            # st.dataframe(sdf)
+                            sdf_tot = sdf.pivot_table(index='ts', columns='marketIndex', 
+                                                    values=['pnl', 'baseAssetAmount', 'quoteEntryAmount', 'settlePrice'])
+                            sdf_tot = sdf_tot.swaplevel(axis=1)
+                            
+                            sdf_tot = sdf_tot[mi]
+                            # st.dataframe(sdf_tot)
 
-                        sdf_tot['costBasisAfter'] = (-(sdf_tot['quoteEntryAmount']) / sdf_tot['baseAssetAmount'] ).fillna(0)
-                        sdf_tot['cumulativePnl'] = sdf_tot['pnl'].cumsum()
-                        sdf_tot['notional'] = sdf_tot['baseAssetAmount']*sdf_tot['settlePrice']
-
-
-                        # st.dataframe(sdf_tot)
-
-                        sdf_tot['entryPnl'] = sdf_tot['notional'] + sdf_tot['quoteEntryAmount']
-                        # sdf_tot.columns = ['-'.join([str(i) for i in x]) for x in sdf_tot.columns]
-                        sdf_tot.index = pd.to_datetime((sdf_tot.index*1e9).astype(int), utc=True)
-                        st.plotly_chart(sdf_tot.plot())
-                
-
-        # st.markdown('user stats')
-        # st.dataframe(pd.DataFrame([x for x in user_stats]).T)
+                            sdf_tot['costBasisAfter'] = (-(sdf_tot['quoteEntryAmount']) / sdf_tot['baseAssetAmount'] ).fillna(0)
+                            sdf_tot['cumulativePnl'] = sdf_tot['pnl'].cumsum()
+                            sdf_tot['notional'] = sdf_tot['baseAssetAmount']*sdf_tot['settlePrice']
 
 
-    # else:
-    #     st.text('not found')
+                            # st.dataframe(sdf_tot)
 
-    
-    
+                            sdf_tot['entryPnl'] = sdf_tot['notional'] + sdf_tot['quoteEntryAmount']
+                            # sdf_tot.columns = ['-'.join([str(i) for i in x]) for x in sdf_tot.columns]
+                            sdf_tot.index = pd.to_datetime((sdf_tot.index*1e9).astype(int), utc=True)
+                            st.plotly_chart(sdf_tot.plot())
+                    
+
+            # st.markdown('user stats')
+            # st.dataframe(pd.DataFrame([x for x in user_stats]).T)
+
+
+        # else:
+        #     st.text('not found')
+
+        
+        
