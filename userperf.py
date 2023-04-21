@@ -34,7 +34,7 @@ import time
 from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
 
-@st.experimental_memo
+# @st.experimental_memo
 def get_loaded_auths():
 
     query_p = st.experimental_get_query_params()
@@ -97,7 +97,7 @@ def build_liquidity_status_df(df, user_account_pk):
         {
         'marketType': 'last',
         'marketIndex': 'last',
-        'takerOrderDirection': 'last',
+        status+'OrderDirection': 'last',
         'actionExplanation': 'last',
         status+'OrderCumulativeBaseAssetAmountFilled': 'last',
         status+'OrderCumulativeQuoteAssetAmountFilled': 'last',
@@ -115,6 +115,9 @@ def build_liquidity_status_df(df, user_account_pk):
 
         user_takersd['orderFillPrice'] = user_takersd[status+'OrderCumulativeQuoteAssetAmountFilled']/user_takersd[status+'OrderCumulativeBaseAssetAmountFilled']
         user_takersd['liquidityStatus'] = status
+
+        # if status == 'maker':
+        #     st.dataframe(user_takersd)
 
         return user_takersd
 
@@ -181,7 +184,7 @@ def load_user_trades(dates, user_key, with_urls=False):
                     dd = dd.merge(dd1, suffixes=('', '_l'), how='outer', on='txSig')
                 dfs.append(dd)
             except:
-                pass
+                st.warning(data_url+ ' failed to load')
     dfs = pd.concat(dfs)
 
     if with_urls:
@@ -209,9 +212,15 @@ async def show_user_perf(clearing_house: ClearingHouse):
             # on_change=ccc
             # frens
         )
-        user_authorities = [user_authorities]
         # user_authorities = ['4FbQvke11D4EdHVsCD3xej2Pncp4LFMTXWJUXv7irxTj']
     else:
+        user_authorities = authority0.selectbox(
+            'user authorities', 
+            frens, 
+            0
+            # on_change=ccc
+            # frens
+        )
         user_authorities = frens
     # print(user_authorities)
     # user_authority = user_authorities[0]
@@ -306,8 +315,15 @@ async def show_user_perf(clearing_house: ClearingHouse):
                                 st.write(x)
 
                         user_trades_full = build_liquidity_status_df(df, user_account_pk)
+                        usr_to_show = user_trades_full[['direction', 'liquidityStatus', 'size', 'notional', 'orderFillPrice', 'fee', 'actionExplanation', 'first_ts', 'last_ts']]
+                        
+                        def highlight_survived(s):
+                            return ['background-color: #90EE90']*len(s) if s.direction=='long' else ['background-color: pink']*len(s)
 
-                        st.dataframe(user_trades_full[['direction', 'liquidityStatus', 'size', 'notional', 'orderFillPrice', 'fee', 'actionExplanation']])
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric('total fees paid:', f'{usr_to_show["fee"].sum():,.2f}',
+                         f'{usr_to_show[usr_to_show.actionExplanation == "liquidation"]["fee"].sum():,.2f} in liquidation fees')
+                        st.dataframe(usr_to_show.reset_index(drop=True).style.apply(highlight_survived, axis=1))
 
 
                         # st.multiselect('columns:', df.columns, None)
