@@ -33,6 +33,43 @@ import asyncio
 import time
 from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
+import plotly.graph_objs as go
+
+
+def make_buy_sell_chart(usr_to_show):
+    # Example price series
+    usr_to_show.index = pd.to_datetime((usr_to_show.first_ts*1e9).astype(int), utc=True)
+    prices = usr_to_show.orderFillPrice
+
+    # Example buy and sell signals
+    signals = usr_to_show.direction.apply(lambda x: 1 if x=='long' else -1)  # 1 = buy, -1 = sell
+    # Create the chart trace for the price series
+    price_trace = go.Scatter(x=prices.index, y=prices, mode='lines', name='Price')
+
+    # Create the chart trace for the buy and sell signals
+    signal_trace = go.Scatter(
+        x=prices.index[signals != 0],
+        y=prices[signals != 0],
+        mode='markers',
+        marker=dict(
+            symbol=['triangle-up'if s == 1 else 'triangle-down' for s in signals],
+            color=['green' if s == 1 else 'red' for s in signals],
+            size=10,
+        ),
+        name='Action',
+    )
+
+    # Create the chart layout
+    layout = go.Layout(
+        title='Price Chart (with Buy and Sell Action)',
+        xaxis=dict(title='Time'),
+        yaxis=dict(title='Price'),
+    )
+
+    # Create the chart figure
+    fig = go.Figure(data=[price_trace, signal_trace], layout=layout)
+    return fig
+
 
 # @st.experimental_memo
 def get_loaded_auths():
@@ -57,6 +94,9 @@ def build_liquidity_status_df(df, user_account_pk):
             # user_trades_full = pd.concat([user_takersd, user_taker_liqsd, user_makersd])
         if len(user_makersd):
             lls.append(user_makersd)
+        if len(lls) == 0:
+            return pd.DataFrame()
+
         user_trades_full = pd.concat(lls)
         user_trades_full = user_trades_full.sort_values(['first_ts'])
         if 'takerOrderDirection' in user_trades_full.columns:
@@ -315,34 +355,46 @@ async def show_user_perf(clearing_house: ClearingHouse):
                                 st.write(x)
 
                         user_trades_full = build_liquidity_status_df(df, user_account_pk)
-                        usr_to_show = user_trades_full[['direction', 'liquidityStatus', 'size', 'notional', 'orderFillPrice', 'fee', 'actionExplanation', 'first_ts', 'last_ts']]
-                        
-                        def highlight_survived(s):
-                            return ['background-color: #90EE90']*len(s) if s.direction=='long' else ['background-color: pink']*len(s)
+                        if len(user_trades_full):
+                            usr_to_show = user_trades_full[['direction', 'liquidityStatus', 'size', 'notional', 'orderFillPrice', 'fee', 'actionExplanation', 'first_ts', 'last_ts']]
+                            
+                            def highlight_survived(s):
+                                return ['background-color: #90EE90']*len(s) if s.direction=='long' else ['background-color: pink']*len(s)
 
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric('total fees paid:', f'{usr_to_show["fee"].sum():,.2f}',
-                         f'{usr_to_show[usr_to_show.actionExplanation == "liquidation"]["fee"].sum():,.2f} in liquidation fees')
-                        st.dataframe(usr_to_show.reset_index(drop=True).style.apply(highlight_survived, axis=1))
+                            m1, m2, m3 = st.columns(3)
+                            m3.metric('total fees paid:', f'${usr_to_show["fee"].sum():,.2f}',
+                            f'${usr_to_show[usr_to_show.actionExplanation == "liquidation"]["fee"].sum():,.2f} in liquidation fees')
+
+                            m2.metric('total volume:', 
+                            f'${usr_to_show["notional"].sum():,.2f}',
+                            f'${usr_to_show[usr_to_show.liquidityStatus == "maker"]["notional"].sum():,.2f} was maker volume')
+                            
+
+                            st.dataframe(usr_to_show.reset_index(drop=True).style.apply(highlight_survived, axis=1))
+
+                            # # st.multiselect('columns:', df.columns, None)
+                            ot = df.pivot_table(index='ts', columns=['marketType', 'marketIndex'], values='baseAssetAmountSignedFilled', aggfunc='sum').cumsum().ffill()
+                            ot = ot.round(6)
+                            ot.columns = [str(x) for x in ot.columns]
+                            ot.index = pd.to_datetime((ot.index*1e9).astype(int), utc=True)
+                            # ot = ot.resample('1MIN').ffill()
+                            st.plotly_chart(ot.plot(title='position over time'))
+
+                            st.plotly_chart(make_buy_sell_chart(usr_to_show))
+                        else:
+                            st.write('no history for this market')
 
 
-                        # st.multiselect('columns:', df.columns, None)
-                        ot = df.pivot_table(index='ts', columns=['marketType', 'marketIndex'], values='baseAssetAmountSignedFilled', aggfunc='sum').cumsum().ffill()
-                        ot = ot.round(6)
-                        ot.columns = [str(x) for x in ot.columns]
-                        ot.index = pd.to_datetime((ot.index*1e9).astype(int), utc=True)
-                        # ot = ot.resample('1MIN').ffill()
-                        st.plotly_chart(ot.plot(title='base asset amount over month (WIP)'))
 
-                        tt = df.groupby(['takerOrderId', 'takerOrderDirection']).count().iloc[:,0].reset_index()
-                        tt1 = tt.groupby('takerOrderDirection').count()
-                        # st.dataframe(tt1)
+                        # tt = df.groupby(['takerOrderId', 'takerOrderDirection']).count().iloc[:,0].reset_index()
+                        # tt1 = tt.groupby('takerOrderDirection').count()
+                        # # st.dataframe(tt1)
 
-                        takerfee_trades = df[df.taker.astype(str)==str(user_account_pk)]['takerFee']
-                        # st.plotly_chart(takerfee_trades.plot())
+                        # takerfee_trades = df[df.taker.astype(str)==str(user_account_pk)]['takerFee']
+                        # # st.plotly_chart(takerfee_trades.plot())
 
-                        trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
-                        trades.columns = ['volume']
+                        # trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
+                        # trades.columns = ['volume']
                         # st.dataframe(trades)
                         # except:
                         #     st.write('cannot load data')
@@ -369,8 +421,8 @@ async def show_user_perf(clearing_house: ClearingHouse):
                         st.plotly_chart(sdf_tot.plot())
                 
 
-        st.markdown('user stats')
-        st.dataframe(pd.DataFrame([x for x in user_stats]).T)
+        # st.markdown('user stats')
+        # st.dataframe(pd.DataFrame([x for x in user_stats]).T)
 
 
     # else:
