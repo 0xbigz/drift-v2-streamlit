@@ -30,9 +30,13 @@ import requests
 
 async def show_api(clearing_house: ClearingHouse):    
     ch = clearing_house
-
-    tags = requests.get('https://api.github.com/repos/drift-labs/protocol-v2/tags').json()
-    tags = [x['name'] for x in tags]
+    tags = []
+    tag_url = 'https://api.github.com/repos/drift-labs/protocol-v2/tags'
+    try:
+        tags = requests.get(tag_url).json()
+        tags = [x['name'] for x in tags]
+    except:
+        st.warning('trouble loading '+tag_url)
     tags = ['master'] + tags
     tt1, tt2 = st.columns(2)
     tag = tt1.selectbox('tag:', tags)
