@@ -39,7 +39,7 @@ from uservolume import show_user_volume
 from refs import ref_page
 from userstatus import userstatus_page
 # from network import show_network
-
+from api import show_api
 def main():
     st.set_page_config(
         'Drift v2',
@@ -77,6 +77,7 @@ def main():
      'Network',
      'User-Status',
      'Config',
+     'API',
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -182,6 +183,10 @@ def main():
     elif tab.lower() == 'user-stats':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_stats(clearing_house))
+
+    elif tab.lower() == 'api':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(show_api(clearing_house))
     
     elif tab.lower() == 'dlob':
         orders_page(clearing_house)

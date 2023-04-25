@@ -1,0 +1,85 @@
+
+import sys
+from tokenize import tabsize
+import driftpy
+import pandas as pd 
+import numpy as np 
+
+pd.options.plotting.backend = "plotly"
+
+# from driftpy.constants.config import configs
+from anchorpy import Provider, Wallet
+from solana.keypair import Keypair
+from solana.rpc.async_api import AsyncClient
+from driftpy.clearing_house import ClearingHouse
+from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
+from driftpy.constants.numeric_constants import * 
+import os
+import json
+import streamlit as st
+from driftpy.constants.banks import devnet_banks, Bank
+from driftpy.constants.markets import devnet_markets, Market
+from dataclasses import dataclass
+from solana.publickey import PublicKey
+from helpers import serialize_perp_market_2, serialize_spot_market
+from anchorpy import EventParser
+import asyncio
+from glob import glob
+import requests
+
+async def show_api(clearing_house: ClearingHouse):    
+    ch = clearing_house
+
+    tags = requests.get('https://api.github.com/repos/drift-labs/protocol-v2/tags').json()
+    tags = [x['name'] for x in tags]
+    tags = ['master'] + tags
+    tt1, tt2 = st.columns(2)
+    tag = tt1.selectbox('tag:', tags)
+
+    # url_tag = 'https://raw.githubusercontent.com/drift-labs/protocol-v2/v2.25.2/sdk/src/idl/drift.json'
+    url = 'https://raw.githubusercontent.com/drift-labs/protocol-v2/'+tag+'/sdk/src/idl/drift.json'
+    tt2.write(url)
+
+    response = requests.get(url)
+    data = response.json()
+    # st.json(data)
+    tabs = st.tabs(['function', 'types', 'error'])
+
+
+    def get_signer(x):
+        for y in x:
+            if y['isSigner']:
+                if (y['name']=='admin'):
+                    return 'admin'
+                return 'user'
+        
+
+    with(tabs[0]):
+        instrs = data['instructions']
+        df = pd.DataFrame(instrs)
+        df['signer'] = df['accounts'].apply(lambda x: get_signer(x))
+        st.dataframe(df[['name', 'signer']])
+    with(tabs[1]):
+        instrs = data['types']
+        df = pd.DataFrame(instrs)
+        # df['signer'] = df['accounts'].apply(lambda x: get_signer(x))
+        st.dataframe(df)
+    with(tabs[2]):
+        hex_string = st.text_input('error code lookup:', )
+        if hex_string:
+            if hex_string[:2] == '0x':
+                decimal_number = int(hex_string, 16)
+                st.write(decimal_number)
+            else:
+                decimal_number = int(hex_string)
+                st.write(decimal_number)
+
+            if decimal_number >= 6000:
+                errors = data['errors']
+                if decimal_number-6000 < len(errors):
+                    error = errors[decimal_number-6000]
+                    st.write(error)
+            else:
+                st.write('not a drift error')
+                st.warning('if number is in `hex` please add `0x`')
