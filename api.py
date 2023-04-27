@@ -70,20 +70,24 @@ async def show_api(clearing_house: ClearingHouse):
         # df['signer'] = df['accounts'].apply(lambda x: get_signer(x))
         st.dataframe(df)
     with(tabs[2]):
-        hex_string = st.text_input('error code lookup:', )
+        s1, s2 = st.columns(2)
+        errors = data['errors']
+        df = pd.DataFrame(errors).set_index('code')
+        print(str(df.to_markdown()))
+        s1.dataframe(df)
+        hex_string = s2.text_input('error code lookup:', )
         if hex_string:
             if hex_string[:2] == '0x':
                 decimal_number = int(hex_string, 16)
-                st.write(decimal_number)
+                s2.write(decimal_number)
             else:
                 decimal_number = int(hex_string)
-                st.write(decimal_number)
+                s2.write(decimal_number)
 
             if decimal_number >= 6000:
-                errors = data['errors']
                 if decimal_number-6000 < len(errors):
                     error = errors[decimal_number-6000]
-                    st.write(error)
+                    s2.write(error)
             else:
-                st.write('not a drift error')
-                st.warning('if number is in `hex` please add `0x`')
+                s2.write('not a drift error')
+                s2.warning('if number is in `hex` please add `0x`')

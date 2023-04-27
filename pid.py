@@ -288,6 +288,14 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 # print(dfff)
                 fig = px.funnel(dfff, y='index', x=0, color='color')
                 st.plotly_chart(fig)
+
+                st.text(f'Revenue Withdrawn Since Settle Ts: {market.insurance_claim.revenue_withdraw_since_last_settle/1e6}')
+                st.text(f'''
+                Last Settle Ts: {str(pd.to_datetime(market.insurance_claim.last_revenue_withdraw_ts*1e9))} vs
+                Last Spot Settle Ts: {str(pd.to_datetime(usdc_market.insurance_fund.last_revenue_settle_ts*1e9))}
+                
+                ''')
+
                 st.text(f'Ext. Insurance: {(market.insurance_claim.quote_max_insurance-market.insurance_claim.quote_settled_insurance)/1e6} ({market.insurance_claim.quote_settled_insurance/1e6}/{market.insurance_claim.quote_max_insurance/1e6})')
                 st.text(f'Int. Insurance: {fee_pool}')
                 st.text(f'PnL Pool: {pnl_pool}')
