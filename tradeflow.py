@@ -80,7 +80,7 @@ def trade_flow_analysis():
     modecol, col1, col2, col3 = st.columns([1,3,3,3])
     selection = modecol.radio('mode:', ['summary', 'per-market'], index=1)
 
-    markets = ["SOL-PERP", "BTC-PERP", "ETH-PERP", "1MBONK-PERP", "MATIC-PERP", "ARB-PERP", "DOGE-PERP", "SOL"]
+    markets = ["SOL-PERP", "BTC-PERP", "ETH-PERP", "1MBONK-PERP", "MATIC-PERP", "ARB-PERP", "DOGE-PERP", "SUI-PERP", "SOL"]
     market = None
     if selection == 'per-market':
         market = col1.selectbox('select market:', markets)

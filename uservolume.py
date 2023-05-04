@@ -187,7 +187,7 @@ async def show_user_volume(clearing_house: ClearingHouse):
     mol1, molselect, mol0, mol2, _ = st.columns([3, 3, 3, 3, 10])
     market_name = mol1.selectbox(
         "market",
-        ["SOL-PERP", "BTC-PERP", "ETH-PERP", "1MBONK-PERP", "MATIC-PERP", "ARB-PERP", "DOGE-PERP", "SOL"],
+        ["SOL-PERP", "BTC-PERP", "ETH-PERP", "1MBONK-PERP", "MATIC-PERP", "ARB-PERP", "DOGE-PERP",  'BNB-PERP', "SUI-PERP", "SOL"],
     )
     range_selected = molselect.selectbox("range select:", ["daily", "weekly"], 0)
 

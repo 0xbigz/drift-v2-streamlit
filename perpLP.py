@@ -33,23 +33,29 @@ from aiocache import cached
 from driftpy.types import InsuranceFundStake, SpotMarket
 from driftpy.addresses import * 
 
-async def userstatus_page(ch: ClearingHouse):
+async def perp_lp_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
+    user_lookup = st.radio('lookup users:', [True, False], index=1)
+    tabs = st.tabs(['LPs'])
 
-    tabs = st.tabs(['active / inactive', 'LPs'])
-
-    all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
-    df = pd.DataFrame([x.account.__dict__ for x in all_users])
-    df['public_key'] = [str(x.public_key) for x in all_users]
+    if user_lookup:
+        all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+        df = pd.DataFrame([x.account.__dict__ for x in all_users])
+        df.name = df.name.apply(lambda x: bytes(x).decode('utf-8', errors='ignore'))
+        df['public_key'] = [str(x.public_key) for x in all_users]
+    else: 
+        all_users = []
+        df = pd.DataFrame()
     # with st.expander('ref accounts'):
     #     st.write(all_refs_stats)
     with tabs[0]:
-        st.metric('number of user accounts', state.number_of_sub_accounts, 'active users = '+str(len(all_users)))
-        st.write('active users:')
-        df.name = df.name.apply(lambda x: bytes(x).decode('utf-8', errors='ignore'))
-        st.dataframe(df)
-    with tabs[1]:
         st.write('lp cooldown time:', state.lp_cooldown_time, 'seconds')
+
+
+        st.write('perp market lp info:')
+        a0, a1, a2, a3 = st.columns(4)
+        mi = a0.selectbox('market index:', range(0, state.number_of_markets), 0)
+
         lps = {}
         for usr in all_users:
             for x in usr.account.perp_positions:
@@ -60,32 +66,37 @@ async def userstatus_page(ch: ClearingHouse):
                         lps[key].append(x)
                     else:
                         lps[key] = [x]
-        dff = pd.concat({key: pd.DataFrame(val) for key,val in lps.items()})
-        dff.index.names = ['public_key', 'position_index']
-        dff = dff.reset_index()
-        dff = df[['authority', 'name', 'last_active_slot', 'public_key', 'last_add_perp_lp_shares_ts']].merge(dff, on='public_key')
-        print(dff.columns)
-        dff = dff[['authority', 'name', 
-        'lp_shares',
+        if len(lps.keys()):
+            dff = pd.concat({key: pd.DataFrame(val) for key,val in lps.items()})
+            dff.index.names = ['public_key', 'position_index']
+            dff = dff.reset_index()
+            dff = df[['authority', 'name', 'last_active_slot', 'public_key', 'last_add_perp_lp_shares_ts']].merge(dff, on='public_key')
+            print(dff.columns)
+            dff = dff[['authority', 'name', 
+            'lp_shares',
+            
+            'last_active_slot', 'public_key',
+        'last_add_perp_lp_shares_ts', 'market_index', 
+        #    'position_index',
+        'last_cumulative_funding_rate', 'base_asset_amount',
+        'quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount',
         
-        'last_active_slot', 'public_key',
-       'last_add_perp_lp_shares_ts', 'market_index', 
-    #    'position_index',
-       'last_cumulative_funding_rate', 'base_asset_amount',
-       'quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount',
-       
-       'last_base_asset_amount_per_lp', 'last_quote_asset_amount_per_lp',
-       'remainder_base_asset_amount',  
-       'open_orders',
-       ]]
-        for col in ['lp_shares', 'last_base_asset_amount_per_lp', 'base_asset_amount', 'remainder_base_asset_amount']:
-            dff[col] /= 1e9
-        for col in ['quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount', 'last_quote_asset_amount_per_lp']:
-            dff[col] /= 1e6
+        'last_base_asset_amount_per_lp', 'last_quote_asset_amount_per_lp',
+        'remainder_base_asset_amount',  
+        'open_orders',
+        ]]
+            for col in ['lp_shares', 'last_base_asset_amount_per_lp', 'base_asset_amount', 'remainder_base_asset_amount']:
+                dff[col] /= 1e9
+            for col in ['quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount', 'last_quote_asset_amount_per_lp']:
+                dff[col] /= 1e6
 
-        st.write('perp market lp info:')
-        a0, a1, a2, a3 = st.columns(4)
-        mi = a0.selectbox('market index:', range(0, state.number_of_markets), 0)
+
+
+            # cols = (st.multiselect('columns:', ))
+            # dff = dff[cols]
+            st.write('all lp positions')
+            st.dataframe(dff)
+
 
         perp_market = await get_perp_market_account(ch.program, mi)
         # st.write(perp_market.amm)
@@ -96,14 +107,3 @@ async def userstatus_page(ch: ClearingHouse):
         a1.metric('base asset amount per lp:', bapl)
         a2.metric('quote asset amount per lp:', qapl)
         a3.metric('unsettled base asset amount with lp:', baawul)
-
-
-        # cols = (st.multiselect('columns:', ))
-        # dff = dff[cols]
-        st.write('all lp positions')
-        st.dataframe(dff)
-
-
-
-
-    

@@ -38,6 +38,8 @@ from gpt import gpt_page
 from uservolume import show_user_volume
 from refs import ref_page
 from userstatus import userstatus_page
+from perpLP import perp_lp_page
+
 # from network import show_network
 from api import show_api
 def main():
@@ -71,7 +73,7 @@ def main():
     tab_options = ('Welcome', 'Overview', 
     'Simulations', 'Logs',
     
-     'Fee-Schedule', 'Insurance-Fund', 
+     'Fee-Schedule', 'Insurance-Fund', 'Perp-LPs',
      'User-Performance',
      'User-Health', 'User-Volume', 'User-Stats', 'DLOB', 'Refs', 'MM', 'Trade Flow',   'Drift-GPT', 'IMF',
      'Network',
@@ -179,7 +181,9 @@ def main():
     elif tab.lower() == 'user-status':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(userstatus_page(clearing_house))
-        
+    elif tab.lower() == 'perp-lps':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(perp_lp_page(clearing_house))
     elif tab.lower() == 'user-stats':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_stats(clearing_house))
