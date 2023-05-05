@@ -170,7 +170,7 @@ def main():
 
     elif tab.lower() == 'insurance-fund':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(insurance_fund_page(clearing_house))
+        loop.run_until_complete(insurance_fund_page(clearing_house, env))
     elif tab.lower() == 'user-performance':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_perf(clearing_house))
