@@ -5,6 +5,7 @@ import driftpy
 import pandas as pd
 import numpy as np
 from driftpy.math.oracle import *
+from constants import ALL_MARKET_NAMES
 
 import plotly.express as px
 
@@ -187,7 +188,7 @@ async def show_user_volume(clearing_house: ClearingHouse):
     mol1, molselect, mol0, mol2, _ = st.columns([3, 3, 3, 3, 10])
     market_name = mol1.selectbox(
         "market",
-        ["SOL-PERP", "BTC-PERP", "ETH-PERP", "1MBONK-PERP", "MATIC-PERP", "ARB-PERP", "DOGE-PERP",  'BNB-PERP', "SUI-PERP", "SOL"],
+        ALL_MARKET_NAMES,
     )
     range_selected = molselect.selectbox("range select:", ["daily", "weekly"], 0)
 

@@ -4,6 +4,7 @@ pd.options.plotting.backend = "plotly"
 import streamlit as st
 import numpy as np
 import pytz
+from constants import ALL_MARKET_NAMES
 
 def dedupdf(all_markets, market_name, lookahead=60):
     df1 = all_markets[market_name].copy()    
@@ -80,7 +81,7 @@ def trade_flow_analysis():
     modecol, col1, col2, col3 = st.columns([1,3,3,3])
     selection = modecol.radio('mode:', ['summary', 'per-market'], index=1)
 
-    markets = ["SOL-PERP", "BTC-PERP", "ETH-PERP", "1MBONK-PERP", "MATIC-PERP", "ARB-PERP", "DOGE-PERP", 'BNB-PERP', "SUI-PERP", "SOL"]
+    markets = ALL_MARKET_NAMES
     market = None
     if selection == 'per-market':
         market = col1.selectbox('select market:', markets)
