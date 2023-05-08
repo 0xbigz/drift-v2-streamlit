@@ -163,7 +163,7 @@ async def insurance_fund_page(ch: ClearingHouse, env):
                         )
 
             #capped at 1000% APR
-            next_payment = min(rev_pool_tokens/5, (v_amount*10/365/24))
+            next_payment = min(rev_pool_tokens/10, (v_amount*10/365/24))
             if v_amount > 0:
                 staker_apr = (next_payment*24*365 * (1-factor_for_protocol))/v_amount
             else:
