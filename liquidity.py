@@ -291,7 +291,7 @@ def mm_page(clearing_house: ClearingHouse):
     market_type = mol00.selectbox('market type', ['perp', 'spot'])
     market_indexes = [1]
     if market_type == 'perp':
-        market_indexes = [0, 1, 2, 3, 4, 5, 6]
+        market_indexes = list(range(0,11))
     market_index = mol1.selectbox(market_type+' market index', market_indexes)
     now = datetime.datetime.now()
     current_ts = time.mktime(now.timetuple())
