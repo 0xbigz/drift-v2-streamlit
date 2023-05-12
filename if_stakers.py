@@ -105,8 +105,7 @@ async def insurance_fund_page(ch: ClearingHouse, env):
     # st.dataframe(rot)
     # bankruptcies = rot[rot['amount']<0]
     # st.dataframe(bankruptcies)
-    usdc_if_value = 0
-
+    if_values = {}
     with tabs[1]:
         st.markdown('[USDC Insurance Vault](https://solscan.io/account/2CqkQvYxp9Mq4PqLvAQ1eryYxebUh4Liyn5YMDtXsYci) | [Stake Example (Python)](https://github.com/0xbigz/driftpy-examples/blob/master/if_stake.py) | [Grafana Dashboard](https://metrics.drift.trade/d/hQYFylo4k/insurance-fund-balance?orgId=1&from=now-24h&to=now)')
         bbs = st.columns(state.number_of_spot_markets)
@@ -173,24 +172,23 @@ async def insurance_fund_page(ch: ClearingHouse, env):
             ccs[i].metric('revenue pool', f'{symbol}{rev_pool_tokens/10**spot.decimals:,.2f}', 
             f'{symbol}{next_payment/10**spot.decimals:,.2f} next est. hr payment ('+str(np.round(factor_for_protocol*100, 2))+ '% protocol | '+str(np.round(staker_apr*100, 2))+'% staker APR)'
             )
-            if i == 0:
-                usdc_if_value = (v_amount/10**spot.decimals)
+            if_values[i] = (v_amount/10**spot.decimals)
 
 
 
-            st.write('')
+            ccs[i].write('')
 
             # st.write(f'{name} (marketIndex={i}) insurance vault balance: {v_amount/QUOTE_PRECISION:,.2f} (protocol owned: {protocol_balance/QUOTE_PRECISION:,.2f})')
-            st.write(f'{name} (marketIndex={i}) time since last settle: {np.round((ts - spot.insurance_fund.last_revenue_settle_ts)/(60*60), 2)} hours')
+            ccs[i].write(f'{name} (marketIndex={i}) time since last settle: {np.round((ts - spot.insurance_fund.last_revenue_settle_ts)/(60*60), 2)} hours')
         
             
             # full_if_url = url_market_prefix+name.strip()+"/insurance-fund-records/2023/"+str(current_month)
             # st.write(full_if_url)
             try:
-                st.plotly_chart(name_rot[name.strip()]['amount'].cumsum().plot())
+                ccs[i].plotly_chart(name_rot[name.strip()]['amount'].cumsum().plot())
                 total_month_gain += (name_rot[name.strip()]['amount'].sum()) * spot.historical_oracle_data.last_oracle_price/1e6
             except:
-                st.write('cannot load full_if_url')
+                ccs[i].write('cannot load full_if_url')
 
     with tabs[0]:
         z1, z2, z3 = st.columns([1,1,2])
@@ -232,7 +230,7 @@ async def insurance_fund_page(ch: ClearingHouse, env):
         stakers['if_shares'] /= precisions
         stakers['last_withdraw_request_shares'] /= precisions
         stakers['last_withdraw_request_shares'] = stakers['last_withdraw_request_shares'].replace(0, np.nan)
-        stakers['last_withdraw_request_value'] /= 1e6
+        stakers['last_withdraw_request_value'] /= precisions
         stakers['last_withdraw_request_value'] = stakers['last_withdraw_request_value'].replace(0, np.nan)
         stakers['total_shares'] = total_shares
         stakers['total_shares'] /= precisions
@@ -242,8 +240,9 @@ async def insurance_fund_page(ch: ClearingHouse, env):
         stakers['authority'] = stakers['authority'].astype(str)
         # print(stakers.columns)    
         stakers['$ balance'] = stakers['$ balance'].astype(float)
+        i = dcol1.selectbox('market index:', sorted(list(stakers['market_index'].unique())))
 
-        st.write(stakers[['authority', 'market_index', '$ balance', 'if_shares', 'total_shares', 'own %', 'cost_basis', 'last_withdraw_request_shares', 'if_base',
+        st.dataframe(stakers[stakers.market_index==i][['authority', 'market_index', '$ balance', 'if_shares', 'total_shares', 'own %', 'cost_basis', 'last_withdraw_request_shares', 'if_base',
         'last_withdraw_request_value',
         'last_withdraw_request_ts', 'available_time_to_withdraw', 'last_valid_ts',  'key',
         ]].sort_values('$ balance', ascending=False).reset_index(drop=True))
@@ -252,7 +251,6 @@ async def insurance_fund_page(ch: ClearingHouse, env):
         # z1, z2 = st.columns(2)
         # pie1, z2 = st.columns(2)
 
-        i = dcol1.selectbox('market index:', sorted(list(df['market_index'].unique())))
         df = df[df.market_index==i]
         df = pd.concat([df, pd.DataFrame([[protocol_balances[i], 'protocol', 100 - df['own %'].sum(), i]], index=[0], columns=df.columns)])
         
@@ -268,8 +266,13 @@ async def insurance_fund_page(ch: ClearingHouse, env):
                     title='MarketIndex='+str(i)+' IF breakdown',
                     hover_data=['$ balance'], labels={'$ balance':'balance'})
         dcol2.plotly_chart(fig)
-        dcol1.metric("Total Market Index ="+str(i)+" Stakes", str(len(df)),str(len(df.authority.unique()))+" Unique Stakers")
-
+        dcol1.metric("Total Insurance (Market Index ="+str(i)+")", f'{if_values[i]:,.6f}',str(len(df.authority.unique()))+" Unique Stakers")
+        stakers_market_index = stakers[stakers.market_index==i]
+        stakers_frac = stakers_market_index["$ balance"]*stakers_market_index["last_withdraw_request_shares"]/stakers_market_index["if_shares"]
+        dcol1.metric("Amount in Unstaking Cooldown:", 
+                     f'{stakers_market_index["last_withdraw_request_value"].sum():,.2f}',
+                     f'{(stakers_frac - stakers_market_index["last_withdraw_request_value"]).sum():,.2f} bonus for remaining stakers',
+                     )
 
         selected = st.selectbox('authority:', sorted(stakers.authority.unique()))
         url_market_prefix = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/authority/'
@@ -301,6 +304,7 @@ async def insurance_fund_page(ch: ClearingHouse, env):
             vv = perp_df['market.amm.fee_pool.scaled_balance'].astype(float).tolist()
             vv += spot_df['spot_market.spot_fee_pool.scaled_balance'].astype(float).tolist()
             vv += spot_df['spot_market.revenue_pool.scaled_balance'].astype(float).tolist()[:1]
+            usdc_if_value = if_values[0]
             vv += [usdc_if_value] #todo
             fee_pools = perp_names.tolist() + spot_pools.tolist()
             usdc_rev_pool_idx = len(fee_pools)
