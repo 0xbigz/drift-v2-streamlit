@@ -122,7 +122,7 @@ async def show_user_activity(clearing_house: ClearingHouse):
                 )
         fig.update_layout(layout)
         fig['layout']['yaxis']['autorange'] = "reversed"
-        num_tx = int(sum(dow.tolist()))
+        num_tx = int(sum(tgrp.tolist()))
         first_day = dates[0]
         last_day = dates[-1]
         st.write(str(num_tx)+' transactions from '+str(first_day) + ' to ' + str(last_day))
