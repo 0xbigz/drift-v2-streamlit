@@ -82,13 +82,38 @@ async def show_user_activity(clearing_house: ClearingHouse):
     
     with tabs[2]:
         parser = EventParser(clearing_house.program.program_id, clearing_house.program.coder)
-        signature = st.selectbox('tx signatures:', t['signature'].values.tolist())
+        all_sigs = t['signature'].values.tolist()
+        c1, c2 = st.columns([1,8])
+        ra = c1.radio('run all:', [True, False], index=1)
+        signature = c2.selectbox('tx signatures:', all_sigs)
         st.write(t[t.signature==signature])
-        transaction_got = await connection.get_transaction(t['signature'].values[0])
-        st.json(transaction_got, expanded=False)
 
-        txs = [transaction_got]
-        sigs = [signature]
+        theset = all_sigs if ra else [signature]
+        idx = 0
+        txs = []
+        sigs = []
+        # try:
+        while idx < len(theset):
+            sig = t['signature'].values[idx]
+            ff = 'transactions/'+sig+'.json'
+
+            if not os.path.exists(ff):
+                transaction_got = await connection.get_transaction(sig)
+                with open(ff, 'w') as f:
+                    json.dump(transaction_got, f)
+            else:
+                with open(ff, 'r') as f:
+                    transaction_got = json.load(f)
+            txs.append(transaction_got)
+            sigs.append(sig)
+            
+            st.json(transaction_got, expanded=False)
+            idx+=1
+        # except Exception as e:
+        #     st.warning('rpc failed: '+str(e))
+
+        # txs = [transaction_got]
+        # sigs = all_sigs[:idx]
         logs = {}
         for tx, sig in zip(txs, sigs):
             def call_b(evt): 
