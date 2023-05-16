@@ -39,12 +39,13 @@ import plotly.graph_objs as go
 
 async def show_user_activity(clearing_house: ClearingHouse):
     # connection = clearing_house.program.provider.connection
-    addycol, rpc_overcol, limcol, pagecol = st.columns([4,2,1,1])
+    addycol, rpc_overcol, limcol, mlimcol, pagecol = st.columns([4,2,1,1,1])
     rpc_override = rpc_overcol.text_input('rpc override:', 'https://api.mainnet-beta.solana.com')
     connection = AsyncClient(rpc_override)
 
     addy = addycol.text_input('userAccount:', value='CJfc9nPHgrZohPWEsBnvYJeTs3LxBA5j8ZoZuZPugSQb')
     limit = limcol.number_input('limit:', 0, 1000, 0)
+    MAX_LIMIT = mlimcol.number_input('max limit:', 1, None, value=1000 * 20)
     before_sig = pagecol.text_input('before sig:', value="")
     before_sig1 = None
     if before_sig != '':
@@ -55,7 +56,7 @@ async def show_user_activity(clearing_house: ClearingHouse):
     
     tabs = st.tabs(['heatmap', 'dataframe', 'transaction details'])
 
-    while (first_try and len(res2) % 1000 == 0) and len(res2)< 1000 * 20:
+    while (first_try and len(res2) % 1000 == 0) and len(res2)< MAX_LIMIT:
         try:
             if len(res2):
                 bbs = res2[-1]['signature']
