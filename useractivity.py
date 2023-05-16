@@ -97,10 +97,13 @@ async def show_user_activity(clearing_house: ClearingHouse):
             sig = t['signature'].values[idx]
             ff = 'transactions/'+sig+'.json'
 
-            if not os.path.exists(ff):
+            if not os.path.exists(ff) or not ra:
                 transaction_got = await connection.get_transaction(sig)
-                with open(ff, 'w') as f:
-                    json.dump(transaction_got, f)
+
+                if ra:
+                    os.makedirs('transactions', exist_ok=True)
+                    with open(ff, 'w') as f:
+                        json.dump(transaction_got, f)
             else:
                 with open(ff, 'r') as f:
                     transaction_got = json.load(f)
