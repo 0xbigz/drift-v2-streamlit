@@ -55,7 +55,7 @@ async def show_user_activity(clearing_house: ClearingHouse):
     
     tabs = st.tabs(['heatmap', 'dataframe', 'transaction details'])
 
-    while (first_try and len(res2) % 1000 == 0) and len(res2)< 1000 * 10:
+    while (first_try and len(res2) % 1000 == 0) and len(res2)< 1000 * 20:
         try:
             if len(res2):
                 bbs = res2[-1]['signature']
