@@ -77,11 +77,12 @@ def human_amm_df(df):
         'last_bid_price_twap', 'last_ask_price_twap', 'last_mark_price_twap', 'last_mark_price_twap5min',
     'peg_multiplier',
     'mark_std',
+    'oracle_std',
     'last_oracle_price_twap', 'last_oracle_price_twap5min',
     'last_oracle_price', 'last_oracle_conf', 
 
     #spot market ones
-        'last_index_bid_price', 'last_index_price_twap', 'last_index_price_twap5min',
+        'last_index_bid_price', 'last_index_ask_price', 'last_index_price_twap', 'last_index_price_twap5min',
     
     ]
     token_fields = ['deposit_token_twap', 'borrow_token_twap', 'max_token_deposits', 'withdraw_guard_threshold']
@@ -134,6 +135,7 @@ def human_market_df(df):
         'last_bid_price_twap', 'last_ask_price_twap', 'last_mark_price_twap', 'last_mark_price_twap5min',
     'peg_multiplier',
     'mark_std',
+    'oracle_std',
     'last_oracle_price_twap', 'last_oracle_price_twap5min',
     
     ]
