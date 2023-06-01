@@ -32,34 +32,122 @@ from aiocache import Cache
 from aiocache import cached
 from driftpy.types import InsuranceFundStake, SpotMarket
 from driftpy.addresses import * 
+import datetime
+import pytz
 
-async def perp_lp_page(ch: ClearingHouse):
+def load_volumes(dates, market_name, with_urls=False, is_devnet=False):
+    url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
+    url = url_market_pp+".amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
+    url += "market/%s/trades/%s/%s/%s"
+    dfs = []
+    data_urls = []
+    for date in dates:
+        (year, month, day) = (date.strftime("%Y"), str(date.month), str(date.day))
+        data_url = url % (market_name, year, month, day)
+        data_urls.append(data_url)
+        try:
+            dfs.append(pd.read_csv(data_url))
+        except:
+            pass
+    dfs = pd.concat(dfs)
+
+    if with_urls:
+        return dfs, data_urls
+
+    return dfs
+
+
+def load_user_lp(dates, user_key, with_urls=False, is_devnet=False):
+    url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
+    url_og = url_market_pp+'.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
+    url = url_og + 'user/%s/lp-records/%s/%s'
+
+    dfs = []
+    data_urls = []
+    for date in dates:
+        (year, month, _) = (date.strftime("%Y"), str(date.month), str(date.day))
+        data_url = url % (user_key, year, month)
+        if data_url not in data_urls:
+            data_urls.append(data_url)
+            try:
+                dfs.append(pd.read_csv(data_url))
+            except:
+                pass
+    if len(dfs):
+        dfs = pd.concat(dfs)
+    else:
+        dfs = pd.DataFrame()
+    if with_urls:
+        return dfs, data_urls
+
+    return dfs
+
+async def perp_lp_page(ch: ClearingHouse, env):
+    is_devnet = env == 'devnet'
     state = await get_state_account(ch.program)
-    user_lookup = st.radio('lookup users:', [True, False], index=1)
-    tabs = st.tabs(['LPs'])
-
-    if user_lookup:
-        all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+    a00, a11, a22, a33 = st.columns(4)
+    user_lookup = a33.radio('lookup LP users:', ['Active', 'Ever', 'Never'], index=2, 
+                           horizontal=True
+                           )
+    user_accounts_w_lp = []
+    if user_lookup != 'Never':
+        # all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+        all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4267, bytes='2i')])
+        # with tabs[0]:
+        st.write('found', len(all_users), 'current/former LPs')
         df = pd.DataFrame([x.account.__dict__ for x in all_users])
-        df.name = df.name.apply(lambda x: bytes(x).decode('utf-8', errors='ignore'))
-        df['public_key'] = [str(x.public_key) for x in all_users]
+        user_accounts_w_lp = [str(x.public_key) for x in all_users]
+        # assert(len(df) == len(all_users))
+        if len(df):
+            df.name = df.name.apply(lambda x: bytes(x).decode('utf-8', errors='ignore'))
+            df['public_key'] = [str(x.public_key) for x in all_users]
     else: 
         all_users = []
         df = pd.DataFrame()
     # with st.expander('ref accounts'):
     #     st.write(all_refs_stats)
+
+    lastest_date = pd.to_datetime(datetime.datetime.now(), utc=True)
+
+    start_date = a11.date_input(
+            "start date:",
+            lastest_date - datetime.timedelta(days=1),
+            min_value=datetime.datetime(2022, 11, 4),
+            max_value=lastest_date,
+        )  # (datetime.datetime.now(tzInfo)))
+    end_date = a22.date_input(
+            "end date:",
+            lastest_date,
+            min_value=datetime.datetime(2022, 11, 4),
+            max_value=lastest_date,
+        )  # (datetime.datetime.now(tzInfo)))
+    dates = pd.date_range(start_date, end_date)
+    mi = a00.selectbox('market index:', range(0, state.number_of_markets), 0)
+    perp_market = await get_perp_market_account(ch.program, mi)
+    market_name = ''.join(map(chr, perp_market.name)).strip(" ")
+    tit0, = st.columns([1])
+    tit0.write(f'"{market_name}" lp info:')
+
+    def calculate_market_open_bids_asks(base_asset_reserve, min_base_asset_reserve, max_base_asset_reserve):
+        max_asks = max(0, max_base_asset_reserve - base_asset_reserve)/1e9
+        max_bids = max(0, base_asset_reserve - min_base_asset_reserve)/1e9
+        return max_bids, max_asks
+    max_bids, max_asks = calculate_market_open_bids_asks(perp_market.amm.base_asset_reserve,
+                                                        perp_market.amm.min_base_asset_reserve,
+                                                        perp_market.amm.max_base_asset_reserve,
+                                                        )
+
+    tabs = st.tabs(['LPs', 'individual LP', 'historical lp fees'])
+
+
     with tabs[0]:
-        st.write('lp cooldown time:', state.lp_cooldown_time, 'seconds')
-
-
-        st.write('perp market lp info:')
+        container, = st.columns([1])
         a0, a1, a2, a3 = st.columns(4)
-        mi = a0.selectbox('market index:', range(0, state.number_of_markets), 0)
 
         lps = {}
         for usr in all_users:
             for x in usr.account.perp_positions:
-                if x.lp_shares != 0:
+                if (x.lp_shares != 0 and user_lookup == 'Active'):
                     key = str(usr.public_key)
                     print(lps.keys(), key)
                     if key in lps.keys():
@@ -72,38 +160,126 @@ async def perp_lp_page(ch: ClearingHouse):
             dff = dff.reset_index()
             dff = df[['authority', 'name', 'last_active_slot', 'public_key', 'last_add_perp_lp_shares_ts']].merge(dff, on='public_key')
             print(dff.columns)
-            dff = dff[['authority', 'name', 
+            dff = dff[[
+            'authority', 'name', 
             'lp_shares',
-            
             'last_active_slot', 'public_key',
-        'last_add_perp_lp_shares_ts', 'market_index', 
-        #    'position_index',
-        'last_cumulative_funding_rate', 'base_asset_amount',
-        'quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount',
-        
-        'last_base_asset_amount_per_lp', 'last_quote_asset_amount_per_lp',
-        'remainder_base_asset_amount',  
-        'open_orders',
-        ]]
+            'last_add_perp_lp_shares_ts', 'market_index', 
+            #    'position_index',
+            'last_cumulative_funding_rate', 'base_asset_amount',
+            'quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount',
+            
+            'last_base_asset_amount_per_lp', 'last_quote_asset_amount_per_lp',
+            'remainder_base_asset_amount',  
+            'open_orders',
+            ]]
             for col in ['lp_shares', 'last_base_asset_amount_per_lp', 'base_asset_amount', 'remainder_base_asset_amount']:
                 dff[col] /= 1e9
             for col in ['quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount', 'last_quote_asset_amount_per_lp']:
                 dff[col] /= 1e6
-
-
 
             # cols = (st.multiselect('columns:', ))
             # dff = dff[cols]
             st.write('all lp positions')
             st.dataframe(dff)
 
+        container.write(f'lp cooldown time: {state.lp_cooldown_time} seconds | jit intensity: {perp_market.amm.amm_jit_intensity}')
 
-        perp_market = await get_perp_market_account(ch.program, mi)
         # st.write(perp_market.amm)
         bapl = perp_market.amm.base_asset_amount_per_lp/1e9
+        tbapl = perp_market.amm.target_base_asset_amount_per_lp/1e9
+        minordsize = perp_market.amm.order_step_size/1e9
+
         qapl = perp_market.amm.quote_asset_amount_per_lp/1e9
         baawul = perp_market.amm.base_asset_amount_with_unsettled_lp/1e9
+        baa_w_amm = perp_market.amm.base_asset_amount_with_amm/1e9
 
-        a1.metric('base asset amount per lp:', bapl)
+        a1.metric('base asset amount per lp:', bapl, f'target base: {tbapl}')
         a2.metric('quote asset amount per lp:', qapl)
         a3.metric('unsettled base asset amount with lp:', baawul)
+
+        if perp_market.amm.amm_jit_intensity > 100:
+            if abs(baa_w_amm) < minordsize:
+                st.write('amm doesnt want to make 🚫')
+            elif baa_w_amm > 0:
+                st.write('amm wants to jit make user LONGS ✅')
+            else:
+                st.write('amm wants to jit make user SHORTS ✅')
+
+            if bapl > tbapl:
+                st.write('lp wants to jit make user LONGS')
+            elif bapl < tbapl: 
+                st.write('lp wants to jit make user SHORTS')
+            else:
+                st.write('lp dont want to jit make')
+
+            baa_w_amm = perp_market.amm.base_asset_amount_with_amm/1e9
+            protocol_owned_min_side_liq = min(max_asks, max_bids) * (perp_market.amm.sqrt_k-perp_market.amm.user_lp_shares)/perp_market.amm.sqrt_k
+            if abs(baa_w_amm) < protocol_owned_min_side_liq/10:
+                st.write(f'lp allowed to make  ✅')
+            else:
+                st.write(f'lp not allowed to make 🚫')
+
+            st.write(f'Total AMM Liquidity (bids: {max_bids} | asks: {max_asks})')
+            st.write(f'> protocol_owned_min_side_liq={protocol_owned_min_side_liq}')
+            st.write(f'> is baa_w_amm: {baa_w_amm} < {protocol_owned_min_side_liq/10} ?')
+        else:
+            st.write(f'no lp jit making: amm_jit_intensity={perp_market.amm.amm_jit_intensity} (<=100)')
+
+    with tabs[1]:
+        ucol, dcol = st.columns(2)
+        if len(user_accounts_w_lp):
+            user_pubkey = ucol.selectbox('user account:', user_accounts_w_lp)
+        else:
+            user_pubkey = ucol.text_input('user account:', '4kojmr5Xbgrfgg5db9bdEuVrDtb1kjBCcNGHsv8S2TdZ')
+        # date = dcol.date_input('date:',datetime.now())
+        if user_pubkey is not None and user_pubkey.strip() != '':
+            # dates = [date]
+            df, urls = load_user_lp(dates, user_pubkey, True, is_devnet)
+            st.json(urls, expanded=False)
+            if len(df):
+                df.index = [pd.to_datetime(int(x*1e9)) for x in df.ts]
+                df =  df.sort_index()
+                df['px'] = (-df['deltaQuoteAssetAmount']/df['deltaBaseAssetAmount'].replace(0, np.nan))
+                s1 = df['pnl'].cumsum() # pnl
+                s3 = df['deltaBaseAssetAmount'].cumsum()
+                s4 = df['deltaQuoteAssetAmount'].cumsum()
+                s2 = df['px']
+                findf = pd.concat({'cumPnl':s1,
+                                'px': s2,
+                                    'cumBase': s3,
+                                    'cumQuote': s4
+                                    },axis=1)
+                findf['cumPrice'] = -findf['cumQuote']/findf['cumBase']
+                fig = findf.plot()
+                st.plotly_chart(fig)
+                st.dataframe(df)
+
+
+    with tabs[2]:
+        a0, a1, a2, a3 = st.columns(4)
+        # mi = a0.selectbox('market index:', range(0, state.number_of_markets), 0, key='mom1')
+        # date = a1.date_input('date:',datetime.now(), key='jkdk')
+
+        perp_market = await get_perp_market_account(ch.program, mi)
+
+        # dates = [date]
+        st.markdown("""
+        - lp jit: 80% * taker fee
+        - amm lp jit split: 80% *taker fee * lp fraction of amm
+        - with amm: 80% *taker fee * lp fraction of amm
+        """)
+        name = str(''.join(map(chr, perp_market.name))).strip()
+        df, urls = load_volumes(dates, name, True, is_devnet)
+
+        current_lp_faction_of_amm = perp_market.amm.user_lp_shares/perp_market.amm.sqrt_k
+
+        st.json(urls, expanded=False)
+
+        st.write('fraction of amm by user lp:', current_lp_faction_of_amm)
+        fees_by_action = df.groupby('actionExplanation')['takerFee'].sum()
+        lp_fees = fees_by_action.loc['orderFilledWithAmm']*.8*current_lp_faction_of_amm
+        st.metric('lp fees', f'${lp_fees:,.2f}')
+
+        # fees_by_action
+        # st.dataframe(df)

@@ -486,19 +486,27 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION
                 max_borrow = market.max_borrow_rate/PERCENTAGE_PRECISION
 
-                ir_curve_index = [x/100 for x in range(0,100*100, 10)]
-                bor_ir_curve = [opt_borrow* (100/opt_util)*x/100 
-                if x <= opt_util
-                else ((max_borrow-opt_borrow) * (100/opt_util))*(x-opt_util)/100 + opt_borrow
-                for x in ir_curve_index]
+                ir_curve_index = [x/100 for x in range(0,100*100+1, 10)]
+                bor_ir_curve = [
+                    opt_borrow* (100/opt_util)*x/100 
+                    if x <= opt_util
+                    else ((max_borrow-opt_borrow) * (100/opt_util))*(x-opt_util)/100 + opt_borrow
+                    for x in ir_curve_index
+                ]
 
-                dep_ir_curve = [ir*ir_curve_index[idx]/100 for idx,ir in enumerate(bor_ir_curve)]
+                dep_ir_curve = [ir*ir_curve_index[idx]*(1-market.insurance_fund.total_factor/1e6)/100 for idx,ir in enumerate(bor_ir_curve)]
 
                 ir_fig = (pd.DataFrame([dep_ir_curve, bor_ir_curve], 
                 index=['deposit interest', 'borrow interest'], 
                 columns=ir_curve_index).T * 100).plot() 
 
-                ir_fig.add_vline(x=market.utilization_twap/1e6 * 100, line_color="blue", annotation_text='utilization_twap')
+                deposits =market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
+                borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
+                utilization =  borrows/deposits
+
+                ir_fig.add_vline(x=market.utilization_twap/1e6 * 100, line_color="blue", annotation_text='util_twap')
+                ir_fig.add_vline(x=utilization * 100 , line_color="green", annotation_text='util')
+
                 ir_fig.update_layout(
                     title=market_name+" Interest Rate",
                     xaxis_title="utilization (%)",

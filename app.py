@@ -40,7 +40,7 @@ from refs import ref_page
 from userstatus import userstatus_page
 from perpLP import perp_lp_page
 from useractivity import show_user_activity
-
+from superstake import super_stake
 # from network import show_network
 from api import show_api
 def main():
@@ -82,6 +82,7 @@ def main():
      'User-Status',
      'Config',
      'API',
+     'SuperStake'
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -188,7 +189,7 @@ def main():
         loop.run_until_complete(userstatus_page(clearing_house))
     elif tab.lower() == 'perp-lps':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(perp_lp_page(clearing_house))
+        loop.run_until_complete(perp_lp_page(clearing_house, env))
     elif tab.lower() == 'user-stats':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_stats(clearing_house))
@@ -237,6 +238,9 @@ def main():
         loop = asyncio.new_event_loop()
         loop.run_until_complete(gpt_page(clearing_house))
         
+    elif tab.lower() == 'superstake':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(super_stake(clearing_house))
 
     hide_streamlit_style = """
             <style>

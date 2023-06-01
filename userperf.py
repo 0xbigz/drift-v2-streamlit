@@ -39,25 +39,32 @@ import plotly.graph_objs as go
 def make_buy_sell_chart(usr_to_show):
     # Example price series
     usr_to_show.index = pd.to_datetime((usr_to_show.first_ts*1e9).astype(int), utc=True)
-    prices = usr_to_show.orderFillPrice
 
     # Example buy and sell signals
-    signals = usr_to_show.direction.apply(lambda x: 1 if x=='long' else -1)  # 1 = buy, -1 = sell
     # Create the chart trace for the price series
-    price_trace = go.Scatter(x=prices.index, y=prices, mode='lines', name='Price')
+    traces = []
+    for mt in usr_to_show.marketType.unique():
+        for mi in usr_to_show.marketIndex.unique():
+            uu = usr_to_show[(usr_to_show.marketIndex==mi) & (usr_to_show.marketType==mt)]
+            signals = uu.direction.apply(lambda x: 1 if x=='long' else -1)  # 1 = buy, -1 = sell
+            prices = uu.orderFillPrice
+            price_trace = go.Scatter(x=prices.index, y=prices, mode='lines', name='Price-'+str(mt)+'-'+str(mi))
 
-    # Create the chart trace for the buy and sell signals
-    signal_trace = go.Scatter(
-        x=prices.index[signals != 0],
-        y=prices[signals != 0],
-        mode='markers',
-        marker=dict(
-            symbol=['triangle-up'if s == 1 else 'triangle-down' for s in signals],
-            color=['green' if s == 1 else 'red' for s in signals],
-            size=10,
-        ),
-        name='Action',
-    )
+            # Create the chart trace for the buy and sell signals
+            signal_trace = go.Scatter(
+                x=prices.index[signals != 0],
+                y=prices[signals != 0],
+                mode='markers',
+                marker=dict(
+                    symbol=['triangle-up'if s == 1 else 'triangle-down' for s in signals],
+                    color=['green' if s == 1 else 'red' for s in signals],
+                    size=10,
+                ),
+                name='Action-'+str(mt)+'-'+str(mi)
+            )
+            traces.append(price_trace)
+            traces.append(signal_trace)
+
 
     # Create the chart layout
     layout = go.Layout(
@@ -67,7 +74,7 @@ def make_buy_sell_chart(usr_to_show):
     )
 
     # Create the chart figure
-    fig = go.Figure(data=[price_trace, signal_trace], layout=layout)
+    fig = go.Figure(data=traces, layout=layout)
     return fig
 
 
@@ -205,6 +212,31 @@ def load_user_settlepnl(dates, user_key, with_urls=False):
 
     return dfs
 
+def load_user_lp(dates, user_key, with_urls=False, is_devnet=False):
+    url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
+    url_og = url_market_pp+'.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
+    url = url_og + 'user/%s/lp-records/%s/%s'
+
+    dfs = []
+    data_urls = []
+    for date in dates:
+        (year, month, _) = (date.strftime("%Y"), str(date.month), str(date.day))
+        data_url = url % (user_key, year, month)
+        if data_url not in data_urls:
+            data_urls.append(data_url)
+            try:
+                dfs.append(pd.read_csv(data_url))
+            except:
+                pass
+    if len(dfs):
+        dfs = pd.concat(dfs)
+    else:
+        dfs = pd.DataFrame()
+    if with_urls:
+        return dfs, data_urls
+
+    return dfs
+
 def load_user_trades(dates, user_key, with_urls=False):
     url_og = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
     url = url_og + 'user/%s/trades/%s/%s'
@@ -286,6 +318,7 @@ async def show_user_perf(clearing_house: ClearingHouse):
         url += 'user/%s/trades/%s/%s'
 
         userAccountKeys = []
+        user_stat = None
         for user_authority in user_authorities:
                 user_authority_pk = PublicKey(user_authority)
                 # print(user_stats)
@@ -343,60 +376,94 @@ async def show_user_perf(clearing_house: ClearingHouse):
                 if sub_id==int(sub):
                     # try:
 
+                    user_acct = await get_user_account(clearing_house.program, user_authority_pk, sub_id)
+                    nom = bytes(user_acct.name).decode('utf-8')
+                    st.write('"'+nom+'"')
                     tabs = st.tabs(['per market', 'all time stats'])
-
                     with tabs[1]:
-                        user_acct = await get_user_account(clearing_house.program, user_authority_pk, sub_id)
                         atnd = (user_acct.total_deposits - user_acct.total_withdraws)/1e6
                         atpp = user_acct.settled_perp_pnl/1e6
                         atfp = user_acct.cumulative_perp_funding/1e6
                         atsf = user_acct.cumulative_spot_fees/1e6
 
 
-                        atsp =  atpp + atfp + atsf
+                        atsp =  atpp + atsf
                         s1,s2,s3,s4 = st.columns(4)
-                        s1.metric('all time settled pnl:', atsp)
+                        s1.metric('all time net deposits', 
+                                  f'${atnd:,.3f}', 
+                                  f'{user_acct.total_deposits/1e6:,.3f} lifetime deposits')
 
-                        if user_acct.spot_positions[0].market_index == 0:
-                            s2.metric('all time usdc deposits:', user_acct.spot_positions[0].cumulative_deposits/1e6)
 
-                        if user_acct.spot_positions[1].market_index == 1:
-                            s3.metric('all time sol deposits:', user_acct.spot_positions[1].cumulative_deposits/1e6)
+                        gains_since_inception = {}
+                        for idx in range(len(user_acct.spot_positions)):
+                            spot_pos = user_acct.spot_positions[idx]
+                            if spot_pos.cumulative_deposits != 0:
+                                    spot_market_act = await get_spot_market_account(ch.program, spot_pos.market_index)
+                                    scale = 10**spot_market_act.decimals
+                                    spot_market_name = bytes(spot_market_act.name).decode('utf-8')
+                                    if str(spot_pos.balance_type) == 'SpotBalanceType.Deposit()':
+                                        tokens = spot_pos.scaled_balance * spot_market_act.cumulative_deposit_interest/1e10/(1e9)
+                                    else:
+                                        tokens = -spot_pos.scaled_balance * spot_market_act.cumulative_borrow_interest/1e10/(1e9)
+                                    
 
+                                    gains_since_inception[spot_pos.market_index] = tokens - (spot_pos.cumulative_deposits/scale)
+                                    s3.metric(spot_market_name+' deposits:', 
+                                              f'{tokens:,.3f}',
+                                              f'{(gains_since_inception[spot_pos.market_index]):,.3f} from inception',
+                                    )
 
                         s1,s2,s3,s4 = st.columns(4)
-                        s1.metric('all time net deposits:', atnd)
-                        s2.metric('all time perp pnl:', atpp)
+                        s1.metric('all time settled pnl:', f'${atsp:,.3f}', f'{atpp:,.3f} perp pnl')
+                        # s2.metric('all time perp pnl:', atpp)
                         s3.metric('all time funding pnl:', atfp)
                         s4.metric('all time spot fees:', -atsf)
 
+                        # if abs(atsp - (atpp)) > 2e-6:
+                        #     st.write('excess settled pnl?:', atsp - (atpp))
+
+                        excess_usdc_gains_since_inception = gains_since_inception[0] - atsp
+
+                        st.write('excess usdc gains:', excess_usdc_gains_since_inception)
+
                     with tabs[0]:
                         mtcol, micol, srccol = st.columns(3)
-                        mt = mtcol.selectbox('market type:', ['perp', 'spot'])
+                        mt = mtcol.selectbox('market type:', ['perp', 'spot', 'all'])
+                        mi = None
                         if mt == 'perp':
                             mi = micol.selectbox('market index:', range(0, state.number_of_markets))
-                        else:
+                        elif mt == 'spot':
                             mi = micol.selectbox('market index:', range(1, state.number_of_spot_markets))
-                        source = srccol.selectbox('source:', ['trades', 'settledPnl'])
+                        source = srccol.selectbox('source:', ['trades', 'settledPnl', 'all'])
 
-                        if source == 'trades':
+                        if source == 'trades' or source == 'all':
                             df, urls = load_user_trades(dates, str(user_account_pk), True)
                             if len(df) == 0:
                                 continue
-                            df = df[df.marketIndex==mi]
-                            df = df[df.marketType==mt]
+
+                            if mi is not None:
+                                df = df[df.marketIndex==mi]
+                            if mt in ['perp', 'spot']:
+                                df = df[df.marketType==mt]
+
                             df = filter_dups(df)
                             df['baseAssetAmountSignedFilled'] = df['baseAssetAmountFilled'] \
                                 * df['takerOrderDirection'].apply(lambda x: 2*(x=='long')-1) \
                                 * df['taker'].apply(lambda x: 2*(str(x)==str(user_account_pk))-1)
-
+                            df['quoteAssetAmountSignedFilled'] = df['quoteAssetAmountFilled'] \
+                                * df['takerOrderDirection'].apply(lambda x: 2*(x=='long')-1) \
+                                * df['taker'].apply(lambda x: 2*(str(x)==str(user_account_pk))-1)
+                            
                             with st.expander('data source(s):'):
                                 for x in urls:
                                     st.write(x)
 
                             user_trades_full = build_liquidity_status_df(df, user_account_pk)
                             if len(user_trades_full):
-                                usr_to_show = user_trades_full[['direction', 'liquidityStatus', 'size', 'notional', 'orderFillPrice', 'fee', 'actionExplanation', 'first_ts', 'last_ts']]
+                                usr_to_show = user_trades_full[['marketType', 'marketIndex', 
+                                                                'direction', 'liquidityStatus', 'size', 'notional', 
+                                                                'orderFillPrice', 'fee', 'actionExplanation',
+                                                                'first_ts', 'last_ts']]
                                 
                                 def highlight_survived(s):
                                     return ['background-color: #90EE90']*len(s) if s.direction=='long' else ['background-color: pink']*len(s)
@@ -419,6 +486,18 @@ async def show_user_perf(clearing_house: ClearingHouse):
                                 ot.index = pd.to_datetime((ot.index*1e9).astype(int), utc=True)
                                 # ot = ot.resample('1MIN').ffill()
                                 st.plotly_chart(ot.plot(title='position over time'))
+                                # st.write(df.columns)
+                                cost_ser = df.pivot_table(index='ts', columns=['marketType', 'marketIndex'], values='quoteAssetAmountSignedFilled',aggfunc='sum').cumsum().ffill()
+                                cost_ser.columns = [str(x) for x in cost_ser.columns]
+                                cost_ser.index = pd.to_datetime((cost_ser.index*1e9).astype(int), utc=True)
+
+
+                                px_ser = df.pivot_table(index='ts', columns=['marketType', 'marketIndex'], values='oraclePrice', aggfunc='last').ffill()
+                                px_ser.columns = [str(x) for x in px_ser.columns]
+                                px_ser.index = pd.to_datetime((px_ser.index*1e9).astype(int), utc=True)
+                                pnl_ser = px_ser * ot - cost_ser
+                                pnl_ser['total'] = pnl_ser.sum(axis=1)
+                                st.plotly_chart(pnl_ser.plot(title='pnl over time'))
 
                                 st.plotly_chart(make_buy_sell_chart(usr_to_show))
                             else:
@@ -438,28 +517,36 @@ async def show_user_perf(clearing_house: ClearingHouse):
                             # st.dataframe(trades)
                             # except:
                             #     st.write('cannot load data')
-                        else:
+                        elif source == 'settledPnl' or source == 'all':
                             sdf = load_user_settlepnl(dates, str(user_account_pk))
                             # st.dataframe(sdf)
                             sdf_tot = sdf.pivot_table(index='ts', columns='marketIndex', 
                                                     values=['pnl', 'baseAssetAmount', 'quoteEntryAmount', 'settlePrice'])
-                            sdf_tot = sdf_tot.swaplevel(axis=1)
                             
-                            sdf_tot = sdf_tot[mi]
-                            # st.dataframe(sdf_tot)
+                            # if isinstance(mi, int):
+                            sdf_tot0 = sdf_tot.swaplevel(axis=1) # put market index on top
+                            mis = None
+                            if mi is not None:
+                                # sdf_tot = sdf_tot[mi]
+                                # sdf_tot = sdf_tot.swaplevel(axis=1)
+                                mis = [mi]
+                            else:
+                                mis = list(sdf_tot0.columns.levels[0].unique())
+                            for mi in mis:
+                                sdf_tot = sdf_tot0[mi]
+                                # st.dataframe(sdf_tot)
+                                sdf_tot['costBasisAfter'] = (-(sdf_tot['quoteEntryAmount']) / sdf_tot['baseAssetAmount'] ).fillna(0)
+                                sdf_tot['cumulativePnl'] = sdf_tot['pnl'].cumsum()
+                                sdf_tot['notional'] = (sdf_tot['baseAssetAmount']*sdf_tot['settlePrice'])
 
-                            sdf_tot['costBasisAfter'] = (-(sdf_tot['quoteEntryAmount']) / sdf_tot['baseAssetAmount'] ).fillna(0)
-                            sdf_tot['cumulativePnl'] = sdf_tot['pnl'].cumsum()
-                            sdf_tot['notional'] = sdf_tot['baseAssetAmount']*sdf_tot['settlePrice']
 
+                                st.dataframe(sdf_tot)
 
-                            # st.dataframe(sdf_tot)
-
-                            sdf_tot['entryPnl'] = sdf_tot['notional'] + sdf_tot['quoteEntryAmount']
-                            # sdf_tot.columns = ['-'.join([str(i) for i in x]) for x in sdf_tot.columns]
-                            sdf_tot.index = pd.to_datetime((sdf_tot.index*1e9).astype(int), utc=True)
-                            st.plotly_chart(sdf_tot.plot())
-                    
+                                sdf_tot['entryPnl'] = sdf_tot['notional'] + sdf_tot['quoteEntryAmount']
+                                # sdf_tot.columns = ['-'.join([str(i) for i in x]) for x in sdf_tot.columns]
+                                sdf_tot.index = pd.to_datetime((sdf_tot.index*1e9).astype(int), utc=True)
+                                st.plotly_chart(sdf_tot.plot())
+                        
 
             # st.markdown('user stats')
             # st.dataframe(pd.DataFrame([x for x in user_stats]).T)

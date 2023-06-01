@@ -434,7 +434,7 @@ async def show_user_volume(clearing_house: ClearingHouse):
         opt = st.radio("users:", ["by trader", "by referrer"])
         if "referrerReward" in dfs.columns:
             reward_volume = pd.DataFrame(
-                dfs[dfs.referrerReward > 0]
+                dfs[dfs.referrerReward.replace('undefined', 0).fillna(0).astype(float) > 0]
                 .groupby("taker")["quoteAssetAmountFilled"]
                 .sum()
             )

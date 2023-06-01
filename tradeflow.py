@@ -62,8 +62,8 @@ def load_s3_data(markets, START=None, END=None):
             try:
                 dd = pd.read_csv(url+market+'/trades/%s' % str(date1))
                 df1.append(dd)
-            except:
-                print('failed:', market, date, '->', date1)
+            except Exception as e:
+                st.warning(f'failed({str(e)}):  {market} {date} -> {date1}')
                 pass
         all_markets[market] = pd.concat(df1)
     return all_markets
@@ -145,8 +145,7 @@ def trade_flow_analysis():
     tt = market if market is not None else ''
     zol1.metric(tt+' Retail Volume:', '$'+f"{retail_volume:,}", 
     
-    '$' + str(total_volume) + ' over ' + str(num_trades) \
-        + ' trades among '+str(unique_user_types)+' unique '+ str(user_type)+'s')
+    f'$ {total_volume:,}  over  {num_trades} trades among {unique_user_types} unique {user_type}s')
 
 
     zol2.metric(tt+' Fees:', '$'+str((takerfee).round(2)), '$'+str(-makerfee.round(2))+' in liq/maker rebates, '+'$'+str(fillerfee.round(2))+' in filler rewards')
