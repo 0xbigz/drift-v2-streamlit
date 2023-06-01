@@ -7,7 +7,7 @@ anchorpy==0.10.0
 anyio==3.6.2
 apischema==0.17.5
 async-timeout==4.0.2
-attrs==22.2.0
+attrs==22.1.0
 backoff==2.2.1
 base58==2.1.1
 based58==0.1.1
@@ -20,7 +20,7 @@ charset-normalizer==2.1.1
 click==8.1.3
 commonmark==0.9.1
 construct==2.10.68
-construct-typing==0.5.4
+construct-typing==0.5.3
 cycler==0.11.0
 decorator==5.1.1
 dnspython==2.2.1
@@ -51,7 +51,7 @@ mccabe==0.7.0
 mergedeep==1.3.4
 mkdocs==1.4.2
 more-itertools==8.14.0
-multidict==6.0.4
+multidict==6.0.3
 numpy==1.23.4
 openai==0.27.0
 OSlash==0.6.3
@@ -77,7 +77,7 @@ pyrsistent==0.19.2
 pytest==6.2.5
 pytest-asyncio==0.17.2
 pytest-xprocess==0.18.1
-pythclient==0.1.2
+pythclient==0.1.4
 python-dateutil==2.8.2
 pytz==2022.7
 pytz-deprecation-shim==0.1.0.post0
