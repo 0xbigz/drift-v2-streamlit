@@ -137,7 +137,7 @@ async def perp_lp_page(ch: ClearingHouse, env):
                                                         perp_market.amm.max_base_asset_reserve,
                                                         )
 
-    tabs = st.tabs(['LPs', 'individual LP', 'historical lp fees'])
+    tabs = st.tabs(['LPs', 'individual LP', 'historical lp fees', 'aggregate fees'])
 
 
     with tabs[0]:
@@ -283,3 +283,37 @@ async def perp_lp_page(ch: ClearingHouse, env):
 
         # fees_by_action
         # st.dataframe(df)
+
+    with tabs[3]:
+        fees_url = 'https://drift-fee-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
+        fees_url += market_name + '/2023/6'
+        
+        rx = requests.get(fees_url).json()
+
+        
+        # rx = None
+        # with open(fees_url,'r') as f:
+        #     rx = json.load(f)
+
+        s1, s2, s3 = st.columns(3)
+
+        fees1 = [x['fees'] for x in rx]
+        fees2 = [{z['feeType']: float(z['feeAmount'])/1e6 for z in y} for y in fees1]
+        df = pd.DataFrame(fees2, index=[x['startTs'] for x in rx])
+        df.index = pd.to_datetime(df.index*1000000000)
+        df = df.loc[start_date:end_date]
+        # st.json(rx)
+        # df = pd.read_json(fees_url)
+
+        s1.metric('taker fees:',  f'${ df.sum().sum():,.2f}')
+
+
+        retained_lb = ((df['liquidation']*.5).sum() 
+                       + (df['orderFilledWithAmm'].sum()*.2)
+                       + (df['orderFilledWithAmmJit'].sum()*1)
+                       + (df['orderFilledWithMatch'].sum()*.5)
+                       )
+        s2.metric('est l.b. retained fees:',  f'${ retained_lb:,.2f}')
+
+
+        st.dataframe(df)

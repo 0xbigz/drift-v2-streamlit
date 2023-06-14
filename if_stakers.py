@@ -60,7 +60,7 @@ async def insurance_fund_page(ch: ClearingHouse, env):
         dfs.append(data)
 
     state = await get_state_account(ch.program)
-    tabs = st.tabs(['summary', 'balance', 'stakers', 'revenue flow'])
+    tabs = st.tabs(['summary', 'balance', 'stakers', 'revenue flow', 'bankruptcies'])
     current_time = datetime.datetime.now()
     current_month = current_time.month
 
@@ -95,8 +95,8 @@ async def insurance_fund_page(ch: ClearingHouse, env):
         rot = pd.concat(rots)
         name_rot[name] = rot
     rot = name_rot['USDC']
-    apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365*24/2).rolling(24).mean()
-    apr_fig = apr_df.plot()
+    apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365.25*24/2).rolling(24).mean()
+    apr_fig = apr_df.sort_index().plot()
     apr_fig.update_layout( 
                         title='Revenue Emission (smoothed daily)',
                         xaxis_title="date",
@@ -328,3 +328,18 @@ async def insurance_fund_page(ch: ClearingHouse, env):
                     "target": [usdc_rev_pool_idx if x < len(all_pool_indexes)-2 else x+1 for x in all_pool_indexes ],
                     "value": [vv[x] for x in all_pool_indexes]}))
             st.plotly_chart(fig, use_container_width=True)
+
+    with tabs[4]:
+        df = None
+        try:
+            rr = requests.get('https://mainnet-beta.api.drift.trade/bankruptcies/?pageIndex=0&pageSize=1000').json()
+            df = pd.DataFrame(rr['data']['bankruptcies'])
+        except:
+            st.warning('cannot load bankruptcies')
+
+        df = df.set_index('ts')
+        df.index = pd.to_datetime(df.index * 1000000000)
+
+        st.write(df)
+
+        
