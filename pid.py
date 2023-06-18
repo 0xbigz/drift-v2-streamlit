@@ -28,8 +28,10 @@ from anchorpy import EventParser
 import asyncio
 import matplotlib.pyplot as plt 
 from driftpy.clearing_house_user import get_token_amount
+from driftpy.math.margin import MarginCategory
 from driftpy.types import SpotBalanceType
 import plotly.express as px
+from solana.rpc.types import MemcmpOpts
 
 async def show_pid_positions(clearing_house: ClearingHouse):
     ch = clearing_house
@@ -40,13 +42,17 @@ async def show_pid_positions(clearing_house: ClearingHouse):
     
     col1, col2, col3, col4 = st.columns(4)
 
-    see_user_breakdown = col1.radio('see users breakdown:', [True, False], 1)
+    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', None], 2)
 
     all_users = None
 
-    if see_user_breakdown:
+    if see_user_breakdown is not None:
         try:
-            all_users = await ch.program.account['User'].all()
+            if see_user_breakdown == 'All':
+                all_users = await ch.program.account['User'].all()
+            else:
+                all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+            
         except Exception as e:
             print('ERRRRR:', e)
             st.write("ERROR: cannot load ['User'].all() with current rpc")
@@ -85,6 +91,11 @@ async def show_pid_positions(clearing_house: ClearingHouse):
             chu = ClearingHouseUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, use_cache=True)
             cache['user'] = account # update cache to look at the correct user account
             await chu.set_cache(cache)
+            margin_category = MarginCategory.INITIAL
+            total_liability = await chu.get_margin_requirement(margin_category, None)
+            spot_value = await chu.get_spot_market_asset_value(None, False, None)
+            upnl = await chu.get_unrealized_pnl(False, None, None)
+            total_asset_value = await chu.get_total_collateral(None)
             leverage = await chu.get_leverage()
 
             total_position_size = 0
@@ -110,13 +121,16 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 dd['position_index'] = idx
                 dd['authority'] = str(x.account.authority)
                 dd['name'] = name 
-                dd['leverage'] = leverage / 10_000
+                dd['spot_value'] = spot_value/QUOTE_PRECISION
+                dd['total_liability'] = total_liability / QUOTE_PRECISION
+                dd['total_asset_value'] = total_asset_value / QUOTE_PRECISION
+                dd['leverage'] = leverage / MARGIN_PRECISION
                 if pos.base_asset_amount != 0:
                     perp_market = await chu.get_perp_market(pos.market_index)
-                    try:
-                        oracle_price = (await chu.get_perp_oracle_data(perp_market)).price / PRICE_PRECISION
-                    except:
-                        oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
+                    # try:
+                    oracle_price = (await chu.get_perp_oracle_data(perp_market)).price / PRICE_PRECISION
+                    # except:
+                    #     oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
                     liq_price = await chu.get_perp_liq_price(pos.market_index)
                     upnl = await chu.get_unrealized_pnl(False, pos.market_index)
                     upnl_funding = calculate_position_funding_pnl(perp_market, pos)
@@ -322,6 +336,9 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                         'authority', 
                         'name', 
                         'open_orders', 
+                        'total_liability',
+                        'spot_value',
+                        'total_asset_value',
                         'leverage',
                         'base_asset_amount', 
                         'liq_price_delta',
@@ -344,7 +361,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 if perp_liq_prices_m is not None and len(perp_liq_prices_m) > 0:
                     perp_market = await chu.get_perp_market(market_index)
                     try:
-                        oracle_price = await chu.get_perp_oracle_data(perp_market).price/PRICE_PRECISION
+                        oracle_price = (await chu.get_perp_oracle_data(perp_market)).price/PRICE_PRECISION
                     except:
                         oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
 
@@ -490,7 +507,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 bor_ir_curve = [
                     opt_borrow* (100/opt_util)*x/100 
                     if x <= opt_util
-                    else ((max_borrow-opt_borrow) * (100/opt_util))*(x-opt_util)/100 + opt_borrow
+                    else ((max_borrow-opt_borrow) * (100/(100-opt_util)))*(x-opt_util)/100 + opt_borrow
                     for x in ir_curve_index
                 ]
 
@@ -500,7 +517,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 index=['deposit interest', 'borrow interest'], 
                 columns=ir_curve_index).T * 100).plot() 
 
-                deposits =market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
+                deposits = market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
                 borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
                 utilization =  borrows/deposits
 

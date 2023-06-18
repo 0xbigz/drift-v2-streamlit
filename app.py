@@ -143,6 +143,7 @@ def main():
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_pid_positions(clearing_house))
 
+
     elif tab.lower() == 'config':  
         with st.expander(f"pid={clearing_house.program_id} config"):
             st.json(config.__dict__)

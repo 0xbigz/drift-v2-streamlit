@@ -331,15 +331,58 @@ async def insurance_fund_page(ch: ClearingHouse, env):
 
     with tabs[4]:
         df = None
-        try:
-            rr = requests.get('https://mainnet-beta.api.drift.trade/bankruptcies/?pageIndex=0&pageSize=1000').json()
-            df = pd.DataFrame(rr['data']['bankruptcies'])
-        except:
-            st.warning('cannot load bankruptcies')
 
-        df = df.set_index('ts')
-        df.index = pd.to_datetime(df.index * 1000000000)
+        mi = st.selectbox('market', [0, 1])
+        # try:
+        br = []
+        for x in [0, 1, 2]:
+            rr = requests.get('https://mainnet-beta.api.drift.trade/bankruptcies/?pageIndex='+str(x)+'&pageSize=1000').json()
+            br1 = rr['data']['bankruptcies']
+            br.append(br1)
+        br = [element for sublist in br for element in sublist]
+        indexes = [x['ts'] for x in br]
+        perpsdf = pd.DataFrame([x['perpBankruptcy'] for x in br], index=indexes)
+        perpsdf['marketType'] = 'perp'
+        spotsdf = pd.DataFrame([x['spotBankruptcy'] for x in br], index=indexes)
+        spotsdf['marketType'] = 'spot'
+        spotsdf = spotsdf[['marketType', 'marketIndex', 'ifPayment', 'borrowAmount']]
+        spotsdf['borrowAmount'] = spotsdf['borrowAmount'].astype(float) * -1
+        spotsdf.columns = ['marketType', 'marketIndex', 'ifPayment', 'pnl']
+        df = pd.concat(
+            [perpsdf[['marketType', 'marketIndex', 'ifPayment', 'pnl']], 
+                       spotsdf[['marketType', 'marketIndex', 'ifPayment', 'pnl']],
+                    ],
+                       axis=0
+                       
+                       ).sort_index()
+        
+        if mi == 0:
+            df['ifPayment'] = df['ifPayment'].astype(float)/(QUOTE_PRECISION)
+            df['pnl'] = df['pnl'].astype(float)/(QUOTE_PRECISION)
+            df = df[((df.marketType=='perp') | (df.marketIndex==0))]
+            df = df[((df.ifPayment !=0) & (df.pnl != 0))]
+        else:
+            df['ifPayment'] = df['ifPayment'].astype(float)/(1e9)
+            df['pnl'] = df['pnl'].astype(float)/(1e9)
+            df = df[((df.marketType=='spot') & (df.marketIndex==1))]
+            df = df[((df.ifPayment !=0) & (df.pnl != 0))]
 
-        st.write(df)
+        # .merge(
+        #     pd.DataFrame([x['perpBankruptcy'] for x in br], index=indexes),
+        #     # how='outer'
+        #     )
+
+
+        # except:
+        #     st.warning('cannot load bankruptcies')
+
+        # df = df.set_index('ts')
+        df.index = pd.to_datetime((df.index.astype(int) * 1e9).astype(int))
+
+        tt = df[['ifPayment','pnl']].cumsum()
+        tt['socialLoss'] = -(tt['pnl']+tt['ifPayment'])
+        st.plotly_chart(tt[['ifPayment','socialLoss']].plot())
+        st.dataframe(df)
+
 
         

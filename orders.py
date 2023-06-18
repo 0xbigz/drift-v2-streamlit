@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np 
 
 pd.options.plotting.backend = "plotly"
+from solana.rpc.types import MemcmpOpts
 
 import time
 # from driftpy.constants.config import configs
@@ -55,9 +56,10 @@ async def get_price_data(market_type, market_index):
 
 async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
     try:
-        all_users = await _ch.program.account['User'].all()
-    except:
-        st.write("ERROR: cannot load ['User'].all() with current rpc")
+        all_users = await _ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
+        # st.warning('len: '+str(len(all_users)))
+    except Exception as e:
+        st.warning("ERROR: '"+str(e)+"', and cannot load ['User'].all() with current rpc")
         return
 
     st.sidebar.text('cached on: ' + _ch.time)
@@ -77,18 +79,21 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
             continue
         market = None
         oracle_pubkey = None
+        oracle_source = None
         if market_type == 'perp':
             market = await get_perp_market_account(
                 _ch.program, perp_idx
             )
             oracle_pubkey = market.amm.oracle
+            oracle_source = market.amm.oracle_source
         else:
             market = await get_spot_market_account(
                 _ch.program, perp_idx
             )
             oracle_pubkey = market.oracle
+            oracle_source = market.oracle_source
 
-        oracle_data = (await get_oracle_data(_ch.program.provider.connection, oracle_pubkey))
+        oracle_data = (await get_oracle_data(_ch.program.provider.connection, oracle_pubkey, oracle_source))
         oracle_price = oracle_data.price
         # oracle_price = 14 * 1e6
 
@@ -97,7 +102,9 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
             user: User = x.account
             orders = user.orders
             for order in orders:
-                if str(order.status) == 'OrderStatus.Open()' and order.market_index == perp_idx:
+                # st.write(order.market_type, market_type)
+                order_market_type = str(order.market_type).split('.')[-1].replace('()','').lower()
+                if str(order.status) == 'OrderStatus.Open()' and order.market_index == perp_idx and  order_market_type == market_type:
                     order.owner = str(x.public_key)
                     order.authority = str(x.account.authority)                        
 
@@ -304,7 +311,7 @@ def orders_page(ch: ClearingHouse):
         # time.sleep(3)
         # oracle_price = 13.5 * 1e6 
 
-        depth_slide = 10
+        depth_slide = st.slider('depth:', 1, 1000, 10)
 
         col1, col2 = st.columns(2)
         market = col1.radio('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'SOL-USDC'], horizontal=True)
@@ -329,7 +336,7 @@ def orders_page(ch: ClearingHouse):
 
         zol1, zol2, zol3 = st.columns([1,6,20])
 
-        zol1.image("https://alpha.openserum.io/api/serum/token/So11111111111111111111111111111111111111112/icon", width=33)
+        zol1.image("https://app.drift.trade/assets/icons/markets/sol.svg", width=33)
         # print(oracle_data)
         # oracle_data.slot
         zol2.metric('Oracle Price', f'${oracle_data.price/PRICE_PRECISION}', f'±{oracle_data.confidence/PRICE_PRECISION} (slot={oracle_data.slot})',
@@ -346,6 +353,8 @@ def orders_page(ch: ClearingHouse):
                         )
             subset_ordered = [x for x in correct_order if x in cols]
             df = pd.DataFrame(data)[subset_ordered]
+
+            market_nom = data['market'].unique()[0]
 
             def make_clickable(link):
                 # target _blank to open new window
@@ -376,8 +385,8 @@ def orders_page(ch: ClearingHouse):
             asks_quote = np.round(df['asks (price, size)'].apply(lambda x: x[0]*x[1] if x!='' else 0).sum(), 2)
             asks_base = np.round(df['asks (price, size)'].apply(lambda x: x[1] if x!='' else 0).sum(), 2)
             col1, col2, _ = st.columns([5,5, 10])
-            col1.metric(f'bids:', f'${bids_quote}', f'{bids_base} SOL')
-            col2.metric(f'asks:', f'${asks_quote}', f'{-asks_base} SOL')
+            col1.metric(f'bids:', f'${bids_quote}', f'{bids_base} {market_nom}')
+            col2.metric(f'asks:', f'${asks_quote}', f'{-asks_base} {market_nom}')
             if len(df):
                 st.dataframe(df.style.apply(highlight_survived, axis=0))
             else:
@@ -407,9 +416,9 @@ def orders_page(ch: ClearingHouse):
             # print(price_df.columns)
             if len(price_df):
                 odf = (price_df.set_index('ts'))
-                odf['tradePrice'] = (odf['quoteAssetAmountFilled'].astype(float) * 1e3)/ odf['baseAssetAmountFilled'].astype(float)
-                odf['oraclePrice'] = odf['oraclePrice'].astype(float)/1e6
-                odf['baseAssetAmountFilled'] = odf['baseAssetAmountFilled'].astype(float)/1e9
+                odf['tradePrice'] = (odf['quoteAssetAmountFilled'].astype(float))/ odf['baseAssetAmountFilled'].astype(float)
+                odf['oraclePrice'] = odf['oraclePrice'].astype(float)#/1e6
+                odf['baseAssetAmountFilled'] = odf['baseAssetAmountFilled'].astype(float)
                 can_cols = ['oraclePrice', 'tradePrice', 'baseAssetAmountFilled', 'taker', 'maker', 'actionExplanation', 'takerOrderDirection']
                 can_cols = [x for x in can_cols if x in odf.columns]
                 odf = odf[can_cols]

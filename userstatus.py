@@ -23,7 +23,7 @@ from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from dataclasses import dataclass
 from solana.publickey import PublicKey
-from helpers import serialize_perp_market_2, serialize_spot_market
+from helpers import serialize_perp_market_2, serialize_spot_market, all_user_stats
 from anchorpy import EventParser
 import asyncio
 
@@ -35,22 +35,44 @@ from driftpy.addresses import *
 
 async def userstatus_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
+    filt = st.radio('filter:', ['Active', 'Idle', 'Open Order', 'Open Auction'], index=0, horizontal=True)
 
-    tabs = st.tabs(['active / inactive', 'LPs'])
+    tabs = st.tabs([filt.lower() + ' users', 'LPs'])
 
-    all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+    if filt == 'Active':
+        all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+    elif filt == 'Idle':
+        all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='2')])        
+    elif filt == 'Open Order':
+        all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
+    else:
+        all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4354, bytes='2')])
+
     df = pd.DataFrame([x.account.__dict__ for x in all_users])
     df['public_key'] = [str(x.public_key) for x in all_users]
+
+    stats_df = await all_user_stats(all_users, ch)
+
     # with st.expander('ref accounts'):
     #     st.write(all_refs_stats)
     with tabs[0]:
-        st.metric('number of user accounts', state.number_of_sub_accounts, 'active users = '+str(len(all_users)))
-        st.write('active users:')
+        col1, col2, col3 = st.columns(3)
+        col1.metric('number of user accounts', state.number_of_sub_accounts, filt.lower()+' users = '+str(len(all_users)))
+
+
+
+        st.write(filt.lower() + ' users:')
         df.name = df.name.apply(lambda x: bytes(x).decode('utf-8', errors='ignore'))
         st.dataframe(df)
+
+        col2.metric('tvl', f'${stats_df.spot_value.sum():,.2f}', f'${stats_df.upnl.sum():,.2f} upnl')
+
+        st.dataframe(stats_df)
+
     with tabs[1]:
         st.write('lp cooldown time:', state.lp_cooldown_time, 'seconds')
         lps = {}
+        dff = pd.DataFrame()
         for usr in all_users:
             for x in usr.account.perp_positions:
                 if x.lp_shares != 0:
@@ -60,28 +82,29 @@ async def userstatus_page(ch: ClearingHouse):
                         lps[key].append(x)
                     else:
                         lps[key] = [x]
-        dff = pd.concat({key: pd.DataFrame(val) for key,val in lps.items()})
-        dff.index.names = ['public_key', 'position_index']
-        dff = dff.reset_index()
-        dff = df[['authority', 'name', 'last_active_slot', 'public_key', 'last_add_perp_lp_shares_ts']].merge(dff, on='public_key')
-        print(dff.columns)
-        dff = dff[['authority', 'name', 
-        'lp_shares',
+        if len(lps):
+            dff = pd.concat({key: pd.DataFrame(val) for key,val in lps.items()})
+            dff.index.names = ['public_key', 'position_index']
+            dff = dff.reset_index()
+            dff = df[['authority', 'name', 'last_active_slot', 'public_key', 'last_add_perp_lp_shares_ts']].merge(dff, on='public_key')
+            print(dff.columns)
+            dff = dff[['authority', 'name', 
+            'lp_shares',
+            
+            'last_active_slot', 'public_key',
+        'last_add_perp_lp_shares_ts', 'market_index', 
+        #    'position_index',
+        'last_cumulative_funding_rate', 'base_asset_amount',
+        'quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount',
         
-        'last_active_slot', 'public_key',
-       'last_add_perp_lp_shares_ts', 'market_index', 
-    #    'position_index',
-       'last_cumulative_funding_rate', 'base_asset_amount',
-       'quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount',
-       
-       'last_base_asset_amount_per_lp', 'last_quote_asset_amount_per_lp',
-       'remainder_base_asset_amount',  
-       'open_orders',
-       ]]
-        for col in ['lp_shares', 'last_base_asset_amount_per_lp', 'base_asset_amount', 'remainder_base_asset_amount']:
-            dff[col] /= 1e9
-        for col in ['quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount', 'last_quote_asset_amount_per_lp']:
-            dff[col] /= 1e6
+        'last_base_asset_amount_per_lp', 'last_quote_asset_amount_per_lp',
+        'remainder_base_asset_amount',  
+        'open_orders',
+        ]]
+            for col in ['lp_shares', 'last_base_asset_amount_per_lp', 'base_asset_amount', 'remainder_base_asset_amount']:
+                dff[col] /= 1e9
+            for col in ['quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount', 'last_quote_asset_amount_per_lp']:
+                dff[col] /= 1e6
 
         st.write('perp market lp info:')
         a0, a1, a2, a3 = st.columns(4)
