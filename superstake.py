@@ -6,6 +6,7 @@ import numpy as np
 import plotly.express as px
 
 pd.options.plotting.backend = "plotly"
+from driftpy.clearing_house_user import get_oracle_data
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
@@ -38,6 +39,7 @@ def get_ir_curves(market, delt):
     deposits =market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
     borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
     
+    # st.warning(f'{deposits} {borrows} {delt}')
     if delt < 0:
         borrows += abs(delt)
     else:
@@ -69,8 +71,13 @@ def get_stake_yield():
 async def super_stake(clearing_house: ClearingHouse):
     ch = clearing_house
     # state = await get_state_account(ch.program)
-    msol_market = await get_spot_market_account(ch.program,2)
-    sol_market = await get_spot_market_account(ch.program,1)
+    msol_market = await get_spot_market_account(ch.program, 2)
+    sol_market = await get_spot_market_account(ch.program, 1)
+
+    msol_oracle = await get_oracle_data(ch.program.provider.connection, msol_market.oracle, msol_market.oracle_source)
+    sol_oracle = await get_oracle_data(ch.program.provider.connection, sol_market.oracle, sol_market.oracle_source)
+
+
     msol_price, stake_apy = get_stake_yield()
     stake_apy = stake_apy/100
 
@@ -94,15 +101,28 @@ async def super_stake(clearing_house: ClearingHouse):
 
 
     sol_dep, sol_bor = get_ir_curves(sol_market, -ss_sol_bor)
-    st.write('msol deposit:', ss_msol_dep, 'sol borrow:', ss_sol_bor)
+    st.write(f'`mSOL` deposit: `{ss_msol_dep:,.9f}` `SOL` borrow: `{ss_sol_bor:,.9f}`')
     with st.expander('details:'):
+        st.write('`SOL`/`mSOL` oracle prices:', sol_oracle.price/1e6, msol_oracle.price/1e6)
+        st.write('`mSOL` fair value:', sol_oracle.price/1e6*msol_price)
         st.write('initial weighted', msol_init_awgt*ss_msol_dep*msol_price - sol_init_lwgt*ss_sol_bor)
         st.write('maint weighted', msol_maint_awgt*ss_msol_dep*msol_price - sol_maint_lwgt*ss_sol_bor)
         st.write('msol deposit/borrow apr:', msol_dep, msol_bor)
         st.write('sol deposit/borrow apr:', sol_dep, sol_bor)
         if ss_sol_bor > 0:
-            st.warning(f'liquidation when price diverges by: ~{abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep) - msol_price)*100:,.4f} %')
-            st.warning(f'liquidation when price diverges by: ~{abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep*msol_price) - 1)*100:,.4f} %')
+            divdown = abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep) - msol_price)*100
+
+            divup = abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep*msol_price) - 1)*100
+            st.write('liq leverage:', liq_lev)
+            st.warning(f'''liquidation when `mSOL` price diverges down by: `{divdown:,.4f}%`  
+                       
+                       ({msol_oracle.price/1e6:,.4f} → {msol_oracle.price*(1-divdown/100)/1e6:,.4f})
+                       ''')
+            st.warning(f'''liquidation when `SOL` price diverges up by: `{divup:,.4f}%`
+                       
+                       ({sol_oracle.price/1e6:,.4f} → {sol_oracle.price*(1+divup/100)/1e6:,.4f})
+                       '''
+                       )
 
     # st.write(stake_apy, msol_dep)
     

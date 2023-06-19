@@ -34,7 +34,7 @@ from tqdm import tqdm
 from driftpy.math.margin import MarginCategory
 
 
-async def all_user_stats(all_users, ch):
+async def all_user_stats(all_users, ch, oracle_distort=None):
     if all_users is not None:
         fuser: User = all_users[0].account
         chu = ClearingHouseUser(
@@ -45,6 +45,22 @@ async def all_user_stats(all_users, ch):
         )
         await chu.set_cache()
         cache = chu.CACHE
+        if oracle_distort is not None:
+            new_spots = []
+            new_perps = []
+            for i,x in enumerate(cache['spot_market_oracles']):
+                if i !=0:
+                    x.price *= oracle_distort
+                new_spots.append(x)
+            cache['spot_market_oracles'] = new_spots
+
+            for i,x in enumerate(cache['perp_market_oracles']):
+                x.price *= oracle_distort
+                new_perps.append(x)
+            cache['perp_market_oracles'] = new_perps
+            chu.CACHE = cache
+
+
         res = []
         for x in all_users:
             key = str(x.public_key)
@@ -56,10 +72,11 @@ async def all_user_stats(all_users, ch):
             margin_category = MarginCategory.INITIAL
             total_liability = await chu.get_margin_requirement(margin_category, None)
             spot_value = await chu.get_spot_market_asset_value(None, False, None)
-            upnl = await chu.get_unrealized_pnl(False, None, None)
+            upnl = await chu.get_unrealized_pnl(True, None, None)
+
             res.append([total_liability/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION])
 
-        return pd.DataFrame(res, columns=['total_liability', 'spot_value', 'upnl'], index=[x.public_key for x in all_users])
+        return pd.DataFrame(res, columns=['total_liability', 'spot_value', 'upnl'], index=[x.public_key for x in all_users]), chu
 
 
 
