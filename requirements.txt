@@ -25,7 +25,7 @@ construct-typing==0.5.3
 cycler==0.11.0
 decorator==5.1.1
 dnspython==2.2.1
-driftpy==0.6.37
+driftpy==0.6.38
 entrypoints==0.4
 exceptiongroup==1.0.4
 flake8==6.0.0
