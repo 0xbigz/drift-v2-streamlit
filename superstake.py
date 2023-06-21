@@ -204,29 +204,60 @@ async def super_stake(clearing_house: ClearingHouse):
         dd1 = []
         dd2 = []
         levs = list(np.linspace(1, 3, 210))
-        for x_lev in levs:
-            ss_msol_dep = (collat * x_lev)
-            ss_sol_bor = (ss_msol_dep-collat) * msol_price
-            divup = abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep) - msol_price)*100
 
-            divup = (msol_maint_awgt*ss_msol_dep*msol_price/(sol_maint_lwgt*ss_sol_bor) - 1) *100
-            divdown = -((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep*msol_price) - 1)*100
-            dd1.append(divdown)
-            dd1[0] = np.nan
-            dd2.append(divup)
+        byeq = st.radio('by:', ['leverage', 'size'], horizontal=True)
+        ans = None
+        if byeq == 'leverage':
+            for x_lev in levs:
+                ss_msol_dep = (collat * x_lev)
+                ss_sol_bor = (ss_msol_dep-collat) * msol_price
+                divup = abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep) - msol_price)*100
+
+                divup = (msol_maint_awgt*ss_msol_dep*msol_price/(sol_maint_lwgt*ss_sol_bor) - 1) *100
+                divdown = -((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep*msol_price) - 1)*100
+                dd1.append(divdown)
+                dd1[0] = np.nan
+                dd2.append(divup)
+            ans = pd.DataFrame([dd1, dd2], index=['mSOL depegs down', 'SOL depegs up'], columns=levs ).T
+        elif byeq == 'size':
+            sizes = list(np.linspace(1, 100000, 100))
+            for x_size in sizes:
+                ss_msol_dep = (x_size * lev)
+                ss_sol_bor = (ss_msol_dep-x_size) * msol_price
+
+                msol_init_awgt =  msol_market.initial_asset_weight/1e4
+                msol_maint_awgt = sol_market.maintenance_asset_weight/1e4
+                sol_init_lwgt = sol_market.initial_liability_weight/1e4
+                sol_maint_lwgt = sol_market.maintenance_liability_weight/1e4
+
+
+                msol_init_awgt = calc_size_ast(msol_init_awgt, msol_imf, ss_msol_dep)
+                msol_maint_awgt = calc_size_ast(msol_maint_awgt, msol_imf, ss_msol_dep)
+                sol_init_lwgt = calc_size_liab(sol_init_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
+                sol_maint_lwgt = calc_size_liab(sol_maint_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
+
+
+                divup = abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep) - msol_price)*100
+
+                divup = (msol_maint_awgt*ss_msol_dep*msol_price/(sol_maint_lwgt*ss_sol_bor) - 1) *100
+                divdown = -((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep*msol_price) - 1)*100
+                dd1.append(divdown)
+                # dd1[0] = np.nan
+                dd2.append(divup)
+            ans = pd.DataFrame([dd1, dd2], index=['mSOL depegs down', 'SOL depegs up'], columns=sizes ).T
 
         st.write('"depegs" means while one asset (mSOL or SOL) stays in same in value, the other one diverges')
         st.write('note that mSOL depegging higher and SOL depegging lower do not risk this position')
-        ans = pd.DataFrame([dd1, dd2], index=['mSOL depegs down', 'SOL depegs up'], columns=levs ).T
         fig = ans.plot(log_y=True)
         fig.update_layout(
             title="Super Stake Liquidation Risk",
-            xaxis_title="Leverage",
+            xaxis_title=byeq,
             yaxis_title="% change in price",
         
             )
         aaa = ans.loc[float(lev)-1e-6:].values[0]
-        fig.add_vline(x=lev, line_color="green", annotation_text='leverage \n'+str(aaa))
+        if byeq == 'leverage':
+            fig.add_vline(x=lev, line_color="green", annotation_text='leverage \n'+str(aaa))
         
         st.plotly_chart(fig)
 
@@ -242,7 +273,7 @@ async def super_stake(clearing_house: ClearingHouse):
         st.write('Note: these liquidation prices assume other asset is unchanged thus is a "depeg"')
         fig2.update_layout(
             title="Super Stake Liquidation Price",
-            xaxis_title="Leverage",
+            xaxis_title=byeq,
             yaxis_title="Liquidation Price",
         
             )
