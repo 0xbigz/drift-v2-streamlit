@@ -7,6 +7,7 @@ import plotly.express as px
 
 pd.options.plotting.backend = "plotly"
 from driftpy.clearing_house_user import get_oracle_data
+import plotly.graph_objects as go
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
@@ -228,4 +229,31 @@ async def super_stake(clearing_house: ClearingHouse):
         fig.add_vline(x=lev, line_color="green", annotation_text='leverage \n'+str(aaa))
         
         st.plotly_chart(fig)
+
+        z_data = pd.DataFrame(index=ans.index)
+        z_data['SOL_liq_price'] = (sol_oracle.price + ans['SOL depegs up']*sol_oracle.price/100)/1e6
+        z_data['mSOL_liq_price'] = (msol_oracle.price - ans['mSOL depegs down']*msol_oracle.price/100)/1e6
+        fig2 = z_data.plot(log_y=True)
+        aaa = z_data.loc[float(lev)-1e-6:].values[0]
+        fig2.add_vline(x=lev, line_color="green", annotation_text='liq price \n'+str(aaa))
+        # fig2.add_hline(y=(float(msol_oracle.price)/1e6), line_color="blue", annotation_text='mSOL price')
+        # fig.add_hline(y=(sol_oracle.price/1e6), line_color="blue", annotation_text='SOL price')
+        
+        st.write('Note: these liquidation prices assume other asset is unchanged thus is a "depeg"')
+        fig2.update_layout(
+            title="Super Stake Liquidation Price",
+            xaxis_title="Leverage",
+            yaxis_title="Liquidation Price",
+        
+            )
+        st.plotly_chart(fig2)
+
+        # fig2 = go.Figure(data=[go.Surface(z=z_data.values)])
+        # fig2.update_layout(scene=dict(zaxis=dict(dtick=1, type='log')))
+
+        # fig2.add_vline(x=lev, line_color="green", annotation_text='leverage \n'+str(aaa))
+        # # fig2.update_layout(scene=dict(yaxis=dict(dtick=1, type='log')))
+
+        # st.plotly_chart(fig2)
+
 
