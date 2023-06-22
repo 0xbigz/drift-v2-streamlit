@@ -52,7 +52,7 @@ async def userstatus_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
     s1, s2 = st.columns(2)
     filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction'], index=1, horizontal=True)
-    oracle_distort = s2.slider('oracle distortion:', .01, 2.0, 1.2, .1)
+    oracle_distort = s2.slider('oracle distortion:', .01, 2.0, 1, .1)
     tabs = st.tabs([filt.lower() + ' users', 'LPs'])
     all_users = await load_users(ch.program.account['User'], filt)
 
@@ -113,14 +113,16 @@ async def userstatus_page(ch: ClearingHouse):
         col11.metric('mkt tvl', f'${spot_acct_dep+spot_acct_bor:,.2f}')
         col3.metric('vamm tvl', f'${vamm:,.2f}', f'{vamm_upnl:,.2f} upnl')
 
-        
+        stats_df['spot_value'] = stats_df['spot_value'].astype(float)
+        stats_df['upnl'] = stats_df['upnl'].astype(float)
         ddd = (stats_df['spot_value']+stats_df['upnl'])
         ddd = ddd[ddd<=0]
 
         sddd = stats_df[stats_df['spot_value']<0]['spot_value']
 
+    
         stats_df.loc[stats_df['spot_value'] < 0, 'spot bankrupt'] = True
-        stats_df.loc[(stats_df['upnl'] < 0 & (stats_df['spot_value'] < -stats_df['upnl'])), 'perp bankrupt'] = True
+        stats_df.loc[((stats_df['upnl'] < 0) & (stats_df['spot_value'] < -stats_df['upnl'])), 'perp bankrupt'] = True
 
         st.dataframe(stats_df)
 
