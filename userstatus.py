@@ -3,6 +3,7 @@ from tokenize import tabsize
 import driftpy
 import pandas as pd 
 import numpy as np 
+import copy
 
 pd.options.plotting.backend = "plotly"
 
@@ -52,8 +53,8 @@ async def userstatus_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
     s1, s2 = st.columns(2)
     filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction'], index=1, horizontal=True)
-    oracle_distort = s2.slider('oracle distortion:', .01, 2.0, 1, .1)
-    tabs = st.tabs([filt.lower() + ' users', 'LPs'])
+    oracle_distort = s2.slider('oracle distortion:', .01, 2.0, 1.0, .1)
+    tabs = st.tabs([filt.lower() + ' users', 'LPs', 'oracle scenario analysis'])
     all_users = await load_users(ch.program.account['User'], filt)
 
     df = pd.DataFrame([x.account.__dict__ for x in all_users])
@@ -189,6 +190,37 @@ async def userstatus_page(ch: ClearingHouse):
         st.dataframe(dff)
 
 
+    with tabs[2]:
+        omin, omax = st.slider(
+        'Select an oracle multiplier range',
+        0.0, 10.0, (0.0, 2.0), step=.05)
+        oracle_distorts = [float(x)/10 for x in (list(np.linspace(omin, omax*10, 100)))]
+        all_stats = {}
+        for oracle_distort_x in oracle_distorts:
+            stats_df, chunew = await all_user_stats(all_users, ch, oracle_distort_x, 
+                                                 pure_cache=copy.deepcopy(chu.CACHE))
+
+            stats_df['spot_value'] = stats_df['spot_value'].astype(float)
+            stats_df['upnl'] = stats_df['upnl'].astype(float)
+            ddd = (stats_df['spot_value']+stats_df['upnl'])
+            ddd = ddd[ddd<=0]
+
+            sddd = stats_df[stats_df['spot_value']<0]['spot_value']
+
+        
+            stats_df.loc[stats_df['spot_value'] < 0, 'spot bankrupt'] = True
+            stats_df.loc[((stats_df['upnl'] < 0) & (stats_df['spot_value'] < -stats_df['upnl'])), 'perp bankrupt'] = True
+            all_stats[oracle_distort_x] = [ddd.sum(), sddd.sum(), ddd.sum()-sddd.sum()]
+
+
+        fig = pd.DataFrame(all_stats, index=['bankruptcy', 'spot bankruptcy', 'perp bankruptcy']).T.abs().plot()
+        fig.update_layout(
+            title="Bankruptcy Risk",
+            xaxis_title='oracle distortion %',
+            yaxis_title="bankruptcy $",
+        
+            )
+        st.plotly_chart(fig, use_container_width=True)
 
 
     

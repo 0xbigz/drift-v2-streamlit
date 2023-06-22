@@ -99,8 +99,8 @@ async def super_stake(clearing_house: ClearingHouse):
     msol_price, stake_apy = get_stake_yield()
     stake_apy = stake_apy/100
 
-    c1, c2 = st.columns(2)
-    collat = c1.number_input('msol:', min_value=1.0, value=1.0, step=1.0)
+    c1, c2, c3 = st.columns(3)
+    collat = c1.number_input('msol:', min_value=0.00, value=1.0, step=1.0)
     
     msol_imf = msol_market.imf_factor/1e6
     sol_imf = sol_market.imf_factor/1e6
@@ -131,9 +131,10 @@ async def super_stake(clearing_house: ClearingHouse):
 
 
     sol_dep, sol_bor = get_ir_curves(sol_market, -ss_sol_bor)
-    st.write(f'`mSOL` deposit: `{ss_msol_dep:,.9f}`')
-    st.write(f'`SOL` borrow: `{ss_sol_bor:,.9f}`')
-
+    c3.write(f'`mSOL` deposit: `{ss_msol_dep:,.9f}`')
+    c3.write(f'`SOL` borrow: `{ss_sol_bor:,.9f}`')
+    divdown = msol_price * ((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep*msol_price))
+    c3.write(f'Liq Price:`{divdown:,.4f}` (current = `{msol_price:,.4f}` `mSOL/SOL`)')
     # st.write(stake_apy, msol_dep)
     tabs = st.tabs(['reward', 'risk'])
 
@@ -145,6 +146,7 @@ async def super_stake(clearing_house: ClearingHouse):
         aa /= collat*msol_price
         # st.write(aa)
 
+
         if aa-stake_apy > 0:
             s2.metric('super stake apy:', 
                     f'{float(aa *100):,.4f}%',
@@ -155,7 +157,6 @@ async def super_stake(clearing_house: ClearingHouse):
                         f'{float(aa * 100):,.4f}%',
                             f'{float((aa-stake_apy) * 100):,.4f}% less profitable'
                         ) 
-
         entercol, exitcol = st.columns(2)
         entercol.write('''
         ### how to enter
@@ -211,6 +212,18 @@ async def super_stake(clearing_house: ClearingHouse):
             for x_lev in levs:
                 ss_msol_dep = (collat * x_lev)
                 ss_sol_bor = (ss_msol_dep-collat) * msol_price
+
+                msol_init_awgt =  msol_market.initial_asset_weight/1e4
+                msol_maint_awgt = sol_market.maintenance_asset_weight/1e4
+                sol_init_lwgt = sol_market.initial_liability_weight/1e4
+                sol_maint_lwgt = sol_market.maintenance_liability_weight/1e4
+
+
+                msol_init_awgt = calc_size_ast(msol_init_awgt, msol_imf, ss_msol_dep)
+                msol_maint_awgt = calc_size_ast(msol_maint_awgt, msol_imf, ss_msol_dep)
+                sol_init_lwgt = calc_size_liab(sol_init_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
+                sol_maint_lwgt = calc_size_liab(sol_maint_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
+
                 divup = abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep) - msol_price)*100
 
                 divup = (msol_maint_awgt*ss_msol_dep*msol_price/(sol_maint_lwgt*ss_sol_bor) - 1) *100
@@ -248,36 +261,57 @@ async def super_stake(clearing_house: ClearingHouse):
 
         st.write('"depegs" means while one asset (mSOL or SOL) stays in same in value, the other one diverges')
         st.write('note that mSOL depegging higher and SOL depegging lower do not risk this position')
-        fig = ans.plot(log_y=True)
-        fig.update_layout(
-            title="Super Stake Liquidation Risk",
-            xaxis_title=byeq,
-            yaxis_title="% change in price",
+        # fig = ans.plot(log_y=True)
+        # fig.update_layout(
+        #     title="Super Stake Liquidation Risk",
+        #     xaxis_title=byeq,
+        #     yaxis_title="% change in price",
         
-            )
-        aaa = ans.loc[float(lev)-1e-6:].values[0]
-        if byeq == 'leverage':
-            fig.add_vline(x=lev, line_color="green", annotation_text='leverage \n'+str(aaa))
+        #     )
+        # aaa = ans.loc[float(lev)-1e-6:].values[0]
+        # if byeq == 'leverage':
+        #     fig.add_vline(x=lev, line_color="green", annotation_text='leverage \n'+str(aaa))
         
-        st.plotly_chart(fig)
+        # st.plotly_chart(fig)
 
         z_data = pd.DataFrame(index=ans.index)
         z_data['SOL_liq_price'] = (sol_oracle.price + ans['SOL depegs up']*sol_oracle.price/100)/1e6
         z_data['mSOL_liq_price'] = (msol_oracle.price - ans['mSOL depegs down']*msol_oracle.price/100)/1e6
-        fig2 = z_data.plot(log_y=True)
-        aaa = z_data.loc[float(lev)-1e-6:].values[0]
-        fig2.add_vline(x=lev, line_color="green", annotation_text='liq price \n'+str(aaa))
-        # fig2.add_hline(y=(float(msol_oracle.price)/1e6), line_color="blue", annotation_text='mSOL price')
-        # fig.add_hline(y=(sol_oracle.price/1e6), line_color="blue", annotation_text='SOL price')
+        # fig2 = z_data.plot(log_y=True)
+        # aaa = z_data.loc[float(lev)-1e-6:].values[0]
+        # fig2.add_vline(x=lev, line_color="green", annotation_text='liq price \n'+str(aaa))
+        # # fig2.add_hline(y=(float(msol_oracle.price)/1e6), line_color="blue", annotation_text='mSOL price')
+        # # fig.add_hline(y=(sol_oracle.price/1e6), line_color="blue", annotation_text='SOL price')
         
-        st.write('Note: these liquidation prices assume other asset is unchanged thus is a "depeg"')
-        fig2.update_layout(
+        # st.write('Note: these liquidation prices assume other asset is unchanged thus is a "depeg"')
+        # fig2.update_layout(
+        #     title="Super Stake Liquidation Price",
+        #     xaxis_title=byeq,
+        #     yaxis_title="Liquidation Price",
+        
+        #     )
+
+
+        msolratioliq = (msol_oracle.price/1e6)/z_data['SOL_liq_price']
+        msolratioliq.values[0] = np.nan
+        msolratioliq.name = 'mSOL/SOL liq price'
+        fig3 = msolratioliq.plot()
+        curpx = float(msol_oracle.price)/sol_oracle.price
+        fig3.add_hline(y=curpx, line_color="green", annotation_text='current mSOL/SOL price = '+str(curpx)[:8])
+        
+        xtit = byeq
+        if byeq == 'size':
+            xtit = f'mSOL size (@ {lev}x leverage)'
+        elif byeq == 'leverage':
+            xtit = f'leverage (with {collat} mSOL)'
+        fig3.update_layout(
             title="Super Stake Liquidation Price",
-            xaxis_title=byeq,
+            xaxis_title=xtit,
             yaxis_title="Liquidation Price",
-        
-            )
-        st.plotly_chart(fig2)
+    
+        )
+        st.plotly_chart(fig3)
+
 
         # fig2 = go.Figure(data=[go.Surface(z=z_data.values)])
         # fig2.update_layout(scene=dict(zaxis=dict(dtick=1, type='log')))

@@ -34,7 +34,7 @@ from tqdm import tqdm
 from driftpy.math.margin import MarginCategory
 
 
-async def all_user_stats(all_users, ch, oracle_distort=None):
+async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None):
     if all_users is not None:
         fuser: User = all_users[0].account
         chu = ClearingHouseUser(
@@ -43,7 +43,11 @@ async def all_user_stats(all_users, ch, oracle_distort=None):
             subaccount_id=fuser.sub_account_id, 
             use_cache=True
         )
-        await chu.set_cache()
+        if pure_cache is None:
+            await chu.set_cache()
+        else:
+            chu.CACHE = pure_cache
+            
         cache = chu.CACHE
         if oracle_distort is not None:
             new_spots = []
