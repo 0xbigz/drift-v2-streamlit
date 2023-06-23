@@ -65,7 +65,7 @@ def get_ir_curves(market, delt):
 @st.experimental_memo(ttl=3600*2)  # 2 hr TTL this time
 def get_stake_yield():
     metrics = requests.get('https://api2.marinade.finance/metrics_json').json()
-    apy = metrics['avg_staking_apy']
+    apy = metrics['msol_price_apy_30d']
     msol_price = metrics['m_sol_price']
     return msol_price, apy
 
@@ -86,6 +86,11 @@ def calc_size_liab(wgt, imf, base):
     res = max(wgt, liability_wgt_n + imf * dd)
     return res
 
+def apy_to_apr(apy, compounds_per_year):
+    compound_amount = 1 + apy/100
+    est_apr = (compound_amount ** (1/float(compounds_per_year)) - 1) * compounds_per_year
+    return est_apr
+
 async def super_stake(clearing_house: ClearingHouse):
     ch = clearing_house
     # state = await get_state_account(ch.program)
@@ -96,8 +101,8 @@ async def super_stake(clearing_house: ClearingHouse):
     sol_oracle = await get_oracle_data(ch.program.provider.connection, sol_market.oracle, sol_market.oracle_source)
 
 
-    msol_price, stake_apy = get_stake_yield()
-    stake_apy = stake_apy/100
+    msol_price, stake_apr = get_stake_yield()
+    stake_apr = apy_to_apr(stake_apr, int(365/2))
 
     c1, c2, c3 = st.columns(3)
     collat = c1.number_input('mSOL:', min_value=1e-9, value=1.0, step=1.0)
@@ -135,27 +140,27 @@ async def super_stake(clearing_house: ClearingHouse):
     c3.write(f'`SOL` borrow: `{ss_sol_bor:,.9f}`')
     divdown = msol_price * ((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep*msol_price))
     c3.write(f'Liq Price:`{divdown:,.4f}` (current = `{msol_price:,.4f}` `mSOL/SOL`)')
-    # st.write(stake_apy, msol_dep)
+    # st.write(stake_apr, msol_dep)
     tabs = st.tabs(['reward', 'risk'])
 
     with tabs[0]:
         s1, s2 = st.columns(2)
-        s1.metric('normal stake apy:', f'{float(stake_apy*100):,.4f}%')
-        # st.write((ss_msol_dep * (stake_apy+msol_dep))*msol_price, ss_sol_bor*sol_bor)
-        aa = (ss_msol_dep * (stake_apy+msol_dep))*msol_price - (ss_sol_bor*sol_bor)
+        s1.metric('normal stake apr:', f'{float(stake_apr*100):,.4f}%')
+        # st.write((ss_msol_dep * (stake_apr+msol_dep))*msol_price, ss_sol_bor*sol_bor)
+        aa = (ss_msol_dep * (stake_apr+msol_dep))*msol_price - (ss_sol_bor*sol_bor)
         aa /= collat*msol_price
         # st.write(aa)
 
 
-        if aa-stake_apy > 0:
-            s2.metric('super stake apy:', 
+        if aa-stake_apr > 0:
+            s2.metric('super stake apr:', 
                     f'{float(aa *100):,.4f}%',
-                        f'{float((aa-stake_apy) * 100):,.4f}% more profitable'
+                        f'{float((aa-stake_apr) * 100):,.4f}% more profitable'
                     )
         else:
-            s2.metric('super stake apy:', 
+            s2.metric('super stake apr:', 
                         f'{float(aa * 100):,.4f}%',
-                            f'{float((aa-stake_apy) * 100):,.4f}% less profitable'
+                            f'{float((aa-stake_apr) * 100):,.4f}% less profitable'
                         ) 
         entercol, exitcol = st.columns(2)
         entercol.write('''
