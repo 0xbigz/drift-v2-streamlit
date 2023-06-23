@@ -100,7 +100,7 @@ async def super_stake(clearing_house: ClearingHouse):
     stake_apy = stake_apy/100
 
     c1, c2, c3 = st.columns(3)
-    collat = c1.number_input('msol:', min_value=0.00, value=1.0, step=1.0)
+    collat = c1.number_input('mSOL:', min_value=1e-9, value=1.0, step=1.0)
     
     msol_imf = msol_market.imf_factor/1e6
     sol_imf = sol_market.imf_factor/1e6

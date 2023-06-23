@@ -53,7 +53,7 @@ async def userstatus_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
     s1, s2 = st.columns(2)
     filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction'], index=1, horizontal=True)
-    oracle_distort = s2.slider('oracle distortion:', .01, 2.0, 1.0, .1)
+    oracle_distort = s2.slider('base oracle distortion:', .01, 2.0, 1.0, .1, help="alter non-stable token oracles by this factor multiple (default=1, no alteration)")
     tabs = st.tabs([filt.lower() + ' users', 'LPs', 'oracle scenario analysis'])
     all_users = await load_users(ch.program.account['User'], filt)
 
@@ -173,10 +173,11 @@ async def userstatus_page(ch: ClearingHouse):
         a0, a1, a2, a3 = st.columns(4)
         mi = a0.selectbox('market index:', range(0, state.number_of_markets), 0)
 
-        perp_market = await get_perp_market_account(ch.program, mi)
+
+        perp_market = await chu.get_perp_market(mi)
         # st.write(perp_market.amm)
         bapl = perp_market.amm.base_asset_amount_per_lp/1e9
-        qapl = perp_market.amm.quote_asset_amount_per_lp/1e9
+        qapl = perp_market.amm.quote_asset_amount_per_lp/1e6
         baawul = perp_market.amm.base_asset_amount_with_unsettled_lp/1e9
 
         a1.metric('base asset amount per lp:', bapl)
@@ -186,8 +187,41 @@ async def userstatus_page(ch: ClearingHouse):
 
         # cols = (st.multiselect('columns:', ))
         # dff = dff[cols]
-        st.write('all lp positions')
+        st.write('raw lp positions')
         st.dataframe(dff)
+
+
+        def get_wouldbe_lp_settle(row):
+            def standardize_base_amount(amount, step):
+                remainder = amount % step
+                standard = amount - remainder
+                return standard, remainder
+
+            mi = row['market_index']
+            pm = chu.CACHE['perp_markets'][mi]
+            delta_baapl = pm.amm.base_asset_amount_per_lp/1e9 - row['last_base_asset_amount_per_lp']
+            delta_qaapl = pm.amm.quote_asset_amount_per_lp/1e6 - row['last_quote_asset_amount_per_lp']
+
+            delta_baa = delta_baapl * row['lp_shares']
+            delta_qaa = delta_qaapl * row['lp_shares']
+
+            standard_baa, remainder_baa = standardize_base_amount(delta_baa, pm.amm.order_step_size/1e9)
+
+            row['remainder_base_asset_amount'] += remainder_baa
+            row['base_asset_amount'] += standard_baa
+            row['quote_asset_amount'] += delta_qaa
+            row['quote_entry_amount'] += delta_qaa
+            row['quote_break_even_amount'] += delta_qaa
+
+            return row
+
+
+
+        newd = dff.apply(get_wouldbe_lp_settle, axis=1)
+            
+
+        st.write('would-be settled lp positions')
+        st.dataframe(newd)
 
 
     with tabs[2]:
