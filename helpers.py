@@ -34,7 +34,7 @@ from tqdm import tqdm
 from driftpy.math.margin import MarginCategory
 
 
-async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None):
+async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None, only_perp_index=None):
     if all_users is not None:
         fuser: User = all_users[0].account
         chu = ClearingHouseUser(
@@ -52,14 +52,17 @@ async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None):
         if oracle_distort is not None:
             new_spots = []
             new_perps = []
+
             for i,x in enumerate(cache['spot_market_oracles']):
-                if i !=0:
+                # sol and msol move with
+                if (i != 0 and only_perp_index is None) or (only_perp_index == 0 and i in [1,2]):
                     x.price *= oracle_distort
                 new_spots.append(x)
             cache['spot_market_oracles'] = new_spots
 
             for i,x in enumerate(cache['perp_market_oracles']):
-                x.price *= oracle_distort
+                if only_perp_index is None or only_perp_index == i:
+                    x.price *= oracle_distort
                 new_perps.append(x)
             cache['perp_market_oracles'] = new_perps
             chu.CACHE = cache
@@ -76,7 +79,7 @@ async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None):
             margin_category = MarginCategory.INITIAL
             total_liability = await chu.get_margin_requirement(margin_category, None)
             spot_value = await chu.get_spot_market_asset_value(None, False, None)
-            upnl = await chu.get_unrealized_pnl(True, None, None)
+            upnl = await chu.get_unrealized_pnl(True, only_perp_index, None)
 
             res.append([total_liability/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION])
 

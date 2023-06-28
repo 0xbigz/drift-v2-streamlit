@@ -85,23 +85,34 @@ async def insurance_fund_page(ch: ClearingHouse, env):
     url_market_prefix = url_market_pp+'.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
     name_rot = {}
     for name in ['USDC', 'SOL']:
-        full_if_url = url_market_prefix+name+"/insurance-fund-records/2023/"#+str(current_month)
         rots = []
-        for x in range(1, current_month+1):
-            rot = pd.read_csv(full_if_url+str(x))
-            rot = rot.set_index('ts')
-            rot.index = pd.to_datetime((rot.index * 1e9).astype(int))
-            rots.append(rot)
-        rot = pd.concat(rots)
-        name_rot[name] = rot
+        for year in ['2022', '2023']:
+            full_if_url = url_market_prefix+name+"/insurance-fund-records/"+str(year)+"/"#+str(current_month)
+            if year == '2022':
+                mrange = ['11','12']
+            else:
+                mrange = range(1, current_month+1)
+            for x in mrange:
+                rot = pd.read_csv(full_if_url+str(x))
+                rot = rot.set_index('ts')
+                rot.index = pd.to_datetime((rot.index * 1e9).astype(int))
+                rots.append(rot)
+            rot = pd.concat(rots)
+            name_rot[name] = rot
     rot = name_rot['USDC']
-    apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365.25*24/2).rolling(24).mean()
-    apr_fig = apr_df.sort_index().plot()
+    apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365.25*24/2).sort_index().rolling(24).mean()
+    apr_fig = apr_df.plot()
     apr_fig.update_layout( 
-                        title='Revenue Emission (smoothed daily)',
+                        title='USDC Revenue Emission (smoothed daily)',
                         xaxis_title="date",
                         yaxis_title="APR %",
                     )
+    ifperf = ((rot['insuranceVaultAmountBefore']+rot['amount'])/rot['totalIfSharesAfter']).sort_index()
+    ifperf.name = 'ifShare price'
+    st.plotly_chart(ifperf.plot(log_y=True))
+
+    st.plotly_chart((ifperf.resample('1W').last().pct_change()*100).plot(kind='bar'))
+    
     # st.dataframe(rot)
     # bankruptcies = rot[rot['amount']<0]
     # st.dataframe(bankruptcies)
