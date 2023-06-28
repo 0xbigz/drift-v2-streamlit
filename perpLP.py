@@ -35,6 +35,8 @@ from driftpy.addresses import *
 import datetime
 import pytz
 
+EPSILON = 1e-9
+
 def load_volumes(dates, market_name, with_urls=False, is_devnet=False):
     url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
     url = url_market_pp+".amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
@@ -247,13 +249,14 @@ async def perp_lp_page(ch: ClearingHouse, env):
                 s2 = df['px']
                 findf = pd.concat({'cumPnl':s1,
                                 'px': s2,
-                                    'cumBase': s3,
-                                    'cumQuote': s4
+                                    'cumBase': s3.where(abs(s3) > EPSILON, np.nan),
+                                    'cumQuote': s4.where(abs(s4) > EPSILON, np.nan)
                                     },axis=1)
                 findf['cumPrice'] = -findf['cumQuote']/findf['cumBase']
                 fig = findf.plot()
                 st.plotly_chart(fig)
                 st.dataframe(df)
+                st.dataframe(findf)
 
 
     with tabs[2]:
