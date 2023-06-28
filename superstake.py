@@ -326,4 +326,36 @@ async def super_stake(clearing_house: ClearingHouse):
 
         # st.plotly_chart(fig2)
 
+    # with tabs[2]:
+    #     doit = st.radio('load "Super Stake SOL" users:', [True, False], horizontal=True)
 
+    #     if doit:
+    #         from solana.rpc.types import MemcmpOpts
+    #         from driftpy.clearing_house_user import ClearingHouseUser
+    #         from driftpy.types import User
+    #         from driftpy.math.margin import MarginCategory
+
+    #         all_users = ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4267, bytes='2i')])
+    #         if all_users is not None:
+    #             fuser: User = all_users[0].account
+    #             chu = ClearingHouseUser(
+    #                 ch, 
+    #                 authority=fuser.authority, 
+    #                 subaccount_id=fuser.sub_account_id, 
+    #                 use_cache=True
+    #             )
+    #             await chu.set_cache()
+    #             cache = chu.CACHE
+    #             for x in all_users:
+    #                 key = str(x.public_key)
+    #                 account: User = x.account
+
+    #                 chu = ClearingHouseUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, use_cache=True)
+    #                 cache['user'] = account # update cache to look at the correct user account
+    #                 await chu.set_cache(cache)
+    #                 margin_category = MarginCategory.INITIAL
+    #                 total_liability = await chu.get_margin_requirement(margin_category, None)
+    #                 spot_value = await chu.get_spot_market_asset_value(None, False, None)
+    #                 upnl = await chu.get_unrealized_pnl(False, None, None)
+    #                 total_asset_value = await chu.get_total_collateral(None)
+    #                 leverage = await chu.get_leverage()

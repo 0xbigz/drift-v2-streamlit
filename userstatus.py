@@ -4,6 +4,7 @@ import driftpy
 import pandas as pd 
 import numpy as np 
 import copy
+import plotly.express as px
 
 pd.options.plotting.backend = "plotly"
 
@@ -44,6 +45,8 @@ async def load_users(_ch_user_act, filt):
         all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='2')])        
     elif filt == 'Open Order':
         all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
+    elif filt == 'SuperStakeSOL':
+        all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
     else:
         all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4354, bytes='2')])
     return all_users
@@ -52,7 +55,7 @@ async def load_users(_ch_user_act, filt):
 async def userstatus_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
     s1, s2 = st.columns(2)
-    filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction'], index=1, horizontal=True)
+    filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction', 'SuperStakeSOL'], index=1, horizontal=True)
     oracle_distort = s2.slider('base oracle distortion:', .01, 2.0, 1.0, .1, help="alter non-stable token oracles by this factor multiple (default=1, no alteration)")
     tabs = st.tabs([filt.lower() + ' users', 'LPs', 'oracle scenario analysis'])
     all_users = await load_users(ch.program.account['User'], filt)
@@ -94,10 +97,10 @@ async def userstatus_page(ch: ClearingHouse):
             svault_pk = market.vault
             sv_amount = int((await conn.get_token_account_balance(svault_pk))['result']['value']['amount'])
             sv_amount /= (10**market.decimals)
-            px = ((await chu.get_spot_oracle_data(market)).price/1e6)
-            sv_amount *= px
-            spot_acct_dep += (market.deposit_balance * market.cumulative_deposit_interest/1e10)/(1e9)*px
-            spot_acct_bor -= (market.borrow_balance * market.cumulative_borrow_interest/1e10)/(1e9)*px
+            px1 = ((await chu.get_spot_oracle_data(market)).price/1e6)
+            sv_amount *= px1
+            spot_acct_dep += (market.deposit_balance * market.cumulative_deposit_interest/1e10)/(1e9)*px1
+            spot_acct_bor -= (market.borrow_balance * market.cumulative_borrow_interest/1e10)/(1e9)*px1
 
             aa += sv_amount
         
@@ -105,11 +108,11 @@ async def userstatus_page(ch: ClearingHouse):
         vamm_upnl = 0 
         for market_index in range(state.number_of_markets):
             market = await chu.get_perp_market(market_index)
-            px = ((await chu.get_perp_oracle_data(market)).price/1e6)
+            px1 = ((await chu.get_perp_oracle_data(market)).price/1e6)
             fee_pool = (market.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
             pnl_pool = (market.pnl_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
             vamm += pnl_pool + fee_pool
-            vamm_upnl -= market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm + market.amm.base_asset_amount_with_unsettled_lp)/1e9 * px
+            vamm_upnl -= market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm + market.amm.base_asset_amount_with_unsettled_lp)/1e9 * px1
 
         col11.metric('mkt tvl', f'${spot_acct_dep+spot_acct_bor:,.2f}')
         col3.metric('vamm tvl', f'${vamm:,.2f}', f'{vamm_upnl:,.2f} upnl')
@@ -130,6 +133,24 @@ async def userstatus_page(ch: ClearingHouse):
         st.write('bankruptcies:', ddd.sum())
         st.write(f'> spot: {sddd.sum():,.2f}, perp: {ddd.sum()-sddd.sum():,.2f}')
         col4.metric('vault tvl', f'${aa:,.2f}', f'{aa-(vamm+user_tvl):,.2f} excess')
+
+
+        new_accounts = df[df['sub_account_id']==0]
+        st.write(
+            len(new_accounts), 
+        'are subaccount id = 0', 
+        '($', 
+        stats_df.loc[new_accounts['public_key'].values]['spot_value'].sum() ,
+        ')')
+        st.write(len(stats_df[stats_df['spot_value']>0]), 'have a balance', '($',stats_df[stats_df['spot_value']>0].sum(),')')
+
+        df111 = pd.concat({
+            'leverage': (stats_df['total_liability']/stats_df['spot_value']),
+            'position_size': stats_df['spot_value'],
+            'position_size2': (stats_df['spot_value']+1).pipe(np.log),
+        },axis=1)
+        fig111 = px.scatter(df111, x='leverage', y='position_size', size='position_size2', size_max=10, color='leverage', log_y=True)
+        st.plotly_chart(fig111)
 
 
     with tabs[1]:
@@ -225,14 +246,27 @@ async def userstatus_page(ch: ClearingHouse):
 
 
     with tabs[2]:
-        omin, omax = st.slider(
+        scol, scc = st.columns([4,1])
+        omin, omax = scol.slider(
         'Select an oracle multiplier range',
         0.0, 10.0, (0.0, 2.0), step=.05)
+
+        only_perp_index = scc.selectbox('only perp', ([None] + list(range(0, state.number_of_markets))))
         oracle_distorts = [float(x)/10 for x in (list(np.linspace(omin, omax*10, 100)))]
         all_stats = {}
+
+        df1 = pd.DataFrame(chu.CACHE['perp_market_oracles'])
+        # with st.expander('market override:'):
+        #     edited_df = st.experimental_data_editor(df1)
+
         for oracle_distort_x in oracle_distorts:
-            stats_df, chunew = await all_user_stats(all_users, ch, oracle_distort_x, 
-                                                 pure_cache=copy.deepcopy(chu.CACHE))
+            pure_cache = copy.deepcopy(chu.CACHE)
+            stats_df, chunew = await all_user_stats(all_users, 
+                                                    ch, 
+                                                    oracle_distort_x, 
+                                                    pure_cache=pure_cache,
+                                                    only_perp_index=only_perp_index
+                                                    )
 
             stats_df['spot_value'] = stats_df['spot_value'].astype(float)
             stats_df['upnl'] = stats_df['upnl'].astype(float)
@@ -247,9 +281,16 @@ async def userstatus_page(ch: ClearingHouse):
             all_stats[oracle_distort_x] = [ddd.sum(), sddd.sum(), ddd.sum()-sddd.sum()]
 
 
-        fig = pd.DataFrame(all_stats, index=['bankruptcy', 'spot bankruptcy', 'perp bankruptcy']).T.abs().plot()
+        statdf = pd.DataFrame(all_stats, index=['bankruptcy', 'spot bankruptcy', 'perp bankruptcy']).T.abs()
+        nom = ""
+        if only_perp_index is not None:
+            nom = bytes(chu.CACHE['perp_markets'][only_perp_index].name).decode('utf-8').strip(' ')+" "
+            perp_market_account_if = chu.CACHE['perp_markets'][only_perp_index].insurance_claim
+            max_if_perp_payment = (perp_market_account_if.quote_max_insurance - perp_market_account_if.quote_settled_insurance )/1e6
+            statdf['max insurance claim'] = statdf['perp bankruptcy'].clip(0, max_if_perp_payment) + statdf['spot bankruptcy']
+        fig = statdf.plot()
         fig.update_layout(
-            title="Bankruptcy Risk",
+            title=nom+"Bankruptcy Risk",
             xaxis_title='oracle distortion %',
             yaxis_title="bankruptcy $",
         

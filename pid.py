@@ -42,7 +42,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
     
     col1, col2, col3, col4 = st.columns(4)
 
-    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', None], 2)
+    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', 'SuperStakeSOL', None], 3)
 
     all_users = None
 
@@ -50,8 +50,10 @@ async def show_pid_positions(clearing_house: ClearingHouse):
         try:
             if see_user_breakdown == 'All':
                 all_users = await ch.program.account['User'].all()
-            else:
+            elif see_user_breakdown == 'Active':
                 all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+            elif see_user_breakdown == 'SuperStakeSOL':
+                all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
             
         except Exception as e:
             print('ERRRRR:', e)
@@ -161,6 +163,10 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 dd['position_index'] = idx
                 dd['authority'] = str(x.account.authority)
                 dd['name'] = name
+                dd['spot_value'] = spot_value/QUOTE_PRECISION
+                dd['total_liability'] = total_liability / QUOTE_PRECISION
+                dd['total_asset_value'] = total_asset_value / QUOTE_PRECISION
+                dd['leverage'] = leverage / MARGIN_PRECISION
 
                 if pos.scaled_balance != 0:
                     spot_market = await chu.get_spot_market(pos.market_index)
@@ -450,6 +456,8 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                         'public_key',
                         'balance_type',
                         'scaled_balance',
+                        'spot_value',
+                        'leverage',
                         'cumulative_deposits',
                         'open_orders',
                         'liq_price_delta',
@@ -459,6 +467,14 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                         columns.pop(columns.index('liq_price_delta'))
 
                     st.dataframe(df1[columns])
+
+                    df111 = pd.concat({
+                                'leverage': (df1['leverage']).astype(float)*4.5,
+                                'position_size': df1['spot_value'].astype(float),
+                                'position_size2': (df1['spot_value'].astype(float)+1).pipe(np.log),
+                            },axis=1)
+                    fig111 = px.scatter(df111, x='leverage', y='position_size', size='position_size2', size_max=20, color='position_size', log_y=True)
+                    st.plotly_chart(fig111)
 
                     total_cumm_deposits = df1['cumulative_deposits'].sum()
 
