@@ -74,24 +74,34 @@ async def imf_page(clearing_house: ClearingHouse):
 
     liability_wgt_n = init_liability_wgt
 
-
+    
     if(imf!=0):
         liability_wgt_n = liability_wgt_n * .8 
 
-    dd = np.sqrt(np.abs(base))
-    res = max(init_liability_wgt, liability_wgt_n + imf * dd)
-    st.text('max('+str(liability_wgt_n)+' + '+ str(imf) + ' * ' + str(dd)+', '+str(init_liability_wgt)+')')
+    ddsize = np.sqrt(np.abs(base))
+    res = max(init_liability_wgt, liability_wgt_n + imf * ddsize)
+    st.text('max('+str(liability_wgt_n)+' + '+ str(imf) + ' * ' + str(ddsize)+', '+str(init_liability_wgt)+')')
     st.text('='+str(res))
     st.text('(max leverage= ' + str(1/init_liability_wgt) + ' -> ' + str(1/res)+'x )')
 
+    is_spot = False
+    if dd == 'spot':
+        is_spot = True
+    st.write('is_spot', is_spot)
 
+    def calc_size_liab(wgt, imf, base, is_spot):
+        if is_spot:
+            wgt += 1
 
-    def calc_size_liab(wgt, imf, base):
         liability_wgt_n = wgt
         if(imf != 0):
             liability_wgt_n = wgt * .8 #/(1/(imf/10000))
         dd = np.sqrt(np.abs(base))
         res = max(wgt, liability_wgt_n + imf * dd)
+
+        if is_spot:
+            res -= 1
+
         return res
 
     if oracle_px != 0:
@@ -108,14 +118,14 @@ async def imf_page(clearing_house: ClearingHouse):
 
     index = np.linspace(0, oo, step)
     df = pd.Series([
-        1/calc_size_liab(init_liability_wgt, imf, x) 
+        1/calc_size_liab(init_liability_wgt, imf, x, is_spot) 
         for x in index
         ]
     )
     df.index = index
 
     df2 = pd.Series([
-        1/calc_size_liab(maint_liability_wgt, imf, x) 
+        1/calc_size_liab(maint_liability_wgt, imf, x, is_spot) 
         for x in index
         ]
     )

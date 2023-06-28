@@ -92,6 +92,8 @@ def apy_to_apr(apy, compounds_per_year):
     return est_apr
 
 async def super_stake(clearing_house: ClearingHouse):
+    c1, c2, c3 = st.columns(3)
+
     ch = clearing_house
     # state = await get_state_account(ch.program)
     msol_market = await get_spot_market_account(ch.program, 2)
@@ -104,7 +106,6 @@ async def super_stake(clearing_house: ClearingHouse):
     msol_price, stake_apr = get_stake_yield()
     stake_apr = apy_to_apr(stake_apr, int(365/2))
 
-    c1, c2, c3 = st.columns(3)
     collat = c1.number_input('mSOL:', min_value=1e-9, value=1.0, step=1.0)
     
     msol_imf = msol_market.imf_factor/1e6
@@ -129,8 +130,8 @@ async def super_stake(clearing_house: ClearingHouse):
 
     msol_init_awgt = calc_size_ast(msol_init_awgt, msol_imf, ss_msol_dep)
     msol_maint_awgt = calc_size_ast(msol_maint_awgt, msol_imf, ss_msol_dep)
-    sol_init_lwgt = calc_size_liab(sol_init_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
-    sol_maint_lwgt = calc_size_liab(sol_maint_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
+    sol_init_lwgt = calc_size_liab(sol_init_lwgt, sol_imf, abs(ss_sol_bor))
+    sol_maint_lwgt = calc_size_liab(sol_maint_lwgt, sol_imf, abs(ss_sol_bor))
 
     msol_dep, msol_bor = get_ir_curves(msol_market, ss_msol_dep)
 
@@ -226,8 +227,8 @@ async def super_stake(clearing_house: ClearingHouse):
 
                 msol_init_awgt = calc_size_ast(msol_init_awgt, msol_imf, ss_msol_dep)
                 msol_maint_awgt = calc_size_ast(msol_maint_awgt, msol_imf, ss_msol_dep)
-                sol_init_lwgt = calc_size_liab(sol_init_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
-                sol_maint_lwgt = calc_size_liab(sol_maint_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
+                sol_init_lwgt = calc_size_liab(sol_init_lwgt, sol_imf, abs(ss_sol_bor))
+                sol_maint_lwgt = calc_size_liab(sol_maint_lwgt, sol_imf, abs(ss_sol_bor))
 
                 divup = abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep) - msol_price)*100
 
@@ -251,8 +252,8 @@ async def super_stake(clearing_house: ClearingHouse):
 
                 msol_init_awgt = calc_size_ast(msol_init_awgt, msol_imf, ss_msol_dep)
                 msol_maint_awgt = calc_size_ast(msol_maint_awgt, msol_imf, ss_msol_dep)
-                sol_init_lwgt = calc_size_liab(sol_init_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
-                sol_maint_lwgt = calc_size_liab(sol_maint_lwgt - 1, sol_imf, abs(ss_sol_bor)) + 1
+                sol_init_lwgt = calc_size_liab(sol_init_lwgt, sol_imf, abs(ss_sol_bor))
+                sol_maint_lwgt = calc_size_liab(sol_maint_lwgt, sol_imf, abs(ss_sol_bor))
 
 
                 divup = abs((sol_maint_lwgt*ss_sol_bor)/(msol_maint_awgt*ss_msol_dep) - msol_price)*100
