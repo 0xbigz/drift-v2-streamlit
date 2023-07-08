@@ -77,13 +77,21 @@ async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None, on
             cache['user'] = account # update cache to look at the correct user account
             await chu.set_cache(cache)
             margin_category = MarginCategory.INITIAL
-            total_liability = await chu.get_margin_requirement(margin_category, None)
+            spot_liab = await chu.get_spot_market_liability()
+            perp_liab = await chu.get_total_perp_liability()
+
+            margin_req = await chu.get_margin_requirement(margin_category, None)
             spot_value = await chu.get_spot_market_asset_value(None, False, None)
             upnl = await chu.get_unrealized_pnl(True, only_perp_index, None)
 
-            res.append([total_liability/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION])
+            res.append([spot_liab/QUOTE_PRECISION, perp_liab/QUOTE_PRECISION, margin_req/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION])
 
-        return pd.DataFrame(res, columns=['total_liability', 'spot_value', 'upnl'], index=[x.public_key for x in all_users]), chu
+        res = pd.DataFrame(res, columns=['spot_liability', 'perp_liability', 'margin_requirement', 'spot_value', 'upnl'], index=[x.public_key for x in all_users])
+        res['total_liability'] = res['perp_liability']+res['spot_liability']
+
+
+        return res, chu
+    
 
 
 

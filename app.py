@@ -41,6 +41,8 @@ from userstatus import userstatus_page
 from perpLP import perp_lp_page
 from useractivity import show_user_activity
 from superstake import super_stake
+from vamm import vamm
+
 # from network import show_network
 from api import show_api
 def main():
@@ -82,7 +84,8 @@ def main():
      'User-Status',
      'Config',
      'API',
-     'SuperStake'
+     'SuperStake',
+     'vAMM',
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -205,7 +208,9 @@ def main():
     elif tab.lower() == 'user-volume':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_volume(clearing_house))
-
+    elif tab.lower() == 'vamm':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(vamm(clearing_house))
     # elif tab.lower() == 'network':
     #     loop = asyncio.new_event_loop()
     #     loop.run_until_complete(show_network(clearing_house))
