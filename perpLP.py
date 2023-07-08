@@ -245,22 +245,6 @@ async def perp_lp_page(ch: ClearingHouse, env):
                 df.index = [pd.to_datetime(int(x*1e9)) for x in df.ts]
                 df =  df.sort_index()
                 df['px'] = (-df['deltaQuoteAssetAmount']/df['deltaBaseAssetAmount'].replace(0, np.nan))
-<<<<<<< Updated upstream
-                s1 = df['pnl'].cumsum() # pnl
-                s3 = df['deltaBaseAssetAmount'].cumsum()
-                s4 = df['deltaQuoteAssetAmount'].cumsum()
-                s2 = df['px']
-                findf = pd.concat({'cumPnl':s1,
-                                'px': s2,
-                                    'cumBase': s3.where(abs(s3) > EPSILON, np.nan),
-                                    'cumQuote': s4.where(abs(s4) > EPSILON, np.nan)
-                                    },axis=1)
-                findf['cumPrice'] = -findf['cumQuote']/findf['cumBase']
-                fig = findf.plot()
-                st.plotly_chart(fig)
-                st.dataframe(df)
-                st.dataframe(findf)
-=======
                 # st.write(df)
                 for mi1 in df.marketIndex.unique():
                     df1 = df[df.marketIndex==mi1]
@@ -293,7 +277,6 @@ async def perp_lp_page(ch: ClearingHouse, env):
                     )
                     st.plotly_chart(fig)
                     st.dataframe(df1)
->>>>>>> Stashed changes
 
 
     with tabs[2]:
