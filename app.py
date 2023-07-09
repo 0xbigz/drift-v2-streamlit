@@ -41,6 +41,9 @@ from userstatus import userstatus_page
 from perpLP import perp_lp_page
 from useractivity import show_user_activity
 from superstake import super_stake
+from vamm import vamm
+from funding_history import funding_history
+
 # from network import show_network
 from api import show_api
 def main():
@@ -82,7 +85,9 @@ def main():
      'User-Status',
      'Config',
      'API',
-     'SuperStake'
+     'SuperStake',
+     'vAMM',
+     'FundingHistory',
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -205,7 +210,9 @@ def main():
     elif tab.lower() == 'user-volume':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(show_user_volume(clearing_house))
-
+    elif tab.lower() == 'vamm':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(vamm(clearing_house))
     # elif tab.lower() == 'network':
     #     loop = asyncio.new_event_loop()
     #     loop.run_until_complete(show_network(clearing_house))
@@ -243,6 +250,9 @@ def main():
         loop = asyncio.new_event_loop()
         loop.run_until_complete(super_stake(clearing_house))
 
+    elif tab.lower() == 'fundinghistory':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(funding_history(clearing_house, env))
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}

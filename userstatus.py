@@ -47,6 +47,8 @@ async def load_users(_ch_user_act, filt):
         all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
     elif filt == 'SuperStakeSOL':
         all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
+    elif filt == 'SuperStakeSOLStrict':
+        all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])        
     else:
         all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4354, bytes='2')])
     return all_users
@@ -55,17 +57,41 @@ async def load_users(_ch_user_act, filt):
 async def userstatus_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
     s1, s2 = st.columns(2)
-    filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction', 'SuperStakeSOL'], index=1, horizontal=True)
+    filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction', 'SuperStakeSOL', 'SuperStakeSOLStrict'], index=1, horizontal=True)
     oracle_distort = s2.slider('base oracle distortion:', .01, 2.0, 1.0, .1, help="alter non-stable token oracles by this factor multiple (default=1, no alteration)")
     tabs = st.tabs([filt.lower() + ' users', 'LPs', 'oracle scenario analysis'])
     all_users = await load_users(ch.program.account['User'], filt)
 
-    df = pd.DataFrame([x.account.__dict__ for x in all_users])
-    df['public_key'] = [str(x.public_key) for x in all_users]
 
     if oracle_distort == 1:
         oracle_distort = None
 
+    def is_proper_super_staker(x):
+        usdc_dep = x.account.spot_positions[0]
+        msol_dep = x.account.spot_positions[1]
+        sol_bor = x.account.spot_positions[2]
+        no_perp = x.account.perp_positions[0]
+
+        if no_perp.base_asset_amount != 0 or no_perp.quote_asset_amount != 0 or no_perp.open_orders != 0 or no_perp.lp_shares != 0:
+            return False
+        
+        if usdc_dep.scaled_balance != 0:
+            return False
+        
+        if msol_dep.market_index != 2:
+            return False
+        
+        if sol_bor.market_index != 1:
+            return False
+        
+        return True
+
+
+    if filt == 'SuperStakeSOLStrict':
+        all_users = [x for x in all_users if is_proper_super_staker(x)]
+
+    df = pd.DataFrame([x.account.__dict__ for x in all_users])
+    df['public_key'] = [str(x.public_key) for x in all_users]
     stats_df, chu = await all_user_stats(all_users, ch, oracle_distort)
 
     # with st.expander('ref accounts'):
@@ -145,11 +171,15 @@ async def userstatus_page(ch: ClearingHouse):
         st.write(len(stats_df[stats_df['spot_value']>0]), 'have a balance', '($',stats_df[stats_df['spot_value']>0].sum(),')')
 
         df111 = pd.concat({
-            'leverage': (stats_df['total_liability']/stats_df['spot_value']),
-            'position_size': stats_df['spot_value'],
+            'leverage': ((stats_df['total_liability']+stats_df['spot_value'])/stats_df['spot_value']),
+            'notional_size': stats_df['spot_value'],
             'position_size2': (stats_df['spot_value']+1).pipe(np.log),
         },axis=1)
-        fig111 = px.scatter(df111, x='leverage', y='position_size', size='position_size2', size_max=10, color='leverage', log_y=True)
+        st.write(df111)
+        dod = df111.sum()
+        dod = ((stats_df['total_liability'].sum()+stats_df['spot_value'].sum())/stats_df['spot_value'].sum())
+        fig111 = px.scatter(df111, x='leverage', y='notional_size', size='position_size2', size_max=10, log_y=True)
+        st.write(dod)
         st.plotly_chart(fig111)
 
 
@@ -267,7 +297,7 @@ async def userstatus_page(ch: ClearingHouse):
                                                     pure_cache=pure_cache,
                                                     only_perp_index=only_perp_index
                                                     )
-
+            
             stats_df['spot_value'] = stats_df['spot_value'].astype(float)
             stats_df['upnl'] = stats_df['upnl'].astype(float)
             ddd = (stats_df['spot_value']+stats_df['upnl'])

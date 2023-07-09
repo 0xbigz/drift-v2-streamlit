@@ -93,8 +93,10 @@ async def perp_lp_page(ch: ClearingHouse, env):
                            )
     user_accounts_w_lp = []
     if user_lookup != 'Never':
-        # all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
-        all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4267, bytes='2i')])
+        if user_lookup == 'Ever':
+            all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+        else:
+            all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4267, bytes='2i')])
         # with tabs[0]:
         st.write('found', len(all_users), 'current/former LPs')
         df = pd.DataFrame([x.account.__dict__ for x in all_users])
@@ -243,20 +245,38 @@ async def perp_lp_page(ch: ClearingHouse, env):
                 df.index = [pd.to_datetime(int(x*1e9)) for x in df.ts]
                 df =  df.sort_index()
                 df['px'] = (-df['deltaQuoteAssetAmount']/df['deltaBaseAssetAmount'].replace(0, np.nan))
-                s1 = df['pnl'].cumsum() # pnl
-                s3 = df['deltaBaseAssetAmount'].cumsum()
-                s4 = df['deltaQuoteAssetAmount'].cumsum()
-                s2 = df['px']
-                findf = pd.concat({'cumPnl':s1,
-                                'px': s2,
-                                    'cumBase': s3.where(abs(s3) > EPSILON, np.nan),
-                                    'cumQuote': s4.where(abs(s4) > EPSILON, np.nan)
-                                    },axis=1)
-                findf['cumPrice'] = -findf['cumQuote']/findf['cumBase']
-                fig = findf.plot()
-                st.plotly_chart(fig)
-                st.dataframe(df)
-                st.dataframe(findf)
+                # st.write(df)
+                for mi1 in df.marketIndex.unique():
+                    df1 = df[df.marketIndex==mi1]
+                    s1 = df1['pnl'].cumsum() # pnl
+                    s3 = df1['deltaBaseAssetAmount'].cumsum()
+                    s4 = df1['deltaQuoteAssetAmount'].cumsum()
+                    s2 = df1['px']
+
+                    total_base = df1['deltaBaseAssetAmount'].sum()
+                    total_quote = df1['deltaQuoteAssetAmount'].sum()
+                    total_price = -total_quote/total_base
+
+                    dir = 'bought'
+                    if total_base < 0:
+                        dir = 'sold'
+                    
+                    st.write(dir, total_base, '@ $', total_price)
+
+                    findf = pd.concat({'cumPnl':s1,
+                                    'px': s2,
+                                        'cumBase': s3,
+                                        'cumQuote': s4
+                                        },axis=1)
+                    findf['cumPrice'] = -findf['cumQuote']/findf['cumBase']
+                    fig = findf.plot()
+                    fig.update_layout( 
+                        title='Perp Market Index='+str(mi1),
+                        xaxis_title="date",
+                        yaxis_title="value",
+                    )
+                    st.plotly_chart(fig)
+                    st.dataframe(df1)
 
 
     with tabs[2]:
