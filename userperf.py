@@ -34,6 +34,24 @@ import time
 from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
 import plotly.graph_objs as go
+import requests
+
+def load_deposit_history(userkey, source='api'):
+    if source == 'api':
+        url = 'https://mainnet-beta.api.drift.trade/deposits/userAccounts/?userPublicKeys='+userkey+'&pageIndex=0&pageSize=1000&sinceId=&sinceTs='
+        
+        st.warning(url)
+        res = requests.get(url).json()['data']['records']
+        df = pd.concat([pd.DataFrame(x) for x in res])
+        for col in ['amount', 'oraclePrice', 'marketDepositBalance', 'marketWithdrawBalance', 'marketCumulativeDepositInterest',
+                    'marketCumulativeBorrowInterest', 'totalDepositsAfter', 'totalWithdrawsAfter',]:
+            df[col] = df[col].astype(float)
+
+        return df
+    
+    return None
+
+
 
 
 def make_buy_sell_chart(usr_to_show):
@@ -357,14 +375,8 @@ async def show_user_perf(clearing_house: ClearingHouse):
         dates = pd.date_range(start_date, end_date)
         for user_authority in user_authorities:
             user_authority_pk = PublicKey(user_authority)
-            # print(user_stats)
             user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
-            # chu = ClearingHouseUser(
-            #     ch, 
-            #     authority=user_authority_pk, 
-            #     subaccount_id=0, 
-            #     use_cache=False
-            # )
+
             for sub_id in range(user_stat.number_of_sub_accounts_created):
                 print('sub_id:', sub_id)
 
@@ -374,26 +386,72 @@ async def show_user_perf(clearing_house: ClearingHouse):
                     sub_id)
 
                 if sub_id==int(sub):
-                    # try:
+                    chu = ClearingHouseUser(
+                        ch, 
+                        authority=user_authority_pk, 
+                        subaccount_id=sub_id, 
+                        use_cache=True
+                    )
+                    await chu.set_cache()
 
-                    user_acct = await get_user_account(clearing_house.program, user_authority_pk, sub_id)
+                    
+                    user_acct = await chu.get_user()
                     nom = bytes(user_acct.name).decode('utf-8')
+
                     st.write('"'+nom+'"')
-                    tabs = st.tabs(['per market', 'all time stats'])
+                    tabs = st.tabs(['trades', 'deposits', 'all time stats'])
+
+
+                    atnd_token_current_value = 0
                     with tabs[1]:
+                        df = load_deposit_history(str(user_account_pk))
+                        df['amount2'] = df['amount'] * df['direction'].apply(lambda x: -1 if x!='deposit' else 1)
+                        df2 = df.pivot_table(index='ts', columns='marketIndex', values='amount2')
+
+                        for col in df2.columns:
+                            if col in [1,2]: #msol/sol
+                                df2[col]/=1e9
+                            else:
+                                df2[col]/=1e6
+
+                        df2.index = pd.to_datetime((df2.index.astype(int)*1e9).astype(int),  utc=True)
+                        net_dep_amounts = df2.fillna(0).sum()
+                        ccs = st.columns(len(net_dep_amounts))
+                        for i,c in enumerate(ccs):  
+                            # atnd_token_ts_value += net_dep_amounts.iloc[i] * 
+                            mi = net_dep_amounts.index[i]
+                            spot_market = await chu.get_spot_market(mi)
+                            current_price = (await chu.get_spot_oracle_data(spot_market)).price/1e6
+                            atnd_token_current_value += net_dep_amounts.iloc[i] * current_price
+                            c.metric('net deposit tokens (market_index='+str(mi)+')', net_dep_amounts.iloc[i])
+
+
+
+                        st.plotly_chart(df2.fillna(0).cumsum().plot())
+                        # st.write(df.sum())
+                        # st.plotly_chart(df.plot())
+
+                    with tabs[2]:
                         atnd = (user_acct.total_deposits - user_acct.total_withdraws)/1e6
                         atpp = user_acct.settled_perp_pnl/1e6
                         atfp = user_acct.cumulative_perp_funding/1e6
                         atsf = user_acct.cumulative_spot_fees/1e6
 
-
                         atsp =  atpp + atsf
                         s1,s2,s3,s4 = st.columns(4)
-                        s1.metric('all time net deposits', 
+                        tc =(await chu.get_total_collateral())/1e6
+                        s1.metric(
+                            'Account Value:', 
+                        f'${tc:,.3f}', 
+                        f'{tc - atnd_token_current_value:,.3f} all time pnl')
+                        
+                        s1.metric('Net Deposits ($ @ ts)', 
                                   f'${atnd:,.3f}', 
                                   f'{user_acct.total_deposits/1e6:,.3f} lifetime deposits')
 
-
+                        s1.metric('Net Deposits ($ now)', 
+                                  f'${atnd_token_current_value:,.3f}',
+                                  )
                         gains_since_inception = {}
                         for idx in range(len(user_acct.spot_positions)):
                             spot_pos = user_acct.spot_positions[idx]
@@ -414,7 +472,7 @@ async def show_user_perf(clearing_house: ClearingHouse):
                                     )
 
                         s1,s2,s3,s4 = st.columns(4)
-                        s1.metric('all time settled pnl:', f'${atsp:,.3f}', f'{atpp:,.3f} perp pnl')
+                        s1.metric('all time pnl + fees:', f'${atsp:,.3f}', f'{atpp:,.3f} perp pnl')
                         # s2.metric('all time perp pnl:', atpp)
                         s3.metric('all time funding pnl:', atfp)
                         s4.metric('all time spot fees:', -atsf)
@@ -430,11 +488,15 @@ async def show_user_perf(clearing_house: ClearingHouse):
                         mtcol, micol, srccol = st.columns(3)
                         mt = mtcol.selectbox('market type:', ['perp', 'spot', 'all'])
                         mi = None
+                        sources = ['trades', 'settledPnl', 'all']
+
                         if mt == 'perp':
                             mi = micol.selectbox('market index:', range(0, state.number_of_markets))
                         elif mt == 'spot':
                             mi = micol.selectbox('market index:', range(1, state.number_of_spot_markets))
-                        source = srccol.selectbox('source:', ['trades', 'settledPnl', 'all'])
+                            sources = ['trades']
+
+                        source = srccol.selectbox('source:', sources)
 
                         if source == 'trades' or source == 'all':
                             df, urls = load_user_trades(dates, str(user_account_pk), True)
@@ -534,17 +596,22 @@ async def show_user_perf(clearing_house: ClearingHouse):
                                 mis = list(sdf_tot0.columns.levels[0].unique())
                             for mi in mis:
                                 sdf_tot = sdf_tot0[mi]
+                                sdf_tot.index = pd.to_datetime((sdf_tot.index*1e9).astype(int), utc=True)
+                                sdf_tot = sdf_tot.loc[dates[0]:dates[1]]
+
                                 # st.dataframe(sdf_tot)
                                 sdf_tot['costBasisAfter'] = (-(sdf_tot['quoteEntryAmount']) / sdf_tot['baseAssetAmount'] ).fillna(0)
                                 sdf_tot['cumulativePnl'] = sdf_tot['pnl'].cumsum()
                                 sdf_tot['notional'] = (sdf_tot['baseAssetAmount']*sdf_tot['settlePrice'])
 
 
-                                st.dataframe(sdf_tot)
-
                                 sdf_tot['entryPnl'] = sdf_tot['notional'] + sdf_tot['quoteEntryAmount']
                                 # sdf_tot.columns = ['-'.join([str(i) for i in x]) for x in sdf_tot.columns]
-                                sdf_tot.index = pd.to_datetime((sdf_tot.index*1e9).astype(int), utc=True)
+                                m1, m2 = st.columns(2)
+
+                                m1.metric('pnl:', sdf_tot['pnl'].sum())
+                                st.dataframe(sdf_tot)
+
                                 st.plotly_chart(sdf_tot.plot())
                         
 

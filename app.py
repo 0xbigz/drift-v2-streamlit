@@ -42,6 +42,7 @@ from perpLP import perp_lp_page
 from useractivity import show_user_activity
 from superstake import super_stake
 from vamm import vamm
+from funding_history import funding_history
 
 # from network import show_network
 from api import show_api
@@ -86,6 +87,7 @@ def main():
      'API',
      'SuperStake',
      'vAMM',
+     'FundingHistory',
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -248,6 +250,9 @@ def main():
         loop = asyncio.new_event_loop()
         loop.run_until_complete(super_stake(clearing_house))
 
+    elif tab.lower() == 'fundinghistory':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(funding_history(clearing_house, env))
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
