@@ -46,6 +46,9 @@ from funding_history import funding_history
 
 # from network import show_network
 from api import show_api
+from userdataraw import userdataraw
+from vaults import vaults
+
 def main():
     st.set_page_config(
         'Drift v2',
@@ -88,6 +91,8 @@ def main():
      'SuperStake',
      'vAMM',
      'FundingHistory',
+     'UserDataRaw',
+     'Vaults',
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -249,10 +254,17 @@ def main():
     elif tab.lower() == 'superstake':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(super_stake(clearing_house))
+    elif tab.lower() == 'userdataraw':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(userdataraw(clearing_house))
 
     elif tab.lower() == 'fundinghistory':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(funding_history(clearing_house, env))
+
+    elif tab.lower() == 'vaults':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(vaults(clearing_house, env))
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
