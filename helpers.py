@@ -82,11 +82,15 @@ async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None, on
 
             margin_req = await chu.get_margin_requirement(margin_category, None)
             spot_value = await chu.get_spot_market_asset_value(None, False, None)
+            msol_position = await chu.get_spot_market_tokens(2)
+            sol_position = await chu.get_spot_market_tokens(1)
             upnl = await chu.get_unrealized_pnl(True, only_perp_index, None)
 
-            res.append([spot_liab/QUOTE_PRECISION, perp_liab/QUOTE_PRECISION, margin_req/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION])
+            res.append([spot_liab/QUOTE_PRECISION, perp_liab/QUOTE_PRECISION, margin_req/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION, msol_position/1e9, sol_position/1e9])
 
-        res = pd.DataFrame(res, columns=['spot_liability', 'perp_liability', 'margin_requirement', 'spot_value', 'upnl'], index=[x.public_key for x in all_users])
+        indices = [x.public_key for x in all_users]
+        indices = [x.account.authority for x in all_users]
+        res = pd.DataFrame(res, columns=['spot_liability', 'perp_liability', 'margin_requirement', 'spot_value', 'upnl', 'msol_balance', 'sol_balance'], index=indices)
         res['total_liability'] = res['perp_liability']+res['spot_liability']
 
 

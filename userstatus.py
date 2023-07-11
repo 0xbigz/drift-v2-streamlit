@@ -60,8 +60,12 @@ async def userstatus_page(ch: ClearingHouse):
     filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction', 'SuperStakeSOL', 'SuperStakeSOLStrict'], index=1, horizontal=True)
     oracle_distort = s2.slider('base oracle distortion:', .01, 2.0, 1.0, .1, help="alter non-stable token oracles by this factor multiple (default=1, no alteration)")
     tabs = st.tabs([filt.lower() + ' users', 'LPs', 'oracle scenario analysis'])
+
+
+    
     all_users = await load_users(ch.program.account['User'], filt)
 
+    st.write('slot', await ch.program.provider.connection.get_slot())
 
     if oracle_distort == 1:
         oracle_distort = None
@@ -181,6 +185,9 @@ async def userstatus_page(ch: ClearingHouse):
         fig111 = px.scatter(df111, x='leverage', y='notional_size', size='position_size2', size_max=10, log_y=True)
         st.write(dod)
         st.plotly_chart(fig111)
+
+
+        all_users
 
 
     with tabs[1]:
