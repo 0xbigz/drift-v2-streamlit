@@ -174,7 +174,7 @@ async def userstatus_page(ch: ClearingHouse):
             'leverage': ((stats_df['total_liability']+stats_df['spot_value'])/stats_df['spot_value']),
             'notional_size': stats_df['spot_value'],
             'position_size2': (stats_df['spot_value']+1).pipe(np.log),
-        },axis=1)
+        },axis=1).fillna(0)
         st.write(df111)
         dod = df111.sum()
         dod = ((stats_df['total_liability'].sum()+stats_df['spot_value'].sum())/stats_df['spot_value'].sum())
