@@ -82,7 +82,7 @@ async def vaults(ch: ClearingHouse, env):
             ser = pd.Series(dd, name=x.public_key)
             res.append(ser)
         if len(res):
-            res = pd.concat(res)
+            res = pd.concat(res,axis=1)
             vault_df = res
             st.dataframe(res)
 
@@ -95,7 +95,7 @@ async def vaults(ch: ClearingHouse, env):
             ser = pd.Series(dd, name=x.public_key)
             res.append(ser)
         if len(res):
-            res = pd.concat(res)
+            res = pd.concat(res, axis=1)
             vault_dep_def = res
             st.dataframe(res) 
    
@@ -104,11 +104,13 @@ async def vaults(ch: ClearingHouse, env):
         s1.metric('number of vaults:', len(all_vaults), str(len(all_vault_deps))+' vault depositor(s)')
         chu = None
         if len(vault_df):
-            vu = [PublicKey(x) for x in vault_df.loc[['user']].tolist()]
+            vu = [PublicKey(x) for x in vault_df.loc['user'].values]
             # st.write(vu)
             vault_users = await ch.program.account["User"].fetch_multiple(vu)
             from driftpy.clearing_house_user import ClearingHouseUser
             fuser = vault_users[0]
+            # st.write(vault_users)
+            # st.write(fuser)
 
             chu = ClearingHouseUser(
                 ch, 
