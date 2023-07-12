@@ -84,6 +84,7 @@ async def vaults(ch: ClearingHouse, env):
         if len(res):
             res = pd.concat(res,axis=1)
             vault_df = res
+            vault_df = vault_df.T.sort_values(by='init_ts', ascending=False).T
             st.dataframe(res)
 
     
@@ -104,7 +105,7 @@ async def vaults(ch: ClearingHouse, env):
         s1.metric('number of vaults:', len(all_vaults), str(len(all_vault_deps))+' vault depositor(s)')
         chu = None
         if len(vault_df):
-            vu = [PublicKey(x) for x in vault_df.loc['user'].values]
+            vu = [PublicKey(x) for x in vault_df.T.sort_values(by='init_ts', ascending=False).T.loc['user'].values]
             # st.write(vu)
             vault_users = await ch.program.account["User"].fetch_multiple(vu)
             from driftpy.clearing_house_user import ClearingHouseUser
@@ -131,8 +132,49 @@ async def vaults(ch: ClearingHouse, env):
                 chu.CACHE = cache
 
                 nom = bytes(vault_user.name).decode('utf-8').strip(' ')
+
+                dat = vault_df.iloc[:,i]
+
+                max_tokens = None
+                if float(dat.loc['spot_market_index']) == 0:
+                    max_tokens = float(dat.loc['max_tokens'])/1e6
+
                 equity = (await chu.get_spot_market_asset_value())/1e6
-                st.markdown(f"> [{nom}](https://app.drift.trade/?authority={vault_user.authority}): ${equity}")
+                with st.expander(f"> {nom}: ${equity:,.2f}/{max_tokens:,.2f}"):
+                    st.markdown(f'balance: `${equity:,.2f}` [[web ui](https://app.drift.trade/?authority={vault_user.authority})]')
+
+                    prof_share = float(dat.loc['profit_share'])/1e4
+                    mang_share = float(dat.loc['management_fee'])/1e4
+                    st.write(f'fee structure: `{mang_share:,.2f}% / {prof_share:,.2f}%` (management / profit fee)')
+                    if float(dat.loc['total_shares']) != 0:
+                        user_owned_frac = float(dat.loc['user_shares'])/float(dat.loc['total_shares'])
+                        st.write(f'user-owned: `${equity*user_owned_frac:,.2f}`')
+
+
+                        this_vault_deps = vault_dep_def.T[vault_dep_def.T['vault'].astype(str)==str(vault_user.authority)]\
+                            .sort_values('vault_shares', ascending=True).T
+                        # st.write(this_vault_deps)
+                        for j in range(len(this_vault_deps.columns)):
+                            tv_dep = this_vault_deps.iloc[:,j]
+                            # st.write(tv_dep)
+                            tv_nom = tv_dep.loc['authority'][:5]+'...'
+
+                            tuser_owned_frac = float(tv_dep.loc['vault_shares'])/float(dat.loc['total_shares'])
+                            tcur_val = equity*tuser_owned_frac
+                            tpnl = tcur_val - float(tv_dep.loc['net_deposits'])/1e6
+                            tprof_fees = float(tv_dep.loc['cumulative_profit_share_amount'])/1e6 * prof_share/1e2
+                            st.write(f'> {tv_nom}-owned: `${tcur_val:,.3f}` | pnl = `${tpnl:,.3f}` | u.b. profit fees: `${tprof_fees:,.3f}`')
+
+                        st.write(f'manager-owned: `${equity - equity*user_owned_frac:,.2f}` ')
+
+                        dd = float(dat.loc['manager_total_profit_share'])/1e6
+                        dd2 = float(dat.loc['manager_total_fee'])/1e6
+
+                        mdep = float(dat.loc['manager_total_deposits'])/1e6
+                        mwit = float(dat.loc['manager_total_withdraws'])/1e6
+
+                        st.write(f'> manager net: `${mdep} - ${mwit}`')
+                        st.write(f'> manager gains: `${dd2} + ${dd}`')
                 # st.write(vault_user)
                 # st.write(f"fees: {vault_df.iloc[:,i]}%")# / {vault_df.iloc['profit_share',i]/1e4}% ")
         # st.write(all_vaults[0])
