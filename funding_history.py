@@ -36,15 +36,15 @@ from driftpy.addresses import *
 # using time module
 import time
 import plotly.express as px
+now_ts = datetime.datetime.now().timestamp()
 
 
 
 async def funding_history(ch: ClearingHouse, env):
-
+    state = await get_state_account(ch.program)
     m1, m2, m3 = st.columns(3)
-    mi = m1.selectbox('perp market index:', list(range(0, 11)))
+    mi = m1.selectbox('perp market index:', list(range(0, state.number_of_markets)))
 
-    now_ts = datetime.datetime.now().timestamp()
     end = m3.number_input('end ts:', value=now_ts)
     start = m2.number_input('start ts:', value=now_ts-60*60*24*7)
 
@@ -55,14 +55,19 @@ async def funding_history(ch: ClearingHouse, env):
     tabs = st.tabs(['rates', 'twaps', 'raw'])
 
     with tabs[0]:
-        r1, r2 = st.columns(2)
+        r1, r2, r3 = st.columns(3)
         unit = r1.radio('unit:', ['$', '%'], horizontal=True)
         hor = r2.radio('rate extrapolation:', ['hourly', 'daily', 'annual'], horizontal=True)
+        iscum = r3.radio('show cumulative:', [True, False], index=1, horizontal=True)
+
         rate_df = df.pivot_table(index='ts', columns='marketIndex', values='fundingRate')
         rate_df = rate_df.astype(float)/1e9
 
         if unit == '%':
             rate_df[mi] = rate_df.values / (df['oraclePriceTwap'].astype(float).values/1e6) * 100
+        if iscum:
+            rate_df['cumulative'] = rate_df[mi].cumsum()
+
         if hor == 'daily':
             rate_df[mi] *= 24
         elif hor == 'annual':
@@ -70,8 +75,14 @@ async def funding_history(ch: ClearingHouse, env):
         
         rate_df.index = pd.to_datetime((rate_df.index.astype(float) * 1e9).astype(int), utc=True)
         g1, g2 = st.columns(2)
-        g2.dataframe(rate_df, use_container_width=True)
-        g1.plotly_chart(rate_df.plot())
+        g2.dataframe(rate_df.sort_index(ascending=False), use_container_width=True)
+        fig = rate_df.plot()
+        fig.update_layout(
+            title="Funding History",
+            xaxis_title='Date',
+            yaxis_title=f'Funding Rate ({unit})',
+            )
+        g1.plotly_chart(fig)
 
     with tabs[1]:
         r1, r2 = st.columns(2)

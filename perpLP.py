@@ -277,8 +277,43 @@ async def perp_lp_page(ch: ClearingHouse, env):
                     )
                     st.plotly_chart(fig)
                     st.dataframe(df1)
+            st.write(' -------------------- ')
+            st.write('grafana export path to file:')
 
+            f1, f2 = st.columns(2)
+            #'Info Per Share (From Start)-data-as-joinbyfield-2023-07-18 15_44_09.csv'
+            #'Oracle Price-data-2023-07-18 15_22_18.csv'
+            ff1 = f1.text_input('info per share:', '')
+            ff2 = f2.text_input('oracle price:', )
 
+            if ff1 != '' and ff2 != '':
+                q1 = pd.read_csv(ff1).set_index('Time')
+                oraclePx = pd.read_csv(ff2).set_index('Time')
+                oraclePx = pd.DataFrame(oraclePx).iloc[:,0].apply(lambda x: float(x[1:]))
+                bq1 = pd.concat([q1, oraclePx],axis=1)
+                bq1.index = pd.to_datetime(bq1.index)
+                st.dataframe(bq1)
+
+                ang = df[df.marketIndex==0]
+                ang['curShares'] = (((ang['nShares']*10).apply(np.floor)/10)*ang['action'].apply(lambda x: {'addLiquidity': 1,
+                                                                                'removeLiquidity':-1,
+                                                                                'settleLiquidity':0,
+                                                                                }[x])).cumsum().fillna(0)
+
+                st.write(bq1)
+                st.write(ang[['curShares', 'action']])
+                dres = pd.concat([bq1, ang[['curShares', 'action']]],axis=1).ffill()
+                dres_c = dres.loc[ang.index]
+                # dres_c['SOL-PERP Oracle Price']*dres_c['baalp1']
+                dres_c['myBAA'] = (dres_c['baalp1'].diff()*dres_c['curShares'].shift(1))
+                dres_c['myQAA'] = (dres_c['qaalp1'].diff()*dres_c['curShares'].shift(1))
+
+                dres_c['burnCost'] = -(dres_c['myBAA'].abs() * dres_c['SOL-PERP Oracle Price'])
+                # dres_c.loc[dres_c['action']!='removeLiquidity', 'burnCost'] = 0
+
+                st.dataframe(dres_c)
+
+                st.plotly_chart(dres[['curShares']].plot())
     with tabs[2]:
         a0, a1, a2, a3 = st.columns(4)
         # mi = a0.selectbox('market index:', range(0, state.number_of_markets), 0, key='mom1')
