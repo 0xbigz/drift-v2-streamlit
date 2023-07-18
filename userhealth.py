@@ -106,13 +106,12 @@ async def show_user_health(clearing_house: ClearingHouse):
         uak_df.index = ['subaccount_'+str(x) for x in uak_df.index]
         st.dataframe(uak_df)
 
-
-        st.header('April Trades Stats')
+        tabs = st.tabs(['health', 'recent trades'])
         for user_authority in user_authorities:
             user_authority_pk = PublicKey(user_authority)
             # print(user_stats)
             user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
-            st.write(user_stat)
+            # st.write(user_stat)
             # chu = ClearingHouseUser(
             #     ch, 
             #     authority=user_authority_pk, 
@@ -138,8 +137,12 @@ async def show_user_health(clearing_house: ClearingHouse):
                     chu_sub.authority,
                     sub_id)
 
-                url2 = url % (str(user_account_pk), '2023', '3')
-                st.write('data source:', url2)
+
+                url2 = url % (str(user_account_pk), '2023', '7')
+
+                with tabs[1]:            
+                    st.header('Recent Trades Stats')
+                    st.write('data source:', url2)
                 if sub_id==0:
                     # try:
                     df = pd.read_csv(url2)
@@ -162,15 +165,18 @@ async def show_user_health(clearing_house: ClearingHouse):
                     # st.multiselect('columns:', df.columns, None)
                     ot = df.pivot_table(index='slot', columns=['marketType', 'marketIndex'], values='baseAssetAmountSignedFilled', aggfunc='sum').cumsum().ffill()
                     ot.columns = [str(x) for x in ot.columns]
-                    st.plotly_chart(ot.plot(title='base asset amount over month (WIP)'))
 
                     tt = df.groupby(['takerOrderId', 'takerOrderDirection']).count().iloc[:,0].reset_index()
                     tt1 = tt.groupby('takerOrderDirection').count()
-                    st.dataframe(tt1)
 
                     trades = df.groupby(['marketType', 'marketIndex']).sum()[['quoteAssetAmountFilled']]
                     trades.columns = ['volume']
-                    st.dataframe(trades)
+
+                    with tabs[1]:
+                        st.plotly_chart(ot.plot(title='base asset amount over month (WIP)'))
+                        st.dataframe(tt1)
+                        st.dataframe(trades)
+
                     # except:
                     #     st.write('cannot load data')
 
@@ -246,49 +252,50 @@ async def show_user_health(clearing_house: ClearingHouse):
 
                         positions.append(z)
 
-        st.header('Account Health')
-        if len(all_summarys)>0:
-            sub_dfs = pd.concat(all_summarys)
+        with tabs[0]:
+            st.header('Account Health')
+            if len(all_summarys)>0:
+                sub_dfs = pd.concat(all_summarys)
 
-            st.metric('total account value:', '$'+str(int(sub_dfs['total_collateral'].sum()*100)/100))
+                st.metric('total account value:', '$'+str(int(sub_dfs['total_collateral'].sum()*100)/100))
 
-            sub_dfs.index.name = 'subaccount_id'
-            st.markdown('summary')
+                sub_dfs.index.name = 'subaccount_id'
+                st.markdown('summary')
 
-            st.dataframe(sub_dfs)
-            
-        st.markdown('assets/liabilities')
-        spotcol, perpcol = st.columns([1,3])
-        bal1 = pd.DataFrame(balances).T
-        bal1.columns = ['spot'+str(x) for x in bal1.columns]
-        df1 = pd.DataFrame(positions)
-        if len(df1):
-            df1['base_asset_amount'] /= 1e9
-            df1['remainder_base_asset_amount'] /= 1e9
-            df1['open_bids'] /= 1e9
-            df1['open_asks'] /= 1e9
-            df1['settled_pnl'] /= 1e6
+                st.dataframe(sub_dfs)
+                
+            st.markdown('assets/liabilities')
+            spotcol, perpcol = st.columns([1,3])
+            bal1 = pd.DataFrame(balances).T
+            bal1.columns = ['spot'+str(x) for x in bal1.columns]
+            df1 = pd.DataFrame(positions)
+            if len(df1):
+                df1['base_asset_amount'] /= 1e9
+                df1['remainder_base_asset_amount'] /= 1e9
+                df1['open_bids'] /= 1e9
+                df1['open_asks'] /= 1e9
+                df1['settled_pnl'] /= 1e6
 
-            df1['lp_shares'] /= 1e9
-            df1['quote_asset_amount'] /= 1e6
-            df1['quote_entry_amount'] /= 1e6
-            df1['quote_break_even_amount'] /= 1e6
+                df1['lp_shares'] /= 1e9
+                df1['quote_asset_amount'] /= 1e6
+                df1['quote_entry_amount'] /= 1e6
+                df1['quote_break_even_amount'] /= 1e6
 
-            df1['entry_price'] = -df1['quote_entry_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
-            df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
-            df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: -1 if x==0 else x)
+                df1['entry_price'] = -df1['quote_entry_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
+                df1['breakeven_price'] = -df1['quote_break_even_amount']/df1['base_asset_amount'].apply(lambda x: 1 if x==0 else x)
+                df1['cost_basis'] = -df1['quote_asset_amount']/df1['base_asset_amount'].apply(lambda x: -1 if x==0 else x)
 
-        pos1 = df1.T
-        pos1.columns = ['perp'+str(x) for x in pos1.columns]
-        spotcol.dataframe(bal1, use_container_width=True)
-        perpcol.dataframe(pos1, use_container_width=True)
+            pos1 = df1.T
+            pos1.columns = ['perp'+str(x) for x in pos1.columns]
+            spotcol.dataframe(bal1, use_container_width=True)
+            perpcol.dataframe(pos1, use_container_width=True)
 
-        st.markdown('user stats')
-        st.dataframe(pd.DataFrame([x for x in user_stats]).T)
+            with st.expander('user stats'):
+                st.dataframe(pd.DataFrame([x for x in user_stats]).T)
 
 
-    # else:
-    #     st.text('not found')
+        # else:
+        #     st.text('not found')
 
-    
-    
+        
+        
