@@ -109,7 +109,7 @@ async def insurance_fund_page(ch: ClearingHouse, env):
                     )
     ifperf = ((rot['insuranceVaultAmountBefore']+rot['amount'])/rot['totalIfSharesAfter']).sort_index()
     ifperf.name = 'ifShare price'
-    st.plotly_chart(ifperf.plot(log_y=True))
+    st.plotly_chart(ifperf.iloc[-360:].plot(log_y=True))
 
     st.plotly_chart((ifperf.resample('1W').last().pct_change()*100).plot(kind='bar'))
     

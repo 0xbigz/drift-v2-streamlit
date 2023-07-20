@@ -535,7 +535,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
                 deposits = market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
                 borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
-                utilization =  borrows/deposits
+                utilization =  borrows/(deposits+1e-12)
 
                 ir_fig.add_vline(x=market.utilization_twap/1e6 * 100, line_color="blue", annotation_text='util_twap')
                 ir_fig.add_vline(x=utilization * 100 , line_color="green", annotation_text='util')

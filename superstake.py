@@ -46,7 +46,7 @@ def get_ir_curves(market, delt):
     else:
         deposits += delt
     
-    utilization =  borrows/deposits * 100
+    utilization =  borrows/(deposits+1e-9) * 100
     market_name = bytes(market.name).decode('utf-8')
 
     if utilization > 100:
