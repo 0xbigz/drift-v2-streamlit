@@ -57,7 +57,9 @@ async def imf_page(clearing_house: ClearingHouse):
             oracle_px = market.historical_oracle_data.last_oracle_price/1e6
 
         st.write(bytes(market.name).decode('utf-8'))
-        max_imf = .1 if is_spot else .01
+        max_imf = .1 
+        if is_spot:
+            max_imf = .01
         imf = st.slider('imf', 0.0, max_imf, ogimf, step=.00005)
         st.write('imf factor=', ogimf, '->', imf)
         st.write('init_liability_wgt=', init_liability_wgt)
