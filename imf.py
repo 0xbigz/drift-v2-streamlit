@@ -58,7 +58,7 @@ async def imf_page(clearing_house: ClearingHouse):
 
         st.write(bytes(market.name).decode('utf-8'))
         max_imf = .1 
-        if is_spot:
+        if dd == 'spot':
             max_imf = .01
         imf = st.slider('imf', 0.0, max_imf, ogimf, step=.00005)
         st.write('imf factor=', ogimf, '->', imf)
