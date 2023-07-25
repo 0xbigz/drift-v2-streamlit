@@ -60,10 +60,13 @@ async def insurance_fund_page(ch: ClearingHouse, env):
         dfs.append(data)
 
     state = await get_state_account(ch.program)
+    s1, s2 = st.columns(2)
+    dd = s1.selectbox('time period:', ['current month', 'all time'])
+
     tabs = st.tabs(['summary', 'balance', 'stakers', 'revenue flow', 'bankruptcies'])
     current_time = datetime.datetime.now()
     current_month = current_time.month
-
+    current_year = current_time.year
     total_if_value = 0
     total_month_gain = 0
 
@@ -84,35 +87,48 @@ async def insurance_fund_page(ch: ClearingHouse, env):
     url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
     url_market_prefix = url_market_pp+'.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
     name_rot = {}
-    for name in ['USDC', 'SOL']:
-        rots = []
-        for year in ['2022', '2023']:
+    spot_asts = ['USDC', 'SOL', 'MSOL', 
+                 'wBTC', 'wETH',
+                   'USDT']
+    
+    if dd == 'all time':
+        for name in spot_asts:
+            rots = []
+            for year in ['2022', str(current_year)]:
+                full_if_url = url_market_prefix+name+"/insurance-fund-records/"+str(year)+"/"#+str(current_month)
+                if year == '2022':
+                    mrange = ['11','12']
+                else:
+                    mrange = range(1, current_month+1)
+                for x in mrange:
+                    try:
+                        rot = pd.read_csv(full_if_url+str(x))
+                        rot = rot.set_index('ts')
+                        rot.index = pd.to_datetime((rot.index * 1e9).astype(int))
+                        rots.append(rot)
+                    except:
+                        pass
+                if len(rots):
+                    rot = pd.concat(rots)
+                    name_rot[name] = rot
+    else:
+        for name in spot_asts:
+            year = str(current_year)
             full_if_url = url_market_prefix+name+"/insurance-fund-records/"+str(year)+"/"#+str(current_month)
-            if year == '2022':
-                mrange = ['11','12']
-            else:
-                mrange = range(1, current_month+1)
-            for x in mrange:
+            rots = []
+            x = current_month
+            try:
                 rot = pd.read_csv(full_if_url+str(x))
                 rot = rot.set_index('ts')
                 rot.index = pd.to_datetime((rot.index * 1e9).astype(int))
                 rots.append(rot)
-            rot = pd.concat(rots)
-            name_rot[name] = rot
-    rot = name_rot['USDC']
-    apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365.25*24/2).sort_index().rolling(24).mean()
-    apr_fig = apr_df.plot()
-    apr_fig.update_layout( 
-                        title='USDC Revenue Emission (smoothed daily)',
-                        xaxis_title="date",
-                        yaxis_title="APR %",
-                    )
-    ifperf = ((rot['insuranceVaultAmountBefore']+rot['amount'])/rot['totalIfSharesAfter']).sort_index()
-    ifperf.name = 'ifShare price'
-    st.plotly_chart(ifperf.iloc[-360:].plot(log_y=True))
-
-    st.plotly_chart((ifperf.resample('1W').last().pct_change()*100).plot(kind='bar'))
-    
+            except:
+                pass
+            if len(rots):
+                rot = pd.concat(rots)
+                name_rot[name] = rot
+            else:
+                st.warning(name+ ': '+ full_if_url)
     # st.dataframe(rot)
     # bankruptcies = rot[rot['amount']<0]
     # st.dataframe(bankruptcies)
@@ -227,7 +243,21 @@ async def insurance_fund_page(ch: ClearingHouse, env):
             tshow.columns = ['settled_insurance', 'max_insurance', 'liq_fees', 'withdrawn_fees']
             st.dataframe(tshow)
         
+        cur_spot = s2.selectbox('spot assets:', spot_asts)
+        rot = name_rot[cur_spot]
+        apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365.25*24/2).sort_index()#.rolling(24).mean()
+        apr_fig = apr_df.plot(log_y=True)
+        apr_fig.update_layout( 
+                            title=cur_spot+' Revenue Emission',
+                            xaxis_title="date",
+                            yaxis_title="APR %",
+                        )
+        ifperf = ((rot['insuranceVaultAmountBefore']+rot['amount'])/rot['totalIfSharesAfter']).sort_index()
+        ifperf.name = 'ifShare price'
         st.plotly_chart(apr_fig, True)
+        st.plotly_chart(ifperf.plot(log_y=True))
+        st.plotly_chart((ifperf.resample('1W').last().pct_change()*100).plot(kind='bar'))
+    
 
         # st.dataframe(perp_df)
 
