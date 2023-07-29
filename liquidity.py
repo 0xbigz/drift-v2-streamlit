@@ -466,7 +466,7 @@ def mm_page(clearing_house: ClearingHouse):
         [echart] = st.columns([1])
 
         rolling_window = eslid.slider('rolling window:', 1, 200, 100, 5)
-        use_ts_est = s2.selectbox('index:', ['snap_slot', 'est_utc_timestamp'], help='est utc uses "slot ref:" and "unix_timestamp_ref" to deduce timestamps')
+        use_ts_est = s2.selectbox('index:', ['snap_slot', 'est_utc_timestamp'], key='tab1', help='est utc uses "slot ref:" and "unix_timestamp_ref" to deduce timestamps')
         for user in users:
             bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2snippet)
             score_emas[str(user)] = (bbo_user['score'].fillna(0).rolling(rolling_window, min_periods=min(rolling_window, 1)).mean())
