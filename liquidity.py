@@ -462,10 +462,11 @@ def mm_page(clearing_house: ClearingHouse):
         metmet1, metemet2 = st.columns(2)
         users = st.multiselect('users:', list(all_users), list(top10users))
         [lbtable] = st.columns([1])
-        [eslid] = st.columns([1])
+        [eslid, s2] = st.columns([1, 1])
         [echart] = st.columns([1])
 
         rolling_window = eslid.slider('rolling window:', 1, 200, 100, 5)
+        use_ts_est = s2.selectbox('index:', ['snap_slot', 'est_utc_timestamp'], help='est utc uses "slot ref:" and "unix_timestamp_ref" to deduce timestamps')
         for user in users:
             bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2snippet)
             score_emas[str(user)] = (bbo_user['score'].fillna(0).rolling(rolling_window, min_periods=min(rolling_window, 1)).mean())
@@ -475,14 +476,17 @@ def mm_page(clearing_house: ClearingHouse):
         metmet1.metric('total avg score:', np.round(all_stats_df['avg score'].sum(),2))
         lbtable.dataframe(all_stats_df)
         # print(topmm)
-        echart.plotly_chart(pd.concat(score_emas, axis=1)[users].fillna(0).plot(), use_container_width=True)
+        dat = pd.concat(score_emas, axis=1)[users].fillna(0)
+        if use_ts_est == 'est_utc_timestamp':
+            dat.index = [pd.to_datetime(slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9, utc=True) for x in dat.index]
+        echart.plotly_chart(dat.plot(), use_container_width=True)
 
     with tabs[2]:
 
         st.title('individual mm lookup')
-
-        user = st.selectbox('individual maker', all_users, 0)
-            
+        s1, s2 = st.columns(2)
+        user = s1.selectbox('individual maker', all_users, 0)
+        use_ts_est = s2.selectbox('index:', ['snap_slot', 'est_utc_timestamp'], help='est utc uses "slot ref:" and "unix_timestamp_ref" to deduce timestamps')
         bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2)
 
         # st.text('user bestbid time='+str(np.round(offer_best_pct*100, 2))+'%')
@@ -492,7 +496,10 @@ def mm_page(clearing_house: ClearingHouse):
         # st.text('user uptime='+str(np.round(uptime_pct*100, 2))+'%')
         bbo_user['score'] = bbo_user['score'].fillna(0)
         bbo_user['ema_score'] = bbo_user['score'].fillna(0).ewm(100).mean()
-        st.plotly_chart(bbo_user.loc[values[0]:values[1]].plot(title=market_type+' market index='+str(market_index)))
+        dat = bbo_user.loc[values[0]:values[1]]
+        if use_ts_est == 'est_utc_timestamp':
+            dat.index = [pd.to_datetime(slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9, utc=True) for x in dat.index]
+        st.plotly_chart(dat.plot(title=market_type+' market index='+str(market_index)))
 
         best_slot = bbo_user.score.idxmax()
         worst_slot = bbo_user.score.idxmin()
