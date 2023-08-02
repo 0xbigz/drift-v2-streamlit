@@ -253,15 +253,26 @@ def trade_flow_analysis():
                   
                   )
         tabs = st.tabs(['plot', 'table'])
+
+        vamm_maker_trades = vamm_maker_trades.set_index('ts')
                   
         with tabs[1]:
             st.write(vamm_maker_trades)
         with tabs[0]:
+            fig = None
+            vamm_maker_trades.index = pd.to_datetime((vamm_maker_trades.index.astype(str).astype(float) * 1e9).astype(int))
             if bdown == 'by action':
-                vamm_maker_trades = -vamm_maker_trades.pivot_table(index='ts', columns='actionExplanation', values='ff')
+                vamm_maker_trades = vamm_maker_trades.pivot_table(index='ts', columns='actionExplanation', values='ff', aggfunc='sum')
                 # st.write(vamm_maker_trades)
                 # vamm_maker_trades['Markout'] = -(vamm_maker_trades['takerPremium'] - vamm_maker_trades['takerPremiumNextMinute'])
-                st.plotly_chart(vamm_maker_trades.fillna(0).cumsum().plot(), use_container_width=True)
+                fig = (-vamm_maker_trades.fillna(0).cumsum()).plot()
             else:
-                st.plotly_chart(vamm_maker_trades['ff'].cumsum().plot(), use_container_width=True)
+                fig = (-vamm_maker_trades['ff'].cumsum()).plot()
 
+            fig.update_layout(
+                title="Taker Markouts vs vAMM",
+                xaxis_title="ts",
+                yaxis_title="Markout "+"("+unit+")",
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
