@@ -244,6 +244,7 @@ async def perp_lp_page(ch: ClearingHouse, env):
             if len(df):
                 df.index = [pd.to_datetime(int(x*1e9)) for x in df.ts]
                 df =  df.sort_index()
+                df = df.loc[start_date:end_date]
                 df['px'] = (-df['deltaQuoteAssetAmount']/df['deltaBaseAssetAmount'].replace(0, np.nan))
                 # st.write(df)
                 for mi1 in df.marketIndex.unique():
