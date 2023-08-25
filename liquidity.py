@@ -315,7 +315,7 @@ def mm_page(clearing_house: ClearingHouse):
     week_ago_slot = df_full[df_full.snap_slot>newest_slot-(2*60*60*24*7)].snap_slot.min()
 
     oracle = df_full.groupby('snap_slot')['oraclePrice'].max()
-    tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot', 'real time', 'csv reader'])
+    tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot', 'real time', 'csv reader', 'program tx'])
 
     # st.write('slot range:', values)
     with tabs[0]:
@@ -629,3 +629,13 @@ def mm_page(clearing_house: ClearingHouse):
         if url!='':
             df = pd.read_csv(url)
             st.dataframe(df)
+
+    with tabs[6]:
+        dcol = 3
+        acol = 6
+        hist_df = pd.read_csv('https://raw.githubusercontent.com/drift-labs/transaction-tables/master/export_txs_79bNYp1i3ZjDh9wzgVdP9QJcct3fUQYoJ7NAbHcFuWmS_1691697514285.csv',
+                              
+                              parse_dates=[dcol], index_col=[dcol]).sort_index()
+        
+        st.metric('total mm program tx:', '$' + str(hist_df.iloc[:, acol].sum()))
+        st.plotly_chart(hist_df.iloc[:, acol].cumsum().plot())

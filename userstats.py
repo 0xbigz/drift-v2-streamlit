@@ -34,12 +34,12 @@ async def show_user_stats(clearing_house: ClearingHouse):
     kp = Keypair()
     ch = ClearingHouse(ch.program, kp)
 
-    df = pd.DataFrame([x.account.__dict__ for x in all_user_stats])
+    df_rr = pd.DataFrame([x.account.__dict__ for x in all_user_stats])
     fees_df = pd.DataFrame([x.account.fees.__dict__ for x in all_user_stats])
-    print(df.columns)
+    # print(df_rr.columns)
 
     # print(df.columns)
-    df = pd.concat([df, fees_df], axis=1)
+    df = pd.concat([df_rr, fees_df], axis=1)
     # print(df.columns)
     for x in df.columns:
         if x in ['taker_volume30d', 'maker_volume30d', 'filler_volume30d', 'total_fee_paid', 'total_fee_rebate', 'total_referrer_reward', 'if_staked_quote_asset_amount']:
@@ -68,12 +68,12 @@ async def show_user_stats(clearing_house: ClearingHouse):
     df = df[['authority', 'total_30d_volume_calc', 'taker_volume30d_calc', 'maker_volume30d_calc', 'last_trade_seconds_ago', 'taker_volume30d', 'maker_volume30d', 
     'filler_volume30d_calc', 'filler_volume30d', 'total_fee_paid', 'total_fee_rebate', 
     'number_of_sub_accounts', 'is_referrer', 'if_staked_quote_asset_amount', 'referrer', 'total_referrer_reward',
-    'last_fill_seconds_ago',
+    'last_fill_seconds_ago', 'last_filler_volume30d_ts',
     ]].sort_values('last_trade_seconds_ago').reset_index(drop=True)
 
 
 
-    tabs = st.tabs(['Volume', 'Refferals', 'Fillers'])
+    tabs = st.tabs(['Volume', 'New Signups', 'Refferals', 'Fillers', 'Clusters'])
     with tabs[0]:
         pie1, pie2 = st.columns(2)
 
@@ -133,6 +133,37 @@ async def show_user_stats(clearing_house: ClearingHouse):
         st.plotly_chart(dd.plot(title='# user active over past 24hr = '+str(active_users_past_24hrs)))
     
     with tabs[1]:
+        df2 = df.set_index('authority')
+        df2 = df2[df2['filler_volume30d']==0]
+        df2 = df2[['last_filler_volume30d_ts', 'last_fill_seconds_ago', ]]#.sort_values(by='filler_volume30d_calc', ascending=False)
+        df2.columns = ['date', 'seconds_ago']
+        df2['date'] = pd.to_datetime(df2['date']*1e9)
+        df2 = df2.sort_values('seconds_ago')
+        st.dataframe(df2)
+
+        setting2, setting1 = st.columns(2)
+        ss = setting1.radio('y scale:', ['log', 'linear'], horizontal=True)
+        ss2 = setting2.radio('data:', ['by day', 'by hour'], horizontal=True)
+        
+        dd = df2.set_index('date').pipe(np.sign)
+        dd.columns = ['new user creations']
+
+        if ss2 == 'by day':
+            dd2 = dd.resample('1D').sum()
+            st.plotly_chart(dd2.plot(log_y='log' in ss))
+        elif ss2 == 'by hour':
+            dd.index =  dd.index.hour
+            dd = dd.reset_index().groupby('date').sum()
+            dd = dd.sort_index()
+            st.plotly_chart(dd.plot(log_y='log' in ss))
+            # st.plotly_chart(dd.plot(log_y='log' in ss))
+        else:
+            st.plotly_chart(dd.plot(log_y='log' in ss))
+
+
+
+
+    with tabs[2]:
         st.write('ref leaderboard')
         oo = df.groupby('referrer')
         tt = oo.count().iloc[:,0:1]
@@ -146,8 +177,39 @@ async def show_user_stats(clearing_house: ClearingHouse):
         tt = tt.sort_values('number reffered', ascending=False)
         st.dataframe(tt)
         
-    with tabs[2]:
-        st.write('filler leaderboard')
+    with tabs[3]:
+        
         df2 = df[df.filler_volume30d>0]
         df2 = df2.set_index('authority')[['filler_volume30d_calc', 'last_fill_seconds_ago']].sort_values(by='filler_volume30d_calc', ascending=False)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric('unique fillers (last 10 minutes)', 
+                  int(len(df2[df2.last_fill_seconds_ago<60*10])),
+                #   str(len(df2))+' unique since program inception'
+                  )
+        col2.metric('unique fillers (last 24 hours)', 
+                  int(len(df2[df2.last_fill_seconds_ago<60*60*24])),
+                #   str(len(df2))+' unique since program inception'
+                  )
+        
+        col3.metric('unique fillers (last 30 days)', 
+                  int(df2['filler_volume30d_calc'].pipe(np.sign).sum()),
+                #   str(len(df2))+' unique since program inception'
+                  )
+        col4.metric('unique fillers (since inception)', 
+                  int(len(df2)),
+                #   str(len(df2))+' unique since program inception'
+                  )        
+        
+        st.write('filler leaderboard')
         st.dataframe(df2)
+
+    with tabs[4]:
+        st.write(df['total_fee_paid'].sum(), df['total_fee_rebate'].sum())
+        dff = df[df['total_30d_volume_calc']>0].sort_values('total_30d_volume_calc')
+        dd = dff[['total_30d_volume_calc', 
+                   'taker_volume30d_calc', 
+                   'if_staked_quote_asset_amount']].pipe(np.sqrt)
+        fig = dd.plot(kind='scatter')
+        
+        st.write(df.corr())
+        st.plotly_chart(fig)
