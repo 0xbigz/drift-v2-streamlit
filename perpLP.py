@@ -88,13 +88,15 @@ async def perp_lp_page(ch: ClearingHouse, env):
     is_devnet = env == 'devnet'
     state = await get_state_account(ch.program)
     a00, a11, a22, a33 = st.columns(4)
-    user_lookup = a33.radio('lookup LP users:', ['Active', 'Ever', 'Never'], index=2, 
+    user_lookup = a33.radio('lookup LP users:', ['Active', 'DLP', 'Ever', 'Never'], index=2, 
                            horizontal=True
                            )
     user_accounts_w_lp = []
     if user_lookup != 'Never':
         if user_lookup == 'Ever':
             all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+        elif user_lookup == 'DLP':
+            all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=72, bytes='7Ev1Wb17tTZuQFYjieDAx2pbrSzym2eaV')])
         else:
             all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4267, bytes='2i')])
         # with tabs[0]:
