@@ -42,7 +42,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
     
     col1, col2, col3, col4 = st.columns(4)
 
-    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', 'SuperStakeSOL', None], 3)
+    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', 'SuperStakeSOL', 'SuperStakeJitoSOL', None], 4)
 
     all_users = None
 
@@ -54,7 +54,8 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                 all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
             elif see_user_breakdown == 'SuperStakeSOL':
                 all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
-            
+            elif see_user_breakdown == 'SuperStakeJitoSOL':
+                all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=72, bytes='GHB8xrCziYmaX9fbpnLFAMBVby')])
         except Exception as e:
             print('ERRRRR:', e)
             st.write("ERROR: cannot load ['User'].all() with current rpc")
@@ -473,8 +474,11 @@ async def show_pid_positions(clearing_house: ClearingHouse):
                                 'position_size': df1['spot_value'].astype(float),
                                 'position_size2': (df1['spot_value'].astype(float)+1).pipe(np.log),
                             },axis=1)
-                    fig111 = px.scatter(df111, x='leverage', y='position_size', size='position_size2', size_max=20, color='position_size', log_y=True)
-                    st.plotly_chart(fig111)
+                    try:
+                        fig111 = px.scatter(df111, x='leverage', y='position_size', size='position_size2', size_max=20, color='position_size', log_y=True)
+                        st.plotly_chart(fig111)
+                    except Exception as e:
+                        st.write('cannot do scatter plot... (%s)' % str(e))
 
                     total_cumm_deposits = df1['cumulative_deposits'].sum()
 
@@ -510,10 +514,11 @@ async def show_pid_positions(clearing_house: ClearingHouse):
 
                     fig1, ax1 = plt.subplots()
                     fig1.set_size_inches(15.5, 5.5)
-                    ax1.pie([total_deposits, total_borrows], labels=['deposits', 'borrows'], autopct='%1.5f%%',
-                            startangle=90)
-                    ax1.axis('equal')  
-                    st.pyplot(fig1)
+                    if total_deposits + total_borrows > 0:
+                        ax1.pie([total_deposits, total_borrows], labels=['deposits', 'borrows'], autopct='%1.5f%%',
+                                startangle=90)
+                        ax1.axis('equal')  
+                        st.pyplot(fig1)
 
                 opt_util = market.optimal_utilization/PERCENTAGE_PRECISION * 100
                 opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION

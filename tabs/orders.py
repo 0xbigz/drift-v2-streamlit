@@ -37,12 +37,12 @@ from plotly.subplots import make_subplots
 
 import asyncio
 
-@st.experimental_memo
+@st.cache_data
 def cached_get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
     loop = asyncio.new_event_loop()
     return loop.run_until_complete(get_orders_data(_ch, depth_slide, market_type, market_index, order_filter))
 
-@st.experimental_memo
+@st.cache_data
 def cached_get_price_data(market_type, market_index):
     loop = asyncio.new_event_loop()
     return loop.run_until_complete(get_price_data(market_type, market_index))
@@ -51,7 +51,7 @@ def cached_get_price_data(market_type, market_index):
 async def get_price_data(market_type, market_index):
     assert(market_type in ['spot', 'perp'])
     url = f'https://mainnet-beta.api.drift.trade/trades?marketIndex={market_index}&marketType={market_type}'
-    dat = requests.get(url).json()['data']['trades']
+    dat = [json.loads(x) for x in requests.get(url).json()['data']['trades']]
     return pd.DataFrame(dat)
 
 async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
@@ -385,10 +385,10 @@ def orders_page(ch: ClearingHouse):
             asks_quote = np.round(df['asks (price, size)'].apply(lambda x: x[0]*x[1] if x!='' else 0).sum(), 2)
             asks_base = np.round(df['asks (price, size)'].apply(lambda x: x[1] if x!='' else 0).sum(), 2)
             col1, col2, _ = st.columns([5,5, 10])
-            col1.metric(f'bids:', f'${bids_quote}', f'{bids_base} {market_nom}')
-            col2.metric(f'asks:', f'${asks_quote}', f'{-asks_base} {market_nom}')
+            col1.metric(f'bids:', f'${bids_quote:,.2f}', f'{bids_base} {market_nom}')
+            col2.metric(f'asks:', f'${asks_quote:,.2f}', f'{-asks_base} {market_nom}')
             if len(df):
-                st.dataframe(df.style.apply(highlight_survived, axis=0))
+                st.dataframe(df.astype(str).style.apply(highlight_survived, axis=0))
             else:
                 st.dataframe(df)
 
@@ -413,12 +413,12 @@ def orders_page(ch: ClearingHouse):
 
         with tabs[2]:
             price_df = cached_get_price_data(market_type, market_index)
-            # print(price_df.columns)
             if len(price_df):
+                # st.write(price_df)
                 odf = (price_df.set_index('ts'))
-                odf['tradePrice'] = (odf['quoteAssetAmountFilled'].astype(float))/ odf['baseAssetAmountFilled'].astype(float)
-                odf['oraclePrice'] = odf['oraclePrice'].astype(float)#/1e6
-                odf['baseAssetAmountFilled'] = odf['baseAssetAmountFilled'].astype(float)
+                odf['tradePrice'] = (odf['quoteAssetAmountFilled'].astype(float))/ odf['baseAssetAmountFilled'].astype(float) *1e3
+                odf['oraclePrice'] = odf['oraclePrice'].astype(float)/1e6
+                odf['baseAssetAmountFilled'] = odf['baseAssetAmountFilled'].astype(float)/1e9
                 can_cols = ['oraclePrice', 'tradePrice', 'baseAssetAmountFilled', 'taker', 'maker', 'actionExplanation', 'takerOrderDirection']
                 can_cols = [x for x in can_cols if x in odf.columns]
                 odf = odf[can_cols]

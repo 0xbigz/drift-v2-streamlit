@@ -62,7 +62,7 @@ def get_ir_curves(market, delt):
     dep_rate = bor_rate*utilization*(1-market.insurance_fund.total_factor/1e6)/100
     return dep_rate, bor_rate
 
-@st.experimental_memo(ttl=3600*2)  # 2 hr TTL this time
+@st.cache_data(ttl=3600*2)  # 2 hr TTL this time
 def get_stake_yield():
     metrics = requests.get('https://api2.marinade.finance/metrics_json').json()
     apy = metrics['msol_price_apy_30d']

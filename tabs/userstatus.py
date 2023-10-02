@@ -9,7 +9,7 @@ import plotly.express as px
 pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
-from anchorpy import Provider, Wallet 
+from anchorpy import Provider, Wallet, AccountClient
 from solana.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.types import MemcmpOpts
@@ -35,32 +35,41 @@ from aiocache import cached
 from driftpy.types import InsuranceFundStake, SpotMarket
 from driftpy.addresses import * 
 
-# @st.experimental_memo(ttl=60*5)  # 5 min TTL this time
-async def load_users(_ch_user_act, filt):
-    if filt == 'All':
-        all_users = await _ch_user_act.all()
-    elif filt == 'Active':
-        all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
-    elif filt == 'Idle':
-        all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='2')])        
-    elif filt == 'Open Order':
-        all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
-    elif filt == 'SuperStakeSOL':
-        all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
-    elif filt == 'SuperStakeSOLStrict':
-        all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])        
-    else:
-        all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4354, bytes='2')])
-    return all_users
-
-
 async def userstatus_page(ch: ClearingHouse):
     state = await get_state_account(ch.program)
     s1, s2 = st.columns(2)
     filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction', 'SuperStakeSOL', 'SuperStakeSOLStrict'], index=1, horizontal=True)
     oracle_distort = s2.slider('base oracle distortion:', .01, 2.0, 1.0, .1, help="alter non-stable token oracles by this factor multiple (default=1, no alteration)")
     tabs = st.tabs([filt.lower() + ' users', 'LPs', 'oracle scenario analysis'])
-    all_users = await load_users(ch.program.account['User'], filt)
+    _ch_user_act = ch.program.account['User']
+
+    # @st.cache_resource(ttl=60*30)  # 5 min TTL this time
+    async def load_users(filt):
+        if filt == 'All':
+            all_users = await _ch_user_act.all()
+        elif filt == 'Active':
+            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+        elif filt == 'Idle':
+            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='2')])        
+        elif filt == 'Open Order':
+            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
+        elif filt == 'SuperStakeSOL':
+            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
+        elif filt == 'SuperStakeSOLStrict':
+            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])   
+        elif filt == 'SuperStakeJitoSOL':
+            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='GHB8xrCziYmaX9fbpnLFAMBVby')])             
+        else:
+            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4354, bytes='2')])
+        return all_users
+
+    all_users = await load_users(filt)
+
+    if asyncio.iscoroutine(all_users):
+        try:
+            all_users = await all_users
+        except:
+            pass
 
 
     if oracle_distort == 1:
@@ -102,7 +111,7 @@ async def userstatus_page(ch: ClearingHouse):
 
         st.write(filt.lower() + ' users:')
         df.name = df.name.apply(lambda x: bytes(x).decode('utf-8', errors='ignore'))
-        st.dataframe(df)
+        st.dataframe(df.astype(str))
 
         user_tvl = stats_df.spot_value.sum()
         col2.metric('user tvl', f'${user_tvl:,.2f}', f'${stats_df.upnl.sum():,.2f} upnl')
@@ -153,7 +162,7 @@ async def userstatus_page(ch: ClearingHouse):
     
         stats_df.loc[stats_df['spot_value'] < 0, 'spot bankrupt'] = True
         stats_df.loc[((stats_df['upnl'] < 0) & (stats_df['spot_value'] < -stats_df['upnl'])), 'perp bankrupt'] = True
-
+        stats_df.index = stats_df.index.astype(str)
         st.dataframe(stats_df)
 
         st.write('bankruptcies:', ddd.sum())
@@ -166,7 +175,7 @@ async def userstatus_page(ch: ClearingHouse):
             len(new_accounts), 
         'are subaccount id = 0', 
         '($', 
-        stats_df.loc[new_accounts['public_key'].values]['spot_value'].sum() ,
+        stats_df.loc[new_accounts['public_key'].astype(str).values]['spot_value'].sum() ,
         ')')
         st.write(len(stats_df[stats_df['spot_value']>0]), 'have a balance', '($',stats_df[stats_df['spot_value']>0].sum(),')')
 

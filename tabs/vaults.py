@@ -47,7 +47,9 @@ async def vaults(ch: ClearingHouse, env):
     pid = None
     with tabs[3]:
         g1, g2 = st.columns(2)
-        pid = g1.text_input('program id:', 'VAULtLeTwwUxpwAw98E6XmgaDeQucKgV5UaiAuQ655D')
+        pid = g1.text_input('program id:', 'vAuLTsyrvSfZRuRB3XgvkPwNGgYSs9YRYymVebLKoxR',
+        #'VAULtLeTwwUxpwAw98E6XmgaDeQucKgV5UaiAuQ655D' # old one
+        )
         default_url = 'https://raw.githubusercontent.com/drift-labs/drift-vaults/master/ts/sdk/src/idl/drift_vaults.json'
         url = g2.text_input('idl:', default_url)
         response = requests.get(url)
@@ -65,10 +67,11 @@ async def vaults(ch: ClearingHouse, env):
         )
     
     with tabs[3]:
-        with st.expander('vault fields'):
-            st.write(program.account.keys())
-            st.write(program.type.keys())
-        st.dataframe(pd.DataFrame(idl['instructions']))
+        # with st.expander('vault fields'):
+        #     st.write(program.account.keys())
+        #     st.write(program.type.keys())
+        st.json((idl['instructions']), expanded=False)
+        st.dataframe(pd.DataFrame(idl['instructions']).astype(str))
 
     all_vaults = await program.account["Vault"].all()
     all_vault_deps = await program.account["VaultDepositor"].all()
@@ -98,6 +101,7 @@ async def vaults(ch: ClearingHouse, env):
         if len(res):
             res = pd.concat(res, axis=1)
             vault_dep_def = res
+            vault_dep_def.loc['authority'] = vault_dep_def.loc['authority'].astype(str)
             st.dataframe(res) 
    
     with tabs[0]:
@@ -152,7 +156,8 @@ async def vaults(ch: ClearingHouse, env):
 
 
                         this_vault_deps = vault_dep_def.T[vault_dep_def.T['vault'].astype(str)==str(vault_user.authority)]\
-                            .sort_values('vault_shares', ascending=True).T
+                            .sort_values('vault_shares', ascending=False).T
+                        this_vault_deps.index = this_vault_deps.index.astype(str)
                         # st.write(this_vault_deps)
                         for j in range(len(this_vault_deps.columns)):
                             tv_dep = this_vault_deps.iloc[:,j]

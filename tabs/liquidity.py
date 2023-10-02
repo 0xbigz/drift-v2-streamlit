@@ -30,7 +30,7 @@ from anchorpy import EventParser
 import asyncio
 from glob import glob
 import requests
-from uservolume import load_volumes
+from tabs.uservolume import load_volumes
 
 def load_realtime_book(market_index):
     x = requests.get('https://dlob.drift.trade/orders/json')
@@ -231,7 +231,7 @@ def get_mm_stats(df, user, oracle, bbo2):
 
 
 
-@st.experimental_memo(ttl=3600*2)  # 2 hr TTL this time
+@st.cache_data(ttl=3600*2)  # 2 hr TTL this time
 def get_data_by_market_index(market_type, market_index, source):
     dfs = []
     tt = market_type+str(market_index)
@@ -258,15 +258,17 @@ def get_data_by_market_index(market_type, market_index, source):
     df = df.reset_index(drop=True)
     return df
 
-def mm_page(clearing_house: ClearingHouse):    
+async def mm_page(clearing_house: ClearingHouse):    
 
     ss1, ss2, ss3 = st.columns([3,1,1])
     source = ss1.text_input('source:', 'https://github.com/0xbigz/drift-v2-orderbook-scored/raw/main/data/')
-    SLOT1 = ss2.number_input('slot ref:', 213010744
-)
+
+    ss = (await clearing_house.program.provider.connection.get_slot())['result']
+    tt = (await clearing_house.program.provider.connection.get_block_time(ss))['result']
+    SLOT1 = ss2.number_input('slot ref:', min_value=0, value=ss)
     ss2.write('https://explorer.solana.com/block/'+str(SLOT1))
 
-    TS1 = ss3.number_input('unix_timestamp ref:', 1692734309)
+    TS1 = ss3.number_input('unix_timestamp ref:', min_value=0, value=tt)
     def slot_to_timestamp_est(slot, ts_for_latest_slot=None, latest_slot=None):
         # ts = X - (Y - slot)/2
         # X - ts = (Y - slot)/2
@@ -409,8 +411,8 @@ def mm_page(clearing_house: ClearingHouse):
 
     bbo2snippet = bbo2#.loc[values[0]:values[1]]
     st.markdown('[data source](https://github.com/0xbigz/drift-v2-orderbook-snap)'+\
-        ' ([slot='+str(bbo2snippet.index[0])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[0])+'.csv))')
-
+        ' ([start slot='+str(bbo2snippet.index[0])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[0])+'.csv))'+\
+        ' ([end slot='+str(bbo2snippet.index[-1])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[-1])+'.csv))')
 
     # st.write('slot range:', values)
     with tabs[0]:
@@ -633,7 +635,7 @@ def mm_page(clearing_house: ClearingHouse):
     with tabs[6]:
         dcol = 3
         acol = 6
-        hist_df = pd.read_csv('https://raw.githubusercontent.com/drift-labs/transaction-tables/master/export_txs_79bNYp1i3ZjDh9wzgVdP9QJcct3fUQYoJ7NAbHcFuWmS_1691697514285.csv',
+        hist_df = pd.read_csv('https://raw.githubusercontent.com/drift-labs/transaction-tables/master/mm_rewards.csv',
                               
                               parse_dates=[dcol], index_col=[dcol]).sort_index()
         

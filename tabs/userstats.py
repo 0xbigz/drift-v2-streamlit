@@ -27,6 +27,9 @@ from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
 import time
+from datafetch.transaction_fetch import transaction_history_for_account
+
+
 async def show_user_stats(clearing_house: ClearingHouse):
     ch = clearing_house
 
@@ -42,7 +45,7 @@ async def show_user_stats(clearing_house: ClearingHouse):
     df = pd.concat([df_rr, fees_df], axis=1)
     # print(df.columns)
     for x in df.columns:
-        if x in ['taker_volume30d', 'maker_volume30d', 'filler_volume30d', 'total_fee_paid', 'total_fee_rebate', 'total_referrer_reward', 'if_staked_quote_asset_amount']:
+        if x in ['taker_volume30d', 'maker_volume30d', 'filler_volume30d', 'total_fee_paid', 'total_fee_rebate', 'total_referrer_reward', 'current_epoch_referrer_reward', 'if_staked_quote_asset_amount']:
             df[x] /= 1e6
     
     current_ts = time.time()
@@ -65,10 +68,13 @@ async def show_user_stats(clearing_house: ClearingHouse):
         .mul(volume_scale, axis=0)
     df['authority'] = df['authority'].astype(str)
     df['referrer'] = df['referrer'].astype(str)
+    
+    # st.write(df.columns)
     df = df[['authority', 'total_30d_volume_calc', 'taker_volume30d_calc', 'maker_volume30d_calc', 'last_trade_seconds_ago', 'taker_volume30d', 'maker_volume30d', 
     'filler_volume30d_calc', 'filler_volume30d', 'total_fee_paid', 'total_fee_rebate', 
     'number_of_sub_accounts', 'is_referrer', 'if_staked_quote_asset_amount', 'referrer', 'total_referrer_reward',
-    'last_fill_seconds_ago', 'last_filler_volume30d_ts',
+    'current_epoch_referrer_reward',
+    'last_fill_seconds_ago', 'last_taker_volume30d_ts', 'last_maker_volume30d_ts', 'last_filler_volume30d_ts',
     ]].sort_values('last_trade_seconds_ago').reset_index(drop=True)
 
 
@@ -133,19 +139,91 @@ async def show_user_stats(clearing_house: ClearingHouse):
         st.plotly_chart(dd.plot(title='# user active over past 24hr = '+str(active_users_past_24hrs)))
     
     with tabs[1]:
-        df2 = df.set_index('authority')
-        df2 = df2[df2['filler_volume30d']==0]
-        df2 = df2[['last_filler_volume30d_ts', 'last_fill_seconds_ago', ]]#.sort_values(by='filler_volume30d_calc', ascending=False)
-        df2.columns = ['date', 'seconds_ago']
-        df2['date'] = pd.to_datetime(df2['date']*1e9)
-        df2 = df2.sort_values('seconds_ago')
+        dfx = df.set_index('authority')
+        df2 = dfx[dfx['filler_volume30d']==0]
+        dd = df2[['last_filler_volume30d_ts', 'last_taker_volume30d_ts', 'last_maker_volume30d_ts']].min(axis=1)
+        tt = (df2[['last_fill_seconds_ago']]/60).round(1)#.sort_values(by='filler_volume30d_calc', ascending=False)
+        res1 = pd.concat([dd, tt], axis=1)
+        res1['status'] = 'trader'
+        res1.columns = ['min date', 'minutes_ago', 'status']
+
+
+        df2 = dfx[dfx['filler_volume30d']!=0]
+        dd = df2[['last_filler_volume30d_ts', 'last_taker_volume30d_ts', 'last_maker_volume30d_ts']].min(axis=1)
+        tt = (df2[['last_fill_seconds_ago']]/60).round(1)#.sort_values(by='filler_volume30d_calc', ascending=False)
+        res2 = pd.concat([dd, tt], axis=1)
+        res2['status'] = 'filler'
+
+        res2.columns = ['min date', 'minutes_ago', 'status']
+
+        df2 = pd.concat([res1, res2])
+
+        df2['min date'] = pd.to_datetime(df2['min date']*1e9)
+        df2 = df2.sort_values('min date', ascending=False)
+        unumbers = [len(df2) - (x) for x in range(len(df2))]
+        df2['number'] = unumbers
         st.dataframe(df2)
+        
+        # Define the filename
+        filename = 'user_signup_funding_source2.csv'
+
+        # Check if the file exists
+        if os.path.exists(filename):
+            # If file exists, read the existing data
+            existing_data = pd.read_csv(filename, index_col=0)
+        else:
+            # If file does not exist, initialize an empty DataFrame
+            existing_data = pd.DataFrame(columns=['blockTime', 'sourceAddress', 'sourceTransactionSignature'])
+
+        # Get the connection
+        connection = clearing_house.program.provider.connection
+        limit = 1000
+        max_limit = limit * 20
+
+        o1, o2 = st.columns([1, 5])
+        dorun = o1.radio('run fundingSource fetch:', [True, False], index=1, horizontal=True)
+
+        if len(existing_data):
+            o2.dataframe(existing_data.groupby('sourceAddress').count())
+            
+        if dorun:
+            # Loop over df2.index
+            for addy1 in df2.index:
+                # Check if this index is already in the existing data
+                if addy1 in existing_data.index:
+                    # st.write(f"Skipping {addy1} as it is already processed.")
+                    continue
+                
+                # Fetch transaction history for the account
+                txns = await transaction_history_for_account(connection, addy1, None, limit, max_limit)
+                
+                if len(txns) < max_limit and len(txns):
+                    lastsig = txns[-1]['signature']
+                    transaction_got = await connection.get_transaction(lastsig)
+                    st.write(lastsig)
+                    st.json(transaction_got, expanded=False)
+                    if 'result' not in transaction_got:
+                        st.write(transaction_got)
+                    else:
+                        blocktime = transaction_got['result']['blockTime']
+                        source_addy = transaction_got['result']['transaction']['message']['accountKeys'][0]
+                        
+                        # Create a DataFrame with the new data and append it to the existing data
+                        dat = pd.DataFrame({'blockTime': [blocktime], 'sourceAddress': [source_addy],
+                                            'sourceTransactionSignature':[lastsig]}, index=[addy1])
+                        existing_data = existing_data.append(dat)
+                    
+                    # Write the updated data to the CSV file
+                    existing_data.to_csv(filename)
+                    
+                else:
+                    st.error('too many txns')
 
         setting2, setting1 = st.columns(2)
         ss = setting1.radio('y scale:', ['log', 'linear'], horizontal=True)
         ss2 = setting2.radio('data:', ['by day', 'by hour'], horizontal=True)
         
-        dd = df2.set_index('date').pipe(np.sign)
+        dd = df2.set_index('min date')['minutes_ago'].pipe(np.sign)
         dd.columns = ['new user creations']
 
         if ss2 == 'by day':
@@ -164,17 +242,18 @@ async def show_user_stats(clearing_house: ClearingHouse):
 
 
     with tabs[2]:
-        st.write('ref leaderboard')
+        st.write('referral leaderboard')
         oo = df.groupby('referrer')
         tt = oo.count().iloc[:,0:1]
         tt2 = oo.authority.agg(list)
         tt2.columns = ['referees']
-        tt.columns = ['number reffered']
-        val = df.loc[df.authority.isin(tt.index), ['authority', 'total_referrer_reward']]
+        tt.columns = ['number referred']
+        val = df.loc[df.authority.isin(tt.index), ['authority', 
+                                                   'total_referrer_reward', 'current_epoch_referrer_reward']]
         val = val.set_index('authority')
         tt = pd.concat([tt, val, tt2], axis=1)
         tt = tt.loc[[x for x in tt.index if x != '11111111111111111111111111111111']]
-        tt = tt.sort_values('number reffered', ascending=False)
+        tt = tt.sort_values('number referred', ascending=False)
         st.dataframe(tt)
         
     with tabs[3]:

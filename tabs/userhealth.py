@@ -33,7 +33,7 @@ import time
 from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
 
-@st.experimental_memo
+@st.cache_data
 def get_loaded_auths():
 
     query_p = st.experimental_get_query_params()

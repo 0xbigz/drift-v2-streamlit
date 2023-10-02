@@ -15,50 +15,47 @@ import os
 import asyncio
 import datetime
 
-from logs import log_page
-from simulations import sim_page
-from pid import show_pid_positions
+
 from driftpy.constants.config import configs
 
 from anchorpy import Provider, Wallet
 from solana.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from driftpy.clearing_house import ClearingHouse
-from fees import fee_page
-from if_stakers import insurance_fund_page
-from userstats import show_user_stats
-from orders import orders_page
-from platyperps import show_platyperps
-from liquidity import mm_page
-from imf import imf_page
-from userperf import show_user_perf
-from userhealth import show_user_health
-from tradeflow import trade_flow_analysis
-from gpt import gpt_page
-from uservolume import show_user_volume
-from refs import ref_page
-from userstatus import userstatus_page
-from perpLP import perp_lp_page
-from useractivity import show_user_activity
-from superstake import super_stake
-from vamm import vamm
-from funding_history import funding_history
+
+from tabs.logs import log_page
+from tabs.simulations import sim_page
+from tabs.pid import show_pid_positions
+from tabs.fees import fee_page
+from tabs.if_stakers import insurance_fund_page
+from tabs.userstats import show_user_stats
+from tabs.orders import orders_page
+from tabs.platyperps import show_platyperps
+from tabs.liquidity import mm_page
+from tabs.imf import imf_page
+from tabs.userperf import show_user_perf
+from tabs.userhealth import show_user_health
+from tabs.tradeflow import trade_flow_analysis
+from tabs.gpt import gpt_page
+from tabs.uservolume import show_user_volume
+from tabs.refs import ref_page
+from tabs.userstatus import userstatus_page
+from tabs.perpLP import perp_lp_page
+from tabs.useractivity import show_user_activity
+from tabs.superstake import super_stake
+from tabs.vamm import vamm
+from tabs.funding_history import funding_history
 
 # from network import show_network
-from api import show_api
-from userdataraw import userdataraw
-from vaults import vaults
+from tabs.api import show_api
+from tabs.userdataraw import userdataraw
+from tabs.vaults import vaults
+from tabs.competition import competitions
 
 def main():
-    st.set_page_config(
-        'Drift v2',
-        layout='wide',
-        page_icon="👾"
-    )
-
     current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
     if st.sidebar.button('Clear Cache'):
-        st.experimental_memo.clear()
+        st.cache_data.clear()
 
     env = st.sidebar.radio('env', ('mainnet-beta', 'devnet'))
 
@@ -93,6 +90,7 @@ def main():
      'FundingHistory',
      'UserDataRaw',
      'Vaults',
+     'DriftDraw'
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -223,7 +221,8 @@ def main():
     #     loop.run_until_complete(show_network(clearing_house))
 
     elif tab.lower() == 'mm':
-        mm_page(clearing_house)
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(mm_page(clearing_house))
 
     elif tab.lower() == 'trade flow':
         trade_flow_analysis()
@@ -265,6 +264,9 @@ def main():
     elif tab.lower() == 'vaults':
         loop = asyncio.new_event_loop()
         loop.run_until_complete(vaults(clearing_house, env))
+    elif tab.lower() == 'driftdraw':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(competitions(clearing_house, env))        
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -274,4 +276,13 @@ def main():
     st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
 
 if __name__ == '__main__':
+    try:
+        st.set_page_config(
+            'Drift v2',
+            layout='wide',
+            page_icon="👾"
+        )
+    except:
+        pass
+
     main()

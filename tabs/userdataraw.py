@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np 
 from driftpy.math.oracle import *
 import datetime
-
+import requests
 pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
@@ -35,10 +35,21 @@ import time
 from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
 import plotly.graph_objs as go
+from datafetch.snapshot_fetch import load_user_snapshot
+
+@st.cache_data
+def load_github_snap():
+    url = "https://api.github.com/repos/0xbigz/drift-v2-flat-data/contents/data/users"
+    response = requests.get(url)
+    ffs = [x['download_url'] for x in response.json()]
+
+    mega_df = [pd.read_csv(ff, index_col=[0]) for ff in ffs]
+    return mega_df
+
+
 async def userdataraw(clearing_house: ClearingHouse):
     # connection = clearing_house.program.provider.connection
-
-    class CustomEncoder(json.JSONEncoder):
+    class UserAccountEncoder(json.JSONEncoder):
         def default(self, obj):
             # st.write(type(obj))
             # st.write(str(type(obj)))
@@ -49,14 +60,42 @@ async def userdataraw(clearing_house: ClearingHouse):
             else:
                 return str(obj)
             return super().default(obj)
-    
-    inp = st.text_input('user account:', )
+        
+    s1, s2, s3 = st.columns([2,1,2])
+    inp = s1.text_input('user account:', )
+    mode = s2.radio('mode:', ['live', 'snapshot'])
+    commit_hash = 'main'
+    if mode == 'snapshot':
+        commit_hash = s3.text_input('commit hash:', 'main')
+
+
+    github_snap = load_github_snap()
+    ghs_df = pd.concat(github_snap, axis=1).T.reset_index(drop=True)
+    for col in ['total_deposits', 'total_withdraws']:
+        ghs_df[col] =  ghs_df[col].astype(float)
+    st.write('ghs_df:', len(github_snap))
+    tp = ghs_df.groupby('authority')[['total_deposits', 'total_withdraws']].sum()
+    st.dataframe(tp.reset_index())
+    tp2 = (tp['total_deposits'] - tp['total_withdraws'])/1e6
+    tp2 = tp2.sort_values()
+
+    st.dataframe(tp2.describe())
+    # st.dataframe(tp)
+    st.plotly_chart(tp2.plot())
+
     if len(inp)>5:
         st.write(inp)
         st.write(PublicKey(str(inp)))
-        user = (await clearing_house.program.account["User"].fetch(PublicKey(str(inp))))
+
+        if mode == 'live':
+            user = (await clearing_house.program.account["User"].fetch(PublicKey(str(inp))))
+            st.json(json.dumps(user.__dict__, cls=UserAccountEncoder))
+        else:
+            user, ff = load_user_snapshot(str(inp), commit_hash)
+            st.write(ff)
+            dd = user.set_index(user.columns[0]).to_json()
+            st.json(dd)
         # st.write(user.__dict__['spot_positions'])
-        st.json(json.dumps(user.__dict__, cls=CustomEncoder))
         # st.json(user)
 
 

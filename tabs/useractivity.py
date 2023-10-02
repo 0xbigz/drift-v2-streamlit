@@ -35,7 +35,7 @@ import time
 from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
 import plotly.graph_objs as go
-
+from datafetch.transaction_fetch import transaction_history_for_account
 
 async def show_user_activity(clearing_house: ClearingHouse):
     # connection = clearing_house.program.provider.connection
@@ -50,28 +50,10 @@ async def show_user_activity(clearing_house: ClearingHouse):
     before_sig1 = None
     if before_sig != '':
         before_sig1 = str(before_sig)
-
-    res2 = []
-    first_try = True
     
     tabs = st.tabs(['heatmap', 'dataframe', 'transaction details'])
 
-    while (first_try and len(res2) % 1000 == 0) and len(res2)< MAX_LIMIT:
-        try:
-            if len(res2):
-                bbs = res2[-1]['signature']
-            else:
-                bbs = before_sig1
-            res = await connection.get_signatures_for_address(addy, before=bbs, limit=limit)
-            if 'result' not in res:
-                st.warning('bad get_signatures_for_address' + str(res))
-                first_try = False
-            else:
-                res2.extend(res['result'])
-        except Exception as e:
-            st.warning('exception:'+str(e))
-            first_try = False
-
+    res2 = await transaction_history_for_account(connection, addy, before_sig1, limit, MAX_LIMIT)
     t = pd.DataFrame(res2)
     # st.write(t)
 

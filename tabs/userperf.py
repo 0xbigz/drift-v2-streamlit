@@ -96,7 +96,7 @@ def make_buy_sell_chart(usr_to_show):
     return fig
 
 
-# @st.experimental_memo
+# @st.cache_data
 def get_loaded_auths():
 
     query_p = st.experimental_get_query_params()
@@ -399,11 +399,22 @@ async def show_user_perf(clearing_house: ClearingHouse):
                     nom = bytes(user_acct.name).decode('utf-8')
 
                     st.write('"'+nom+'"')
-                    tabs = st.tabs(['trades', 'deposits', 'all time stats'])
+                    tabs1 = st.tabs(['trades', 'deposits', 'all time stats', 'snapshot'])
 
 
                     atnd_token_current_value = 0
-                    with tabs[1]:
+
+                    with tabs1[3]:
+                        from datafetch.snapshot_fetch import load_user_snapshot
+                        dd = st.columns(3)
+                        commit_hash = dd[0].text_input(label='commit', value='main')
+
+
+                        df, ff = load_user_snapshot(str(user_account_pk), commit_hash)
+                        dd[-1].write(ff)
+                        st.dataframe(df)
+
+                    with tabs1[1]:
                         df = load_deposit_history(str(user_account_pk))
                         df['amount2'] = df['amount'] * df['direction'].apply(lambda x: -1 if x!='deposit' else 1)
                         df2 = df.pivot_table(index='ts', columns='marketIndex', values='amount2')
@@ -431,7 +442,7 @@ async def show_user_perf(clearing_house: ClearingHouse):
                         # st.write(df.sum())
                         # st.plotly_chart(df.plot())
 
-                    with tabs[2]:
+                    with tabs1[2]:
                         atnd = (user_acct.total_deposits - user_acct.total_withdraws)/1e6
                         atpp = user_acct.settled_perp_pnl/1e6
                         atfp = user_acct.cumulative_perp_funding/1e6
@@ -484,7 +495,7 @@ async def show_user_perf(clearing_house: ClearingHouse):
 
                         st.write('excess usdc gains:', excess_usdc_gains_since_inception)
 
-                    with tabs[0]:
+                    with tabs1[0]:
                         mtcol, micol, srccol = st.columns(3)
                         mt = mtcol.selectbox('market type:', ['perp', 'spot', 'all'])
                         mi = None

@@ -87,9 +87,9 @@ async def insurance_fund_page(ch: ClearingHouse, env):
     url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
     url_market_prefix = url_market_pp+'.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
     name_rot = {}
-    spot_asts = ['USDC', 'SOL', 'MSOL', 
+    spot_asts = ['USDC', 'SOL', 'mSOL', 
                  'wBTC', 'wETH',
-                   'USDT']
+                   'USDT', 'jitoSOL']
     
     if dd == 'all time':
         for name in spot_asts:
@@ -133,10 +133,14 @@ async def insurance_fund_page(ch: ClearingHouse, env):
     # bankruptcies = rot[rot['amount']<0]
     # st.dataframe(bankruptcies)
     if_values = {}
+    cur_spot = s2.selectbox('spot assets:', spot_asts)
+
     with tabs[1]:
-        st.markdown('[USDC Insurance Vault](https://solscan.io/account/2CqkQvYxp9Mq4PqLvAQ1eryYxebUh4Liyn5YMDtXsYci) | [Stake Example (Python)](https://github.com/0xbigz/driftpy-examples/blob/master/if_stake.py) | [Grafana Dashboard](https://metrics.drift.trade/d/hQYFylo4k/insurance-fund-balance?orgId=1&from=now-24h&to=now)')
-        bbs = st.columns(state.number_of_spot_markets)
-        ccs = st.columns(state.number_of_spot_markets)
+        st.markdown('''[USDC Insurance Vault](https://solscan.io/account/2CqkQvYxp9Mq4PqLvAQ1eryYxebUh4Liyn5YMDtXsYci) 
+                    | [Stake Example (Python)](https://github.com/0xbigz/driftpy-examples/blob/master/if_stake.py) 
+                    | [Grafana Dashboard](https://metrics.drift.trade/d/hQYFylo4k/insurance-fund-balance?orgId=1&from=now-24h&to=now)''')
+        bbs = st.columns(1)
+        ccs = st.columns(1)
 
         conn = ch.program.provider.connection
         ts = time.time()
@@ -175,9 +179,10 @@ async def insurance_fund_page(ch: ClearingHouse, env):
                         balance = v_amount * n_shares / total_n_shares
                         staker_df['$ balance'] = balance / (10 ** spot.decimals)
 
-            name = str(''.join(map(chr, spot.name)))
+            name = str(''.join(map(chr, spot.name))).strip(' ')
             symbol = '$' if i==0 else ''
-            bbs[i].metric(f'{name} (marketIndex={i}) insurance vault balance:',
+            if name == cur_spot:
+                bbs[0].metric(f'{name} (marketIndex={i}) insurance vault balance:',
             f'{symbol}{v_amount/(10**spot.decimals):,.2f}',
             f'{symbol}{protocol_balance/10**spot.decimals:,.2f} protocol owned'
             ) 
@@ -196,26 +201,26 @@ async def insurance_fund_page(ch: ClearingHouse, env):
                 staker_apr = 0
 
             total_if_value += (v_amount/10**spot.decimals) * spot.historical_oracle_data.last_oracle_price/1e6
-            ccs[i].metric('revenue pool', f'{symbol}{rev_pool_tokens/10**spot.decimals:,.2f}', 
-            f'{symbol}{next_payment/10**spot.decimals:,.2f} next est. hr payment ('+str(np.round(factor_for_protocol*100, 2))+ '% protocol | '+str(np.round(staker_apr*100, 2))+'% staker APR)'
-            )
             if_values[i] = (v_amount/10**spot.decimals)
+            if name in name_rot:
+                total_month_gain += (name_rot[name]['amount'].sum()) * spot.historical_oracle_data.last_oracle_price/1e6
 
+            if name == cur_spot:
+                ccs[0].metric('revenue pool', f'{symbol}{rev_pool_tokens/10**spot.decimals:,.2f}', 
+                f'{symbol}{next_payment/10**spot.decimals:,.2f} next est. hr payment ('+str(np.round(factor_for_protocol*100, 2))+ '% protocol | '+str(np.round(staker_apr*100, 2))+'% staker APR)'
+                )
+                ccs[0].write('')
 
-
-            ccs[i].write('')
-
-            # st.write(f'{name} (marketIndex={i}) insurance vault balance: {v_amount/QUOTE_PRECISION:,.2f} (protocol owned: {protocol_balance/QUOTE_PRECISION:,.2f})')
-            ccs[i].write(f'{name} (marketIndex={i}) time since last settle: {np.round((ts - spot.insurance_fund.last_revenue_settle_ts)/(60*60), 2)} hours')
+                # st.write(f'{name} (marketIndex={i}) insurance vault balance: {v_amount/QUOTE_PRECISION:,.2f} (protocol owned: {protocol_balance/QUOTE_PRECISION:,.2f})')
+                ccs[0].write(f'{name} (marketIndex={i}) time since last settle: {np.round((ts - spot.insurance_fund.last_revenue_settle_ts)/(60*60), 2)} hours')
         
             
-            # full_if_url = url_market_prefix+name.strip()+"/insurance-fund-records/2023/"+str(current_month)
-            # st.write(full_if_url)
-            try:
-                ccs[i].plotly_chart(name_rot[name.strip()]['amount'].cumsum().plot())
-                total_month_gain += (name_rot[name.strip()]['amount'].sum()) * spot.historical_oracle_data.last_oracle_price/1e6
-            except:
-                ccs[i].write('cannot load full_if_url')
+                # full_if_url = url_market_prefix+name.strip()+"/insurance-fund-records/2023/"+str(current_month)
+                # st.write(full_if_url)
+                try:
+                    ccs[0].plotly_chart(name_rot[name]['amount'].cumsum().plot())
+                except:
+                    ccs[0].write('cannot load full_if_url')
 
     with tabs[0]:
         z1, z2, z3 = st.columns([1,1,2])
@@ -243,7 +248,6 @@ async def insurance_fund_page(ch: ClearingHouse, env):
             tshow.columns = ['settled_insurance', 'max_insurance', 'liq_fees', 'withdrawn_fees']
             st.dataframe(tshow)
         
-        cur_spot = s2.selectbox('spot assets:', spot_asts)
         rot = name_rot[cur_spot]
         apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365.25*24/2).sort_index()#.rolling(24).mean()
         apr_fig = apr_df.plot(log_y=True)
