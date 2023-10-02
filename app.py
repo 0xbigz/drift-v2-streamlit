@@ -145,6 +145,8 @@ def main():
 
         streamlit run app.py 
         ```
+                    
+        (this app uses streamlit==1.27, see `requirements.txt`)
         """)
 
     elif tab.lower() == 'overview':
