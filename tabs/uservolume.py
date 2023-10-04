@@ -224,18 +224,22 @@ async def show_user_volume(clearing_house: ClearingHouse):
 
     selected = st.radio('', ["Volume", "Referrals"], index=0, horizontal=True)
     if selected == 'Volume':
-        maker_volume = dfs.groupby("maker")["quoteAssetAmountFilled"].sum()
-        taker_volume = dfs.groupby("taker")["quoteAssetAmountFilled"].sum()
+        dfs['taker'] = dfs['taker'].replace('undefined', 'vAMM' if 'perp' in market_name.lower() else 'external')
+        dfs['maker'] = dfs['maker'].replace('undefined', 'vAMM' if 'perp' in market_name.lower() else 'external')
+        maker_volume = dfs.groupby("maker")["quoteAssetAmountFilled"].sum().fillna(0)
+        taker_volume = dfs.groupby("taker")["quoteAssetAmountFilled"].sum().fillna(0)
         df = pd.concat(
             {"maker volume": maker_volume, "taker volume": taker_volume}, axis=1
         )
-        df = df.sort_values("maker volume", ascending=False)
-        st.dataframe(df)
+        df['total volume'] = df[['maker volume', 'taker volume']].sum(axis=1)
+        df = df[['total volume', 'taker volume', 'maker volume']]
+        df = df.sort_values("total volume", ascending=False)
+        st.dataframe(df, use_container_width=True)
 
         n_bins = st.number_input("Fill Bins:", value=100)
         authority = st.text_input(
             "Public Key:",
-            value=df.index[0],
+            value=dfs['maker'].values[0],
         )
         auth_maker_df = dfs[dfs["maker"] == authority]
         auth_taker_df = dfs[dfs["taker"] == authority]

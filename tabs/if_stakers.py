@@ -226,7 +226,7 @@ async def insurance_fund_page(ch: ClearingHouse, env):
         z1, z2, z3 = st.columns([1,1,2])
         z1.metric('Total Insurance:', 
         f'${(np.round(total_if_value, 2)):,.2f}',
-        f'${(np.round(total_month_gain, 2)):,.2f} revenue this year',
+        f'${(np.round(total_month_gain, 2)):,.2f} revenue '+dd,
         )
 
         z2.metric("Total Stakes", str(len(all_stakers)),str(len(authorities))+" Unique Stakers")
