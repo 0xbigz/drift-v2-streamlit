@@ -67,21 +67,19 @@ async def userdataraw(clearing_house: ClearingHouse):
     commit_hash = 'main'
     if mode == 'snapshot':
         commit_hash = s3.text_input('commit hash:', 'main')
+        github_snap = load_github_snap()
+        ghs_df = pd.concat(github_snap, axis=1).T.reset_index(drop=True)
+        for col in ['total_deposits', 'total_withdraws']:
+            ghs_df[col] =  ghs_df[col].astype(float)
+        st.write('ghs_df:', len(github_snap))
+        tp = ghs_df.groupby('authority')[['total_deposits', 'total_withdraws']].sum()
+        st.dataframe(tp.reset_index())
+        tp2 = (tp['total_deposits'] - tp['total_withdraws'])/1e6
+        tp2 = tp2.sort_values()
 
-
-    github_snap = load_github_snap()
-    ghs_df = pd.concat(github_snap, axis=1).T.reset_index(drop=True)
-    for col in ['total_deposits', 'total_withdraws']:
-        ghs_df[col] =  ghs_df[col].astype(float)
-    st.write('ghs_df:', len(github_snap))
-    tp = ghs_df.groupby('authority')[['total_deposits', 'total_withdraws']].sum()
-    st.dataframe(tp.reset_index())
-    tp2 = (tp['total_deposits'] - tp['total_withdraws'])/1e6
-    tp2 = tp2.sort_values()
-
-    st.dataframe(tp2.describe())
-    # st.dataframe(tp)
-    st.plotly_chart(tp2.plot())
+        st.dataframe(tp2.describe())
+        # st.dataframe(tp)
+        st.plotly_chart(tp2.plot())
 
     if len(inp)>5:
         st.write(inp)
