@@ -36,6 +36,8 @@ from driftpy.math.margin import MarginCategory, calculate_asset_weight
 import plotly.graph_objs as go
 import requests
 
+DAILY_PARTITION_CUTOFF = datetime.datetime(2023, 10, 6)
+
 def load_deposit_history(userkey, source='api'):
     if source == 'api':
         url = 'https://mainnet-beta.api.drift.trade/deposits/userAccounts/?userPublicKeys='+userkey+'&pageIndex=0&pageSize=1000&sinceId=&sinceTs='
@@ -50,8 +52,6 @@ def load_deposit_history(userkey, source='api'):
         return df
     
     return None
-
-
 
 
 def make_buy_sell_chart(usr_to_show):
@@ -211,8 +211,11 @@ def load_user_settlepnl(dates, user_key, with_urls=False):
     dfs = []
     data_urls = []
     for date in dates:
-        (year, month, _) = (date.strftime("%Y"), str(date.month), str(date.day))
-        data_url = url % (user_key, year, month)
+        (year, month, day) = (date.strftime("%Y"), str(date.month), str(date.day))
+        if date <= DAILY_PARTITION_CUTOFF:
+            data_url = url % (user_key, year, month)
+        else:
+            data_url = url % (user_key, year, month, day)
         if data_url not in data_urls:
             data_urls.append(data_url)
             try:
