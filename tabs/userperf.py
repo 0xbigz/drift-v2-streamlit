@@ -271,13 +271,15 @@ def load_user_trades(dates, user_key, with_urls=False):
             try:
                 dd = pd.read_csv(data_url, nrows=50000)
                 if 'liquidation' in dd['actionExplanation'].unique():
-                    data_liq_url = liq_url % (user_key, year, month)
-                    data_urls.append(data_liq_url)
-                    dd1 = pd.read_csv(data_liq_url)
-                    dd = dd.merge(dd1, suffixes=('', '_l'), how='outer', on='txSig')
+                    if user_key in dd[dd['actionExplanation']=='liquidation'].taker.unique():
+                        data_liq_url = liq_url % (user_key, year, month)
+                        print(data_liq_url)
+                        data_urls.append(data_liq_url)
+                        dd1 = pd.read_csv(data_liq_url)
+                        dd = dd.merge(dd1, suffixes=('', '_l'), how='outer', on='txSig')
                 dfs.append(dd)
             except Exception as e:
-                st.warning(data_url+ ' failed to load ('+str(e)+')')
+                st.warning(data_url+ ' + liq files failed to load ('+str(e)+')')
     if len(dfs):
         dfs = pd.concat(dfs)
     else:
@@ -378,7 +380,7 @@ async def show_user_perf(clearing_house: ClearingHouse):
             user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
 
             for sub_id in range(user_stat.number_of_sub_accounts_created):
-                print('sub_id:', sub_id)
+                # print('sub_id:', sub_id)
 
                 user_account_pk = get_user_account_public_key(
                     clearing_house.program_id,
