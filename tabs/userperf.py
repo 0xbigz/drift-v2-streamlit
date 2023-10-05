@@ -215,6 +215,7 @@ def load_user_settlepnl(dates, user_key, with_urls=False):
         if date <= DAILY_PARTITION_CUTOFF:
             data_url = url % (user_key, year, month)
         else:
+            url += '/%s'
             data_url = url % (user_key, year, month, day)
         if data_url not in data_urls:
             data_urls.append(data_url)
