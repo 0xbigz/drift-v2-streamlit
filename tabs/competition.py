@@ -172,12 +172,39 @@ async def competitions(ch: ClearingHouse, env):
 
             comp_acct = accounts[0][0].account
             vsum = vault_df.sum()
-            st.write('round number:', comp_acct.round_number, ' | number of winners:', comp_acct.number_of_winners)
-            prize_ev = s3.number_input('expected prize ($):', step=1.0, min_value=0.0, value=2000.0, max_value=1e9)
+
+            spot = await get_spot_market_account(ch.program, 0)
+            if_vault = get_insurance_fund_vault_public_key(ch.program_id, 0)
+            try:
+                v_amount = int((await provider.connection.get_token_account_balance(if_vault))['result']['value']['amount'])
+            except:
+                v_amount = 0
+
+            pol_vault =  (1-spot.insurance_fund.user_shares/spot.insurance_fund.total_shares)*v_amount/1e6
+            max_prize = np.round((pol_vault - comp_acct.sponsor_info.min_sponsor_amount/1e6) * comp_acct.sponsor_info.max_sponsor_fraction/1e6, 2)
+            prizes = [np.round(min(1000, max_prize/10),2), np.round(min(5000, max_prize/2),2), max_prize]
+            prize_ev = 2000
+
+            odds = [sum(prizes)/x for x in prizes]
+            odds_rounded = [np.ceil(odds[0]), np.ceil(odds[1]), np.floor(odds[2])]
+            # st.write('odds:', odds_rounded)
+            prize_ev = sum([odds_rounded[i]/sum(odds_rounded)*prizes[i] for i in range(len(prizes))])
+            s3.metric('expected prize value', f'${prize_ev:,.2f}', 'prize buckets: $' + ', $'.join([str(x) for x in prizes]), help=
+                      '''
+odds of each bucket (out of {'''+str(sum(odds_rounded))+'''}):''' + str(odds_rounded) + '''
+
+''')
+
+            st.write('round number:', comp_acct.round_number, ' | number of winners:', comp_acct.number_of_winners, ' | round end (UTC):', 
+                     pd.to_datetime(comp_acct.next_round_expiry_ts*1e9))
+            # prize_ev = s3.number_input('expected prize ($):', step=1.0, min_value=0.0, value=2000.0, max_value=1e9)
+            # vv = s3.radio('prize choice:', ['custom', 1000, 5000, 10000], horizontal=True)
+
             vault_df['entries'] = vault_df[derived_snap_name] + vault_df['bonus_score'] - vault_df['previous_snapshot_score']
             vault_df['entries'] =  vault_df['entries'].apply(lambda x: min(x, comp_acct.max_entries_per_competitor))
             vault_df['EV ($)'] = vault_df['entries']/vault_df['entries'].sum() * prize_ev
             vault_df['chance of a win'] = 1 - ((1- vault_df['entries']/vault_df['entries'].sum()) ** 33)
+            
 
             s2.metric('total entries:', f"{vault_df['entries'].sum():,.0f}",
                     f"{vsum['bonus_score']} from bonus_score")
