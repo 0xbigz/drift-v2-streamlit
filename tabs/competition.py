@@ -169,6 +169,7 @@ async def competitions(ch: ClearingHouse, env):
             # mode = st.radio('mode:', ['current state', 'extrapolated'], horizontal=True)
             derived_snap_name = 'latest_snapshot(wb)'
             vault_df[derived_snap_name] = [x.fees.total_fee_paid//100 for x in every_user_stats]
+            vault_df['last trade ts'] = [pd.to_datetime(x.last_taker_volume30d_ts*1e9) for x in every_user_stats]
 
             comp_acct = accounts[0][0].account
             vsum = vault_df.sum()
@@ -204,11 +205,14 @@ odds of each bucket (out of {'''+str(sum(odds_rounded))+'''}):''' + str(odds_rou
             vault_df['entries'] =  vault_df['entries'].apply(lambda x: min(x, comp_acct.max_entries_per_competitor))
             vault_df['EV ($)'] = vault_df['entries']/vault_df['entries'].sum() * prize_ev
             vault_df['chance of a win'] = 1 - ((1- vault_df['entries']/vault_df['entries'].sum()) ** 33)
-            
 
             s2.metric('total entries:', f"{vault_df['entries'].sum():,.0f}",
                     f"{vsum['bonus_score']} from bonus_score")
-            d1, d2 = st.columns([3,1])        
+            d1, = st.columns(1)        
             
             vault_df1 = vault_df.reset_index().set_index('authority')
-            d1.dataframe(vault_df1[['entries', 'EV ($)', 'chance of a win']].sort_values(by='entries', ascending=False), use_container_width=True)
+            vault_df1 = vault_df1[['entries', 'EV ($)', 'chance of a win', 'last trade ts']].sort_values(by='entries', ascending=False)
+            vault_df1 = vault_df1.reset_index()
+            vault_df1.index.name = 'rank'
+            vault_df1.index += 1
+            d1.dataframe(vault_df1, use_container_width=True)
