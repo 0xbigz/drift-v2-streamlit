@@ -46,13 +46,15 @@ async def competitions(ch: ClearingHouse, env):
     tabs = st.tabs(['summary', 'accounts', 'transactions', 'settings'])
     idl = None
     pid = None
+    preset_programs = None
     with tabs[3]:
         preset_programs = st.radio('presets:', ['drift-competitions', 'drift-vaults', 'metadaoproject', 'custom'],
                                    horizontal=True)
         g1, g2 = st.columns(2)
         
         if preset_programs == 'drift-competitions':
-            default_pid = 'HjMa8sytpmBvf1Qr6UAJxYMtTfc3Qw8Z2cHD3nY1w2Nq'
+            #'HjMa8sytpmBvf1Qr6UAJxYMtTfc3Qw8Z2cHD3nY1w2Nq', '8yCtqd9UetSttHhbGJFRk3MpcQny3bNvEfv5YrADuHEp'
+            default_pid = 'DraWMeQX9LfzQQSYoeBwHAgM5JcqFkgrX7GbTfjzVMVL'
             default_url = 'https://raw.githubusercontent.com/drift-labs/drift-competitions/master/ts/sdk/src/idl/drift_competitions.json'
         elif preset_programs == 'metadaoproject':
             default_pid = 'Ctt7cFZM6K7phtRo5NvjycpQju7X6QTSuqNen2ebXiuc'
@@ -154,83 +156,28 @@ async def competitions(ch: ClearingHouse, env):
                 st.dataframe(res)
    
     with tabs[0]:
-        s1, s2 = st.columns(2)
+        s1, s2, s3 = st.columns(3)
         s1.metric('number of '+idl['accounts'][0]['name']+'(s):', len(accounts[0]), str(len(accounts[1]))+' '+idl['accounts'][1]['name']+'(s)')
-        chu = None
-        return 0
-        if len(vault_df):
-            st.write(vault_df.T)
-            vu = [PublicKey(x) for x in vault_df.T.loc['competition_authority'].values]
-            # st.write(vu)
-            vault_users = await ch.program.account["User"].fetch_multiple(vu)
-            from driftpy.clearing_house_user import ClearingHouseUser
-            fuser = vault_users[0]
-            # st.write(vault_users)
-            # st.write(fuser)
-            if fuser is not None:
-                chu = ClearingHouseUser(
-                    ch, 
-                    authority=fuser.authority, 
-                    subaccount_id=fuser.sub_account_id, 
-                    use_cache=True
-                )
-                await chu.set_cache()
-                cache = chu.CACHE
+        
 
-                for i, vault_user in enumerate(vault_users):
-                    chu = ClearingHouseUser(
-                        ch, 
-                        authority=vault_user.authority, 
-                        subaccount_id=vault_user.sub_account_id, 
-                        use_cache=False
-                    )
-                    chu.CACHE = cache
+        if preset_programs == 'drift-competitions':
+            every_user_stats = await ch.program.account['UserStats'].fetch_multiple(vault_df['user_stats'].values)
+            # mode = st.radio('mode:', ['current state', 'extrapolated'], horizontal=True)
+            derived_snap_name = 'latest_snapshot(wb)'
+            vault_df[derived_snap_name] = [x.fees.total_fee_paid//100 for x in every_user_stats]
 
-                    nom = bytes(vault_user.name).decode('utf-8').strip(' ')
+            comp_acct = accounts[0][0].account
+            vsum = vault_df.sum()
+            st.write('round number:', comp_acct.round_number, ' | number of winners:', comp_acct.number_of_winners)
+            prize_ev = s3.number_input('expected prize ($):', step=1.0, min_value=0.0, value=2000.0, max_value=1e9)
+            vault_df['entries'] = vault_df[derived_snap_name] + vault_df['bonus_score'] - vault_df['previous_snapshot_score']
+            vault_df['entries'] =  vault_df['entries'].apply(lambda x: min(x, comp_acct.max_entries_per_competitor))
+            vault_df['EV ($)'] = vault_df['entries']/vault_df['entries'].sum() * prize_ev
+            vault_df['chance of a win'] = 1 - ((1- vault_df['entries']/vault_df['entries'].sum()) ** 33)
 
-                    dat = vault_df.iloc[:,i]
-
-                    max_tokens = None
-                    if float(dat.loc['spot_market_index']) == 0:
-                        max_tokens = float(dat.loc['max_tokens'])/1e6
-
-                    equity = (await chu.get_spot_market_asset_value())/1e6
-                    with st.expander(f"> {nom}: ${equity:,.2f}/{max_tokens:,.2f}"):
-                        st.markdown(f'balance: `${equity:,.2f}` [[web ui](https://app.drift.trade/?authority={vault_user.authority})]')
-
-                        prof_share = float(dat.loc['profit_share'])/1e4
-                        mang_share = float(dat.loc['management_fee'])/1e4
-                        st.write(f'fee structure: `{mang_share:,.2f}% / {prof_share:,.2f}%` (management / profit fee)')
-                        if float(dat.loc['total_shares']) != 0:
-                            user_owned_frac = float(dat.loc['user_shares'])/float(dat.loc['total_shares'])
-                            st.write(f'user-owned: `${equity*user_owned_frac:,.2f}`')
-
-
-                            this_vault_deps = vault_dep_def.T[vault_dep_def.T['vault'].astype(str)==str(vault_user.authority)]\
-                                .sort_values('vault_shares', ascending=False).T
-                            this_vault_deps.index = this_vault_deps.index.astype(str)
-                            # st.write(this_vault_deps)
-                            for j in range(len(this_vault_deps.columns)):
-                                tv_dep = this_vault_deps.iloc[:,j]
-                                # st.write(tv_dep)
-                                tv_nom = tv_dep.loc['authority'][:5]+'...'
-
-                                tuser_owned_frac = float(tv_dep.loc['vault_shares'])/float(dat.loc['total_shares'])
-                                tcur_val = equity*tuser_owned_frac
-                                tpnl = tcur_val - float(tv_dep.loc['net_deposits'])/1e6
-                                tprof_fees = float(tv_dep.loc['cumulative_profit_share_amount'])/1e6 * prof_share/1e2
-                                st.write(f'> {tv_nom}-owned: `${tcur_val:,.3f}` | pnl = `${tpnl:,.3f}` | u.b. profit fees: `${tprof_fees:,.3f}`')
-
-                            st.write(f'manager-owned: `${equity - equity*user_owned_frac:,.2f}` ')
-
-                            dd = float(dat.loc['manager_total_profit_share'])/1e6
-                            dd2 = float(dat.loc['manager_total_fee'])/1e6
-
-                            mdep = float(dat.loc['manager_total_deposits'])/1e6
-                            mwit = float(dat.loc['manager_total_withdraws'])/1e6
-
-                            st.write(f'> manager net: `${mdep} - ${mwit}`')
-                            st.write(f'> manager gains: `${dd2} + ${dd}`')
-                    # st.write(vault_user)
-                    # st.write(f"fees: {vault_df.iloc[:,i]}%")# / {vault_df.iloc['profit_share',i]/1e4}% ")
-        # st.write(all_vaults[0])
+            s2.metric('total entries:', f"{vault_df['entries'].sum():,.0f}",
+                    f"{vsum['bonus_score']} from bonus_score")
+            d1, d2 = st.columns([3,1])        
+            
+            vault_df1 = vault_df.reset_index().set_index('authority')
+            d1.dataframe(vault_df1[['entries', 'EV ($)', 'chance of a win']].sort_values(by='entries', ascending=False), use_container_width=True)
