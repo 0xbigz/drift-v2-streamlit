@@ -153,7 +153,11 @@ async def competitions(ch: ClearingHouse, env):
                 res = pd.concat(res,axis=1)
                 vault_df = res
                 vault_df = vault_df.T#.sort_values(by='next_expiry_ts', ascending=False).T
-                st.dataframe(res)
+                st.write(len(res))
+                if len(vault_df) < 3:
+                    st.dataframe(vault_df.T)
+                else:
+                    st.dataframe(vault_df)
    
     with tabs[0]:
         s1, s2, s3 = st.columns(3)
