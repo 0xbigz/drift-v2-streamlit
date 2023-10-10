@@ -195,7 +195,7 @@ async def competitions(ch: ClearingHouse, env):
 odds of each bucket (out of {'''+str(sum(odds_rounded))+'''}):''' + str(odds_rounded) + '''
 
 ''')
-
+            takervolnom = '~ taker volume ($)'
             st.write('round number:', comp_acct.round_number, ' | number of winners:', comp_acct.number_of_winners, ' | round end (UTC):', 
                      pd.to_datetime(comp_acct.next_round_expiry_ts*1e9))
             # prize_ev = s3.number_input('expected prize ($):', step=1.0, min_value=0.0, value=2000.0, max_value=1e9)
@@ -205,13 +205,14 @@ odds of each bucket (out of {'''+str(sum(odds_rounded))+'''}):''' + str(odds_rou
             vault_df['entries'] =  vault_df['entries'].apply(lambda x: min(x, comp_acct.max_entries_per_competitor))
             vault_df['EV ($)'] = vault_df['entries']/vault_df['entries'].sum() * prize_ev
             vault_df['chance of a win'] = 1 - ((1- vault_df['entries']/vault_df['entries'].sum()) ** 33)
+            vault_df[takervolnom] = (vault_df[derived_snap_name] - vault_df['previous_snapshot_score'])/10
 
             s2.metric('total entries:', f"{vault_df['entries'].sum():,.0f}",
                     f"{vsum['bonus_score']} from bonus_score")
             d1, = st.columns(1)        
             
             vault_df1 = vault_df.reset_index().set_index('authority')
-            vault_df1 = vault_df1[['entries', 'EV ($)', 'chance of a win', 'last trade ts']].sort_values(by='entries', ascending=False)
+            vault_df1 = vault_df1[['entries', 'EV ($)', 'chance of a win', takervolnom, 'last trade ts']].sort_values(by='entries', ascending=False)
             vault_df1 = vault_df1.reset_index()
             vault_df1.index.name = 'rank'
             vault_df1.index += 1
