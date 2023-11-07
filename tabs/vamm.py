@@ -301,16 +301,83 @@ from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
 import datetime
 
-async def vamm(ch: ClearingHouse):
-    # Create sliders for each variable
-    mi1 = st.selectbox('perp market index:', [0,1,2])
-    market: PerpMarket = await get_perp_market_account(ch.program, mi1)
-    nom = bytes(market.name).decode('utf-8')
-    market_index = market.market_index
-    st.write(nom)
 
-    tabs = st.tabs(['liquidity', 'spread'])
+def calculate_reservation_price_offset(
+    last_24h_avg_funding_rate,
+    base_inventory,
+    min_order_size,
+    oracle_twap,
+    mark_twap
+):
+    offset = 0
+    max_offset = (1e6 / 400) 
+    base_inventory_threshold = min_order_size * 5
+    # calculate quote denominated market premium
+    mark_premium_fast = mark_twap - oracle_twap
+
+    # convert last_24h_avg_funding_rate to quote denominated premium
+    mark_premium_slow = last_24h_avg_funding_rate / FUNDING_RATE_BUFFER * 24
+
+    # only apply when inventory is consistent with recent and 24h market premium
+    if mark_premium_fast > 0 and mark_premium_slow > 0 and base_inventory > base_inventory_threshold:
+        offset = min(mark_premium_fast, mark_premium_slow)
+    
+    if mark_premium_fast < 0 and mark_premium_slow < 0 and base_inventory < -base_inventory_threshold:
+        offset = max(mark_premium_fast,mark_premium_slow)
+
+    # let clamped_offset = offset.clamp(-max_offset, max_offset);
+    return offset
+    # validate!(
+    #     clamped_offset.abs() < max_offset,
+    #     ErrorCode::InvalidAmmDetected
+    # );
+
+    # Ok(clamped_offset.cast()?)
+
+
+async def vamm(ch: ClearingHouse):
+    tabs = st.tabs(['overview', 'per market', 'spread calculator'])
+
     with tabs[0]:
+        # num_m = (await get_state_account(ch.program)).number_of_markets
+        num_m = 17
+        res = []
+        for i in range(num_m):
+            market: PerpMarket = await get_perp_market_account(ch.program, i)
+            spread = (market.amm.long_spread + market.amm.short_spread)/1e6 * 100
+            op = market.amm.historical_oracle_data.last_oracle_price/1e6
+            bids = (market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9 * op
+            asks = (market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9 * op
+            amm_owned = (1 - market.amm.user_lp_shares / market.amm.sqrt_k) * 100
+
+            offset = calculate_reservation_price_offset(market.amm.last24h_avg_funding_rate, 
+                                                        market.amm.base_asset_amount_with_amm,
+                                                        market.amm.min_order_size,
+                                                        market.amm.historical_oracle_data.last_oracle_price_twap5min,
+                                                        market.amm.last_mark_price_twap5min,
+                                                        )
+            offset /= op
+            offset *= 100
+            res.append((bytes(market.name).decode('utf-8'), offset/1e6, spread, 
+                        market.amm.base_spread/1e6 * 100, 
+                        market.amm.max_spread/1e6 * 100, 
+                         bids, asks, amm_owned))
+        
+        df = pd.DataFrame(res, 
+                              columns=['market', 'offset (%)', 'spread (%)', 'base spread (%)', 'max spread (%)', 'bids ($)', 'asks ($)', 'amm owned (%)']
+                              )
+        st.write(df)
+
+
+
+    with tabs[1]:
+        # Create sliders for each variable
+        mi1 = st.selectbox('perp market index:', [0,1,2])
+        market: PerpMarket = await get_perp_market_account(ch.program, mi1)
+        nom = bytes(market.name).decode('utf-8')
+        market_index = market.market_index
+        st.write(nom)
+
         st.text(f'vAMM Liquidity (bids= {(market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9} | asks={(market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9})')
         t0, t1, t2 = st.columns([1,1,5])
         dir = t0.selectbox('direction:', ['buy', 'sell'], key='selectbox-'+str(market_index))
@@ -329,7 +396,7 @@ async def vamm(ch: ClearingHouse):
         price = (ask_price * (1+px_impact/100)) if dir=='buy' else (bid_price * (1-px_impact/100))
         t2.text(f'vAMM stats: \n px={price} \n px_impact={px_impact}%')
 
-    with tabs[1]:
+    with tabs[2]:
         c1,c2,c3 = st.columns(3)
         base_spread = c1.slider("Base Spread", min_value=0.0, max_value=1.0/100, value=market.amm.base_spread/1e6)
         max_spread = c2.slider("Max Spread", min_value=0.0, max_value=1.0, value=market.amm.max_spread /1e6)
