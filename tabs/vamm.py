@@ -339,8 +339,7 @@ async def vamm(ch: ClearingHouse):
     tabs = st.tabs(['overview', 'per market', 'spread calculator'])
 
     with tabs[0]:
-        # num_m = (await get_state_account(ch.program)).number_of_markets
-        num_m = 17
+        num_m = (await get_state_account(ch.program)).number_of_markets
         res = []
         for i in range(num_m):
             market: PerpMarket = await get_perp_market_account(ch.program, i)
