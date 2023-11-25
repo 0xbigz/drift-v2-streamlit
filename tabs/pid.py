@@ -9,10 +9,10 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_client import DriftClient
+from driftpy.drift_user import DriftUser as DriftUser
 from driftpy.math.positions import calculate_position_funding_pnl
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
@@ -22,18 +22,18 @@ import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
 import matplotlib.pyplot as plt 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 from driftpy.math.margin import MarginCategory
 from driftpy.types import SpotBalanceType
 import plotly.express as px
 from solana.rpc.types import MemcmpOpts
 
-async def show_pid_positions(clearing_house: ClearingHouse):
+async def show_pid_positions(clearing_house: DriftClient):
     ch = clearing_house
     state = await get_state_account(ch.program)
 
@@ -51,11 +51,11 @@ async def show_pid_positions(clearing_house: ClearingHouse):
             if see_user_breakdown == 'All':
                 all_users = await ch.program.account['User'].all()
             elif see_user_breakdown == 'Active':
-                all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+                all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=4350, bytes='1')])
             elif see_user_breakdown == 'SuperStakeSOL':
-                all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
+                all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
             elif see_user_breakdown == 'SuperStakeJitoSOL':
-                all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=72, bytes='GHB8xrCziYmaX9fbpnLFAMBVby')])
+                all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=72, bytes='GHB8xrCziYmaX9fbpnLFAMBVby')])
         except Exception as e:
             print('ERRRRR:', e)
             st.write("ERROR: cannot load ['User'].all() with current rpc")
@@ -68,7 +68,7 @@ async def show_pid_positions(clearing_house: ClearingHouse):
     # healths = []
     from driftpy.types import User
     kp = Keypair()
-    ch = ClearingHouse(ch.program, kp)
+    ch = DriftClient(ch.program, kp)
 
     
     perp_liq_prices = {}
@@ -77,21 +77,23 @@ async def show_pid_positions(clearing_house: ClearingHouse):
     perp_liq_deltas = {}
 
     if all_users is not None:
-        fuser: User = all_users[0].account
-        chu = ClearingHouseUser(
+        fuser: DriftUser = all_users[0].account
+        chu = DriftUser(
             ch, 
             authority=fuser.authority, 
             subaccount_id=fuser.sub_account_id, 
-            use_cache=True
+            # use_cache=True
         )
         await chu.set_cache()
         cache = chu.CACHE
 
         for x in all_users:
             key = str(x.public_key)
-            account: User = x.account
+            account: DriftUser = x.account
 
-            chu = ClearingHouseUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, use_cache=True)
+            chu = DriftUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, 
+                            # use_cache=True
+                            )
             cache['user'] = account # update cache to look at the correct user account
             await chu.set_cache(cache)
             margin_category = MarginCategory.INITIAL

@@ -12,9 +12,9 @@ from driftpy.setup.helpers import mock_oracle, _airdrop_user, set_price_feed, se
 from driftpy.admin import Admin
 from driftpy.types import OracleSource
 
-from driftpy.clearing_house import ClearingHouse as SDKClearingHouse
+from driftpy.drift_client import DriftClient as SDKDriftClient
 from driftpy.math.amm import calculate_mark_price_amm
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 
 from anchorpy import Provider, Program, create_workspace, WorkspaceType
@@ -23,7 +23,7 @@ import os
 import json
 import pandas as pd
 
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 
 from subprocess import Popen
 import datetime
@@ -37,11 +37,11 @@ from driftpy.math.margin import MarginCategory
 async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None, only_perp_index=None):
     if all_users is not None:
         fuser: User = all_users[0].account
-        chu = ClearingHouseUser(
+        chu = DriftUser(
             ch, 
             authority=fuser.authority, 
             subaccount_id=fuser.sub_account_id, 
-            use_cache=True
+            # use_cache=True
         )
         if pure_cache is None:
             await chu.set_cache()
@@ -73,7 +73,9 @@ async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None, on
             key = str(x.public_key)
             account: User = x.account
 
-            chu = ClearingHouseUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, use_cache=True)
+            chu = DriftUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, 
+                            # use_cache=True
+                            )
             cache['user'] = account # update cache to look at the correct user account
             await chu.set_cache(cache)
             margin_category = MarginCategory.INITIAL

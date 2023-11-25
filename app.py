@@ -19,9 +19,9 @@ import datetime
 from driftpy.constants.config import configs
 
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 
 from tabs.logs import log_page
 from tabs.simulations import sim_page
@@ -115,8 +115,8 @@ def main():
     wallet = Wallet(kp)
     connection = AsyncClient(rpc)
     provider = Provider(connection, wallet)
-    clearing_house: ClearingHouse = ClearingHouse.from_config(config, provider)
-
+    clearing_house: DriftClient = DriftClient.from_config(config, provider)
+    # st.write(clearing_house.__dict__.keys())
     clearing_house.time = current_time
     
     st.title(f'Drift v2: {tab}')

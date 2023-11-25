@@ -8,21 +8,21 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 
 import os
 import json
 import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -40,7 +40,7 @@ from anchorpy import Program, Context, Idl, Wallet, Provider
 
 
 
-async def vaults(ch: ClearingHouse, env):
+async def vaults(ch: DriftClient, env):
 
     tabs = st.tabs(['summary', 'vaults', 'vault depositors', 'settings'])
     idl = None
@@ -55,14 +55,15 @@ async def vaults(ch: ClearingHouse, env):
         response = requests.get(url)
         
         st.write('https://solscan.io/account/'+pid)
-        data = response.json()
-        idl = data
+        data = response.text
+        idl_raw = data
+        idl = json.loads(idl_raw)
         provider = ch.program.provider
         st.json(idl, expanded=False)
 
     program = Program(
-            Idl.from_json(idl),
-            PublicKey(pid),
+            Idl.from_json(idl_raw),
+            Pubkey.from_string(pid),
             provider,
         )
     
@@ -109,29 +110,29 @@ async def vaults(ch: ClearingHouse, env):
         s1.metric('number of vaults:', len(all_vaults), str(len(all_vault_deps))+' vault depositor(s)')
         chu = None
         if len(vault_df):
-            vu = [PublicKey(x) for x in vault_df.T.sort_values(by='init_ts', ascending=False).T.loc['user'].values]
+            vu = [Pubkey.from_string(x) for x in vault_df.T.sort_values(by='init_ts', ascending=False).T.loc['user'].values]
             # st.write(vu)
             vault_users = await ch.program.account["User"].fetch_multiple(vu)
-            from driftpy.clearing_house_user import ClearingHouseUser
+            from driftpy.drift_user import DriftUser
             fuser = vault_users[0]
             # st.write(vault_users)
             # st.write(fuser)
 
-            chu = ClearingHouseUser(
+            chu = DriftUser(
                 ch, 
                 authority=fuser.authority, 
                 subaccount_id=fuser.sub_account_id, 
-                use_cache=True
+                # use_cache=True
             )
             await chu.set_cache()
             cache = chu.CACHE
 
             for i, vault_user in enumerate(vault_users):
-                chu = ClearingHouseUser(
+                chu = DriftUser(
                     ch, 
                     authority=vault_user.authority, 
                     subaccount_id=vault_user.sub_account_id, 
-                    use_cache=False
+                    # use_cache=False
                 )
                 chu.CACHE = cache
 

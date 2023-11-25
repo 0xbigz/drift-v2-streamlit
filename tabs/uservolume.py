@@ -4,7 +4,7 @@ from tokenize import tabsize
 import driftpy
 import pandas as pd
 import numpy as np
-from driftpy.math.oracle import *
+from driftpy.accounts.oracle import *
 from constants import ALL_MARKET_NAMES
 
 import plotly.express as px
@@ -13,10 +13,10 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_client import DriftClient
+from driftpy.drift_user import DriftUser
 from driftpy.accounts import (
     get_perp_market_account,
     get_spot_market_account,
@@ -24,7 +24,7 @@ from driftpy.accounts import (
     get_state_account,
 )
 from driftpy.constants.numeric_constants import *
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 import os
 import json
 import streamlit as st
@@ -33,7 +33,7 @@ from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from driftpy.addresses import *
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -67,7 +67,7 @@ def find_value(df, search_column, search_string, target_column):
     return target_value[0] if len(target_value) > 0 else None
 
 
-async def get_user_stats(clearing_house: ClearingHouse):
+async def get_user_stats(clearing_house: DriftClient):
     ch = clearing_house
     all_user_stats = await ch.program.account["UserStats"].all()
     user_stats_df = pd.DataFrame([x.account.__dict__ for x in all_user_stats])
@@ -139,7 +139,9 @@ def calc_taker_price_improvement(row):
         return (row["execPrice"] / row["oraclePrice"]) - 1
 
 def calc_color(row):
-    if float(row["priceImprovement"]) > 0:
+    if row['priceImprovement'] is None:
+        return "white"
+    elif float(row["priceImprovement"]) > 0:
         return "green"
     else:
         return "red"
@@ -182,7 +184,7 @@ def calculate_agg_counterparty_volume(fills_df: pd.DataFrame, user_make_or_taker
     return res_df
 
 
-async def show_user_volume(clearing_house: ClearingHouse):
+async def show_user_volume(clearing_house: DriftClient):
     url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
     url += "market/%s/trades/%s/%s/%s"
     mol1, molselect, mol0, mol2, _ = st.columns([3, 3, 3, 3, 10])

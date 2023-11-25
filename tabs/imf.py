@@ -9,10 +9,10 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_client import DriftClient
+from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
@@ -21,14 +21,14 @@ import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
 from glob import glob
 
 
-async def imf_page(clearing_house: ClearingHouse):    
+async def imf_page(clearing_house: DriftClient):    
     ch = clearing_house
     state = await get_state_account(ch.program)
     col1, col2 = st.columns(2)

@@ -10,9 +10,9 @@ from solana.rpc.types import MemcmpOpts
 import time
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
@@ -21,7 +21,7 @@ import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -38,7 +38,7 @@ from plotly.subplots import make_subplots
 import asyncio
 
 @st.cache_data
-def cached_get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
+def cached_get_orders_data(_ch: DriftClient, depth_slide, market_type, market_index, order_filter):
     loop = asyncio.new_event_loop()
     return loop.run_until_complete(get_orders_data(_ch, depth_slide, market_type, market_index, order_filter))
 
@@ -54,9 +54,9 @@ async def get_price_data(market_type, market_index):
     dat = [json.loads(x) for x in requests.get(url).json()['data']['trades']]
     return pd.DataFrame(dat)
 
-async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
+async def get_orders_data(_ch: DriftClient, depth_slide, market_type, market_index, order_filter):
     try:
-        all_users = await _ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
+        all_users = await _ch.program.account['User'].all(filters=[MemcmpOpts(offset=4352, bytes='2')])
         # st.warning('len: '+str(len(all_users)))
     except Exception as e:
         st.warning("ERROR: '"+str(e)+"', and cannot load ['User'].all() with current rpc")
@@ -70,7 +70,7 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
     # [bids/longs] [asks/shorts]
     # [price, baa], [price, baa]
     # (dec price)    (inc price)
-    from driftpy.clearing_house_user import get_oracle_data
+    from driftpy.accounts.oracle import get_oracle_price_data_and_slot
 
     state = await get_state_account(_ch.program)
     mm = state.number_of_markets if market_type == 'perp' else state.number_of_spot_markets
@@ -93,7 +93,7 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
             oracle_pubkey = market.oracle
             oracle_source = market.oracle_source
 
-        oracle_data = (await get_oracle_data(_ch.program.provider.connection, oracle_pubkey, oracle_source))
+        oracle_data = (await get_oracle_price_data_and_slot(_ch.program.provider.connection, oracle_pubkey, oracle_source))
         oracle_price = oracle_data.price
         # oracle_price = 14 * 1e6
 
@@ -306,7 +306,7 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
 
 
 
-def orders_page(ch: ClearingHouse):
+def orders_page(ch: DriftClient):
 
         # time.sleep(3)
         # oracle_price = 13.5 * 1e6 

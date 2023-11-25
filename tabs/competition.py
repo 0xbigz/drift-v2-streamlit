@@ -8,21 +8,21 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 
 import os
 import json
 import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -37,11 +37,11 @@ from driftpy.addresses import *
 import time
 import plotly.express as px
 from anchorpy import Program, Context, Idl, Wallet, Provider
-from datafetch.transaction_fetch import transaction_history_for_account
+from datafetch.transaction_fetch import transaction_history_for_account, load_token_balance
 
 
 
-async def competitions(ch: ClearingHouse, env):
+async def competitions(ch: DriftClient, env):
 
     tabs = st.tabs(['summary', 'accounts', 'transactions', 'settings'])
     idl = None
@@ -69,19 +69,20 @@ async def competitions(ch: ClearingHouse, env):
         response = requests.get(url)
         
         st.write('https://solscan.io/account/'+pid)
-        data = response.json()
-        idl = data
+        data = response.text
+        idl_raw: str = data
+        idl = json.loads(idl_raw)
         provider = ch.program.provider
         # st.json(idl, expanded=False)
 
     program = Program(
-            Idl.from_json(idl),
-            PublicKey(pid),
+            Idl.from_json(idl_raw),
+            Pubkey.from_string(pid),
             provider,
         )
     
     with tabs[2]:
-        txns = await transaction_history_for_account(provider.connection, pid, None, None, 1000)
+        txns = await transaction_history_for_account(provider.connection, Pubkey.from_string(pid), None, None, 1000)
         st.write(f'last {len(txns)} transactions')
 
         df = pd.DataFrame(txns)
@@ -134,7 +135,7 @@ async def competitions(ch: ClearingHouse, env):
         fields = ['instructions', 'accounts', 'types', 'errors']
         tts = st.tabs(fields)
         for idx,field in enumerate(fields) :
-            tts[idx].json((idl[field]), expanded=False)
+            tts[idx].json(([field]), expanded=False)
             tts[idx].dataframe(pd.DataFrame(idl[field]).astype(str))
 
     accounts = [(await program.account[act['name']].all()) for act in idl['accounts']]
@@ -179,12 +180,15 @@ async def competitions(ch: ClearingHouse, env):
                 spot = await get_spot_market_account(ch.program, 0)
                 if_vault = get_insurance_fund_vault_public_key(ch.program_id, 0)
                 try:
-                    v_amount = int((await provider.connection.get_token_account_balance(if_vault))['result']['value']['amount'])
-                except:
+                    v_amount = await load_token_balance(provider.connection, if_vault)
+                except Exception as e:
+                    st.warning('failed to load IF:', e)
                     v_amount = 0
 
                 pol_vault =  (1-spot.insurance_fund.user_shares/spot.insurance_fund.total_shares)*v_amount/1e6
                 max_prize = np.round((pol_vault - comp_acct.sponsor_info.min_sponsor_amount/1e6) * comp_acct.sponsor_info.max_sponsor_fraction/1e6, 2)
+                
+                max_prize = max(0, max_prize)
                 prizes = [np.round(min(1000, max_prize/10),2), np.round(min(5000, max_prize/2),2), max_prize]
                 prize_ev = 2000
 
@@ -192,7 +196,8 @@ async def competitions(ch: ClearingHouse, env):
                 odds_rounded = [np.ceil(odds[0]), np.ceil(odds[1]), np.floor(odds[2])]
                 # st.write('odds:', odds_rounded)
                 prize_ev = sum([odds_rounded[i]/sum(odds_rounded)*prizes[i] for i in range(len(prizes))])
-                s3.metric('expected prize value', f'${prize_ev:,.2f}', 'prize buckets: $' + ', $'.join([str(x) for x in prizes]), help=
+                s3.metric('expected prize value', f'${prize_ev:,.2f}', 
+                          'prize buckets: $' + ', $'.join([str(x) for x in prizes]), help=
                         '''
     odds of each bucket (out of {'''+str(sum(odds_rounded))+'''}):''' + str(odds_rounded) + '''
 

@@ -10,13 +10,13 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet, AccountClient
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.types import MemcmpOpts
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 
 import os
 import json
@@ -24,7 +24,7 @@ import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market, all_user_stats
 from anchorpy import EventParser
 import asyncio
@@ -35,7 +35,7 @@ from aiocache import cached
 from driftpy.types import InsuranceFundStake, SpotMarket
 from driftpy.addresses import * 
 
-async def userstatus_page(ch: ClearingHouse):
+async def userstatus_page(ch: DriftClient):
     state = await get_state_account(ch.program)
     s1, s2 = st.columns(2)
     filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction', 'SuperStakeSOL', 'SuperStakeSOLStrict'], index=1, horizontal=True)
@@ -48,19 +48,19 @@ async def userstatus_page(ch: ClearingHouse):
         if filt == 'All':
             all_users = await _ch_user_act.all()
         elif filt == 'Active':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=4350, bytes='1')])
         elif filt == 'Idle':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='2')])        
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=4350, bytes='2')])        
         elif filt == 'Open Order':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=4352, bytes='2')])
         elif filt == 'SuperStakeSOL':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
         elif filt == 'SuperStakeSOLStrict':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])   
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])   
         elif filt == 'SuperStakeJitoSOL':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='GHB8xrCziYmaX9fbpnLFAMBVby')])             
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=72, bytes='GHB8xrCziYmaX9fbpnLFAMBVby')])             
         else:
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4354, bytes='2')])
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=4354, bytes='2')])
         return all_users
 
     all_users = await load_users(filt)

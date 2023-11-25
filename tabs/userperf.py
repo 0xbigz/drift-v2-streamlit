@@ -4,20 +4,20 @@ from tokenize import tabsize
 import driftpy
 import pandas as pd 
 import numpy as np 
-from driftpy.math.oracle import *
+from driftpy.accounts.oracle import *
 import datetime
 
 pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_client import DriftClient
+from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 import os
 import json
 import streamlit as st
@@ -26,7 +26,7 @@ from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from driftpy.addresses import *
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -289,7 +289,7 @@ def load_user_trades(dates, user_key, with_urls=False):
 
     return dfs
 
-async def show_user_perf(clearing_house: ClearingHouse):
+async def show_user_perf(clearing_house: DriftClient):
     frens = get_loaded_auths()
 
     # st.write('query string:', frens)
@@ -340,10 +340,10 @@ async def show_user_perf(clearing_house: ClearingHouse):
         userAccountKeys = []
         user_stat = None
         for user_authority in user_authorities:
-                user_authority_pk = PublicKey(user_authority)
+                user_authority_pk = Pubkey.from_string(user_authority)
                 # print(user_stats)
                 user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
-                # chu = ClearingHouseUser(
+                # chu = DriftUser(
                 #     ch, 
                 #     authority=user_authority_pk, 
                 #     subaccount_id=0, 
@@ -376,7 +376,7 @@ async def show_user_perf(clearing_house: ClearingHouse):
         )  # (datetime.datetime.now(tzInfo)))
         dates = pd.date_range(start_date, end_date)
         for user_authority in user_authorities:
-            user_authority_pk = PublicKey(user_authority)
+            user_authority_pk = Pubkey.from_string(user_authority)
             user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
 
             for sub_id in range(user_stat.number_of_sub_accounts_created):
@@ -388,11 +388,11 @@ async def show_user_perf(clearing_house: ClearingHouse):
                     sub_id)
 
                 if sub_id==int(sub):
-                    chu = ClearingHouseUser(
+                    chu = DriftUser(
                         ch, 
                         authority=user_authority_pk, 
                         subaccount_id=sub_id, 
-                        use_cache=True
+                        # use_cache=True
                     )
                     await chu.set_cache()
 

@@ -8,13 +8,13 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet 
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.types import MemcmpOpts
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 
 import os
 import json
@@ -22,7 +22,7 @@ import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -84,7 +84,7 @@ def load_user_lp(dates, user_key, with_urls=False, is_devnet=False):
 
     return dfs
 
-async def perp_lp_page(ch: ClearingHouse, env):
+async def perp_lp_page(ch: DriftClient, env):
     is_devnet = env == 'devnet'
     state = await get_state_account(ch.program)
     a00, a11, a22, a33 = st.columns(4)
@@ -94,11 +94,11 @@ async def perp_lp_page(ch: ClearingHouse, env):
     user_accounts_w_lp = []
     if user_lookup != 'Never':
         if user_lookup == 'Ever':
-            all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+            all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=4350, bytes='1')])
         elif user_lookup == 'DLP':
-            all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=72, bytes='7Ev1Wb17tTZuQFYjieDAx2pbrSzym2eaV')])
+            all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=72, bytes='7Ev1Wb17tTZuQFYjieDAx2pbrSzym2eaV')])
         else:
-            all_users = await ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4267, bytes='2i')])
+            all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=4267, bytes='2i')])
         # with tabs[0]:
         st.write('found', len(all_users), 'current/former LPs')
         df = pd.DataFrame([x.account.__dict__ for x in all_users])

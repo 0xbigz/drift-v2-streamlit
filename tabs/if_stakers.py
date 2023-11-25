@@ -8,21 +8,21 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 
 import os
 import json
 import streamlit as st
 from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -36,9 +36,10 @@ from driftpy.addresses import *
 # using time module
 import time
 import plotly.express as px
+from datafetch.transaction_fetch import transaction_history_for_account, load_token_balance
 
   
-async def insurance_fund_page(ch: ClearingHouse, env):
+async def insurance_fund_page(ch: DriftClient, env):
     is_devnet = env == 'devnet'
     try:
         all_stakers = await ch.program.account['InsuranceFundStake'].all()
@@ -165,7 +166,7 @@ async def insurance_fund_page(ch: ClearingHouse, env):
             # get_token_amount(spot.revenue_pool.scaled_balance, spot, )
             if_vault = get_insurance_fund_vault_public_key(ch.program_id, i)
             try:
-                v_amount = int((await conn.get_token_account_balance(if_vault))['result']['value']['amount'])
+                v_amount = await load_token_balance(conn, if_vault)
             except:
                 v_amount = 0
 

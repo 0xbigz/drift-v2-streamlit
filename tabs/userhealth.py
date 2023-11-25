@@ -4,19 +4,19 @@ from tokenize import tabsize
 import driftpy
 import pandas as pd 
 import numpy as np 
-from driftpy.math.oracle import *
+from driftpy.accounts.oracle import *
 
 pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_client import DriftClient
+from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 import os
 import json
 import streamlit as st
@@ -25,7 +25,7 @@ from driftpy.constants.banks import devnet_banks, Bank
 from driftpy.constants.markets import devnet_markets, Market
 from driftpy.addresses import *
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -45,7 +45,7 @@ def get_loaded_auths():
 # def ccc(vals):
 #     st.experimental_set_query_params(**{'authority': vals, 'tab':'User-Health'})
 
-async def show_user_health(clearing_house: ClearingHouse):
+async def show_user_health(clearing_house: DriftClient):
     frens = get_loaded_auths()
 
     # st.write('query string:', frens)
@@ -86,10 +86,10 @@ async def show_user_health(clearing_house: ClearingHouse):
 
         userAccountKeys = []
         for user_authority in user_authorities:
-                user_authority_pk = PublicKey(user_authority)
+                user_authority_pk = Pubkey.from_string(user_authority)
                 # print(user_stats)
                 user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
-                # chu = ClearingHouseUser(
+                # chu = DriftUser(
                 #     ch, 
                 #     authority=user_authority_pk, 
                 #     subaccount_id=0, 
@@ -108,11 +108,11 @@ async def show_user_health(clearing_house: ClearingHouse):
 
         tabs = st.tabs(['health', 'recent trades'])
         for user_authority in user_authorities:
-            user_authority_pk = PublicKey(user_authority)
+            user_authority_pk = Pubkey.from_string(user_authority)
             # print(user_stats)
             user_stat = [x for x in user_stats if str(x.authority) == user_authority][0]
             # st.write(user_stat)
-            # chu = ClearingHouseUser(
+            # chu = DriftUser(
             #     ch, 
             #     authority=user_authority_pk, 
             #     subaccount_id=0, 
@@ -120,11 +120,11 @@ async def show_user_health(clearing_house: ClearingHouse):
             # )
             for sub_id in range(user_stat.number_of_sub_accounts_created):
                 print('sub_id:', sub_id)
-                chu_sub = ClearingHouseUser(
+                chu_sub = DriftUser(
                     ch, 
                     authority=user_authority_pk, 
                     subaccount_id=sub_id, 
-                    use_cache=True
+                    # use_cache=True
                 )
                 CACHE = None   
                 try:
