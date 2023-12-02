@@ -10,21 +10,22 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet, AccountClient
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.types import MemcmpOpts
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
+from datafetch.transaction_fetch import transaction_history_for_account, load_token_balance
 
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market, all_user_stats
 from anchorpy import EventParser
 import asyncio
@@ -32,13 +33,14 @@ import asyncio
 import requests
 from aiocache import Cache
 from aiocache import cached
-from driftpy.types import InsuranceFundStake, SpotMarket
+from driftpy.types import InsuranceFundStakeAccount, SpotMarketAccount
 from driftpy.addresses import * 
 
-async def userstatus_page(ch: ClearingHouse):
+async def userstatus_page(ch: DriftClient):
     state = await get_state_account(ch.program)
     s1, s2 = st.columns(2)
-    filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction', 'SuperStakeSOL', 'SuperStakeSOLStrict'], index=1, horizontal=True)
+    filt = s1.radio('filter:', ['All', 'Active', 'Idle', 'Open Order', 'Open Auction', 'SuperStakeSOL', 'SuperStakeSOLStrict'], 
+                    index=4, horizontal=True)
     oracle_distort = s2.slider('base oracle distortion:', .01, 2.0, 1.0, .1, help="alter non-stable token oracles by this factor multiple (default=1, no alteration)")
     tabs = st.tabs([filt.lower() + ' users', 'LPs', 'oracle scenario analysis'])
     _ch_user_act = ch.program.account['User']
@@ -48,19 +50,19 @@ async def userstatus_page(ch: ClearingHouse):
         if filt == 'All':
             all_users = await _ch_user_act.all()
         elif filt == 'Active':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='1')])
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=4350, bytes='1')])
         elif filt == 'Idle':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4350, bytes='2')])        
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=4350, bytes='2')])        
         elif filt == 'Open Order':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=4352, bytes='2')])
         elif filt == 'SuperStakeSOL':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
         elif filt == 'SuperStakeSOLStrict':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])   
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])   
         elif filt == 'SuperStakeJitoSOL':
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=72, bytes='GHB8xrCziYmaX9fbpnLFAMBVby')])             
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=72, bytes='GHB8xrCziYmaX9fbpnLFAMBVby')])             
         else:
-            all_users = await _ch_user_act.all(memcmp_opts=[MemcmpOpts(offset=4354, bytes='2')])
+            all_users = await _ch_user_act.all(filters=[MemcmpOpts(offset=4354, bytes='2')])
         return all_users
 
     all_users = await load_users(filt)
@@ -115,7 +117,7 @@ async def userstatus_page(ch: ClearingHouse):
 
         user_tvl = stats_df.spot_value.sum()
         col2.metric('user tvl', f'${user_tvl:,.2f}', f'${stats_df.upnl.sum():,.2f} upnl')
-        state = await get_state_account(ch.program)
+        state = ch.get_state_account()
         num_markets = state.number_of_spot_markets
         aa = 0
         vamm = 0
@@ -124,15 +126,15 @@ async def userstatus_page(ch: ClearingHouse):
         spot_acct_bor = 0
 
         for market_index in range(num_markets):
-            market = await chu.get_spot_market(market_index)
+            market = chu.get_spot_market_account(market_index)
             if market_index == 0:
                 usdc_market = market
             conn = ch.program.provider.connection
             # ivault_pk = market.insurance_fund.vault
             svault_pk = market.vault
-            sv_amount = int((await conn.get_token_account_balance(svault_pk))['result']['value']['amount'])
+            sv_amount = await load_token_balance(ch.program.provider.connection, svault_pk)
             sv_amount /= (10**market.decimals)
-            px1 = ((await chu.get_spot_oracle_data(market)).price/1e6)
+            px1 = ((chu.get_oracle_data_for_spot_market(market_index)).price/1e6)
             sv_amount *= px1
             spot_acct_dep += (market.deposit_balance * market.cumulative_deposit_interest/1e10)/(1e9)*px1
             spot_acct_bor -= (market.borrow_balance * market.cumulative_borrow_interest/1e10)/(1e9)*px1
@@ -142,8 +144,8 @@ async def userstatus_page(ch: ClearingHouse):
 
         vamm_upnl = 0 
         for market_index in range(state.number_of_markets):
-            market = await chu.get_perp_market(market_index)
-            px1 = ((await chu.get_perp_oracle_data(market)).price/1e6)
+            market = chu.get_perp_market_account(market_index)
+            px1 = ((chu.get_oracle_data_for_perp_market(market_index)).price/1e6)
             fee_pool = (market.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
             pnl_pool = (market.pnl_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
             vamm += pnl_pool + fee_pool
@@ -200,7 +202,7 @@ async def userstatus_page(ch: ClearingHouse):
             for x in usr.account.perp_positions:
                 if x.lp_shares != 0:
                     key = str(usr.public_key)
-                    print(lps.keys(), key)
+                    # print(lps.keys(), key)
                     if key in lps.keys():
                         lps[key].append(x)
                     else:
@@ -210,7 +212,7 @@ async def userstatus_page(ch: ClearingHouse):
             dff.index.names = ['public_key', 'position_index']
             dff = dff.reset_index()
             dff = df[['authority', 'name', 'last_active_slot', 'public_key', 'last_add_perp_lp_shares_ts']].merge(dff, on='public_key')
-            print(dff.columns)
+            # print(dff.columns)
             dff = dff[['authority', 'name', 
             'lp_shares',
             
@@ -234,7 +236,7 @@ async def userstatus_page(ch: ClearingHouse):
         mi = a0.selectbox('market index:', range(0, state.number_of_markets), 0)
 
 
-        perp_market = await chu.get_perp_market(mi)
+        perp_market = chu.get_perp_market_account(mi)
         # st.write(perp_market.amm)
         bapl = perp_market.amm.base_asset_amount_per_lp/1e9
         qapl = perp_market.amm.quote_asset_amount_per_lp/1e6
@@ -258,7 +260,7 @@ async def userstatus_page(ch: ClearingHouse):
                 return standard, remainder
 
             mi = row['market_index']
-            pm = chu.CACHE['perp_markets'][mi]
+            pm = chu.drift_client.account_subscriber.cache['perp_markets'][mi].data
             delta_baapl = pm.amm.base_asset_amount_per_lp/1e9 - row['last_base_asset_amount_per_lp']
             delta_qaapl = pm.amm.quote_asset_amount_per_lp/1e6 - row['last_quote_asset_amount_per_lp']
 
@@ -290,23 +292,26 @@ async def userstatus_page(ch: ClearingHouse):
         'Select an oracle multiplier range',
         0.0, 10.0, (0.0, 2.0), step=.05)
 
-        only_perp_index = scc.selectbox('only perp', ([None] + list(range(0, state.number_of_markets))))
+        only_one_index = scc.selectbox('only single oracle', ([None] + list(chu.drift_client.account_subscriber.cache['oracle_price_data'].keys())))
         oracle_distorts = [float(x)/10 for x in (list(np.linspace(omin, omax*10, 100)))]
         all_stats = {}
 
-        df1 = pd.DataFrame(chu.CACHE['perp_market_oracles'])
+        # oracle_pubkey = chu.drift_client.account_subscriber.get_perp_market_and_slot(mi).data.amm.oracle
+        # df1 = pd.DataFrame(chu.drift_client.account_subscriber.cache['oracle_price_data'][str(oracle_pubkey)].data)
         # with st.expander('market override:'):
         #     edited_df = st.experimental_data_editor(df1)
+        pure_cache = copy.deepcopy(chu.drift_client.account_subscriber.cache)
+        # st.write(pure_cache['oracle_price_data']['H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG'])
 
         for oracle_distort_x in oracle_distorts:
-            pure_cache = copy.deepcopy(chu.CACHE)
             stats_df, chunew = await all_user_stats(all_users, 
                                                     ch, 
-                                                    oracle_distort_x, 
+                                                    oracle_distort=oracle_distort_x, 
                                                     pure_cache=pure_cache,
-                                                    only_perp_index=only_perp_index
+                                                    only_one_index=only_one_index
                                                     )
-            
+            # st.write(chunew.drift_client.account_subscriber.cache['oracle_price_data']['H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG'])
+            # st.write(pure_cache['oracle_price_data']['H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG'])
             stats_df['spot_value'] = stats_df['spot_value'].astype(float)
             stats_df['upnl'] = stats_df['upnl'].astype(float)
             ddd = (stats_df['spot_value']+stats_df['upnl'])
@@ -322,9 +327,10 @@ async def userstatus_page(ch: ClearingHouse):
 
         statdf = pd.DataFrame(all_stats, index=['bankruptcy', 'spot bankruptcy', 'perp bankruptcy']).T.abs()
         nom = ""
-        if only_perp_index is not None:
-            nom = bytes(chu.CACHE['perp_markets'][only_perp_index].name).decode('utf-8').strip(' ')+" "
-            perp_market_account_if = chu.CACHE['perp_markets'][only_perp_index].insurance_claim
+        if only_one_index is not None:
+            perp_market_i_data = [x for x in chu.drift_client.account_subscriber.cache['perp_markets'] if str(x.data.amm.oracle) == only_one_index][0].data
+            nom = bytes(perp_market_i_data.name).decode('utf-8').strip(' ')+" "
+            perp_market_account_if = perp_market_i_data.insurance_claim
             max_if_perp_payment = (perp_market_account_if.quote_max_insurance - perp_market_account_if.quote_settled_insurance )/1e6
             statdf['max insurance claim'] = statdf['perp bankruptcy'].clip(0, max_if_perp_payment) + statdf['spot bankruptcy']
         fig = statdf.plot()

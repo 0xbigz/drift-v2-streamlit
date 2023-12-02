@@ -8,21 +8,21 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient, AccountSubscriptionConfig
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
+from driftpy.drift_user import get_token_amount
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -31,7 +31,7 @@ import datetime
 import requests
 from aiocache import Cache
 from aiocache import cached
-from driftpy.types import InsuranceFundStake, SpotMarket
+from driftpy.types import InsuranceFundStakeAccount, SpotMarketAccount
 from driftpy.addresses import * 
 # using time module
 import time
@@ -40,7 +40,7 @@ from anchorpy import Program, Context, Idl, Wallet, Provider
 
 
 
-async def vaults(ch: ClearingHouse, env):
+async def vaults(ch: DriftClient, env):
 
     tabs = st.tabs(['summary', 'vaults', 'vault depositors', 'settings'])
     idl = None
@@ -55,14 +55,15 @@ async def vaults(ch: ClearingHouse, env):
         response = requests.get(url)
         
         st.write('https://solscan.io/account/'+pid)
-        data = response.json()
-        idl = data
+        data = response.text
+        idl_raw = data
+        idl = json.loads(idl_raw)
         provider = ch.program.provider
         st.json(idl, expanded=False)
 
     program = Program(
-            Idl.from_json(idl),
-            PublicKey(pid),
+            Idl.from_json(idl_raw),
+            Pubkey.from_string(pid),
             provider,
         )
     
@@ -109,41 +110,48 @@ async def vaults(ch: ClearingHouse, env):
         s1.metric('number of vaults:', len(all_vaults), str(len(all_vault_deps))+' vault depositor(s)')
         chu = None
         if len(vault_df):
-            vu = [PublicKey(x) for x in vault_df.T.sort_values(by='init_ts', ascending=False).T.loc['user'].values]
+            vu = [Pubkey.from_string(x) for x in vault_df.astype(str).T.sort_values(by='init_ts', ascending=False).T.loc['user'].values]
             # st.write(vu)
             vault_users = await ch.program.account["User"].fetch_multiple(vu)
-            from driftpy.clearing_house_user import ClearingHouseUser
+            from driftpy.drift_user import DriftUser
             fuser = vault_users[0]
             # st.write(vault_users)
             # st.write(fuser)
 
-            chu = ClearingHouseUser(
+            chu = DriftUser(
                 ch, 
                 authority=fuser.authority, 
-                subaccount_id=fuser.sub_account_id, 
-                use_cache=True
+                sub_account_id=fuser.sub_account_id, 
+                # use_cache=True
+                account_subscription=AccountSubscriptionConfig('cached')
             )
-            await chu.set_cache()
-            cache = chu.CACHE
+            await chu.account_subscriber.update_cache()
+            await chu.drift_client.account_subscriber.update_cache()
+            cache = chu.drift_client.account_subscriber.cache
 
             for i, vault_user in enumerate(vault_users):
-                chu = ClearingHouseUser(
+                chu = DriftUser(
                     ch, 
                     authority=vault_user.authority, 
-                    subaccount_id=vault_user.sub_account_id, 
-                    use_cache=False
+                    sub_account_id=vault_user.sub_account_id, 
+                    account_subscription=AccountSubscriptionConfig('cached')
+                    # use_cache=False
                 )
-                chu.CACHE = cache
+                await chu.account_subscriber.update_cache()
+                # chu.drift_client.account_subscriber.cache = cache
 
                 nom = bytes(vault_user.name).decode('utf-8').strip(' ')
 
                 dat = vault_df.iloc[:,i]
 
-                max_tokens = None
+                max_tokens = 0
                 if float(dat.loc['spot_market_index']) == 0:
                     max_tokens = float(dat.loc['max_tokens'])/1e6
 
-                equity = (await chu.get_spot_market_asset_value())/1e6
+                equity = (chu.get_spot_market_asset_value())/1e6
+                if equity is None:
+                    continue
+                # st.write(nom, equity, max_tokens)
                 with st.expander(f"> {nom}: ${equity:,.2f}/{max_tokens:,.2f}"):
                     st.markdown(f'balance: `${equity:,.2f}` [[web ui](https://app.drift.trade/?authority={vault_user.authority})]')
 

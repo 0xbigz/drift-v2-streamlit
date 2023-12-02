@@ -9,19 +9,19 @@ pd.options.plotting.backend = "plotly"
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_client import DriftClient
+from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -262,7 +262,7 @@ Additionally, during the cooldown period, if a user wishes to cancel the unstake
 
 
 
-async def gpt_page(clearing_house: ClearingHouse): 
+async def gpt_page(clearing_house: DriftClient): 
 
     gpt_ans = ""
 

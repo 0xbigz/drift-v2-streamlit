@@ -12,19 +12,19 @@ import time
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_client import DriftClient
+from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -258,13 +258,13 @@ def get_data_by_market_index(market_type, market_index, source):
     df = df.reset_index(drop=True)
     return df
 
-async def mm_page(clearing_house: ClearingHouse):    
+async def mm_page(clearing_house: DriftClient):    
 
     ss1, ss2, ss3 = st.columns([3,1,1])
     source = ss1.text_input('source:', 'https://github.com/0xbigz/drift-v2-orderbook-scored/raw/main/data/')
 
-    ss = (await clearing_house.program.provider.connection.get_slot())['result']
-    tt = (await clearing_house.program.provider.connection.get_block_time(ss))['result']
+    ss = json.loads((await clearing_house.program.provider.connection.get_slot()).to_json())['result']
+    tt = json.loads((await clearing_house.program.provider.connection.get_block_time(ss)).to_json())['result']
     SLOT1 = ss2.number_input('slot ref:', min_value=0, value=ss)
     ss2.write('https://explorer.solana.com/block/'+str(SLOT1))
 
@@ -292,9 +292,9 @@ async def mm_page(clearing_house: ClearingHouse):
     mol00, mol1, molselect, mol0, mol2 = st.columns([2, 3, 3, 3, 10])
 
     market_type = mol00.selectbox('market type', ['perp', 'spot'])
-    market_indexes = [1]
+    market_indexes = list(range(1,7))
     if market_type == 'perp':
-        market_indexes = list(range(0,11))
+        market_indexes = list(range(0,19))
     market_index = mol1.selectbox(market_type+' market index', market_indexes)
     now = datetime.datetime.now()
     current_ts = time.mktime(now.timetuple())

@@ -121,8 +121,8 @@ async def get_all(url, ch, limit):
 
     return True, (log_names, type_to_log, n_logs, (max_log, min_log))
 
-from driftpy.clearing_house import ClearingHouse
-async def log_page(url: str, ch: ClearingHouse):
+from driftpy.drift_client import DriftClient
+async def log_page(url: str, ch: DriftClient):
     # log liquidations
     st.write("getting recent txs from [https://public-api.solscan.io/docs/#/](https://public-api.solscan.io/docs/#/)...")
     limit = st.number_input('tx look up limit', value=0)

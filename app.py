@@ -19,9 +19,9 @@ import datetime
 from driftpy.constants.config import configs
 
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient, AccountSubscriptionConfig
 
 from tabs.logs import log_page
 from tabs.simulations import sim_page
@@ -51,6 +51,7 @@ from tabs.api import show_api
 from tabs.userdataraw import userdataraw
 from tabs.vaults import vaults
 from tabs.competition import competitions
+from tabs.openbookv2 import tab_openbookv2
 
 def main():
     current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
@@ -90,7 +91,8 @@ def main():
      'FundingHistory',
      'UserDataRaw',
      'Vaults',
-     'DriftDraw'
+     'DriftDraw',
+     'Openbookv2'
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -115,8 +117,8 @@ def main():
     wallet = Wallet(kp)
     connection = AsyncClient(rpc)
     provider = Provider(connection, wallet)
-    clearing_house: ClearingHouse = ClearingHouse.from_config(config, provider)
-
+    clearing_house: DriftClient = DriftClient(provider.connection, provider.wallet, env.split('-')[0], account_subscription=AccountSubscriptionConfig("cached"))
+    # st.write(clearing_house.__dict__.keys())
     clearing_house.time = current_time
     
     st.title(f'Drift v2: {tab}')
@@ -268,7 +270,10 @@ def main():
         loop.run_until_complete(vaults(clearing_house, env))
     elif tab.lower() == 'driftdraw':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(competitions(clearing_house, env))        
+        loop.run_until_complete(competitions(clearing_house, env))   
+    elif tab.lower() == 'openbookv2':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(tab_openbookv2(clearing_house, env))              
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}

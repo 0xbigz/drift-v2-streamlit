@@ -6,30 +6,30 @@ import numpy as np
 import plotly.express as px
 
 pd.options.plotting.backend = "plotly"
-from driftpy.clearing_house_user import get_oracle_data
+from driftpy.accounts.oracle import get_oracle_price_data_and_slot
 import plotly.graph_objects as go
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
-from driftpy.clearing_house_user import ClearingHouseUser
+from driftpy.drift_client import DriftClient
+from driftpy.drift_user import DriftUser
 from driftpy.math.positions import calculate_position_funding_pnl
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import *
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
 import matplotlib.pyplot as plt 
-from driftpy.clearing_house_user import get_token_amount
+from driftpy.drift_user import get_token_amount
 from driftpy.types import SpotBalanceType
 import plotly.express as px
 import requests
@@ -91,7 +91,7 @@ def apy_to_apr(apy, compounds_per_year):
     est_apr = (compound_amount ** (1/float(compounds_per_year)) - 1) * compounds_per_year
     return est_apr
 
-async def super_stake(clearing_house: ClearingHouse):
+async def super_stake(clearing_house: DriftClient):
     c1, c2, c3 = st.columns(3)
 
     ch = clearing_house
@@ -99,8 +99,8 @@ async def super_stake(clearing_house: ClearingHouse):
     msol_market = await get_spot_market_account(ch.program, 2)
     sol_market = await get_spot_market_account(ch.program, 1)
 
-    msol_oracle = await get_oracle_data(ch.program.provider.connection, msol_market.oracle, msol_market.oracle_source)
-    sol_oracle = await get_oracle_data(ch.program.provider.connection, sol_market.oracle, sol_market.oracle_source)
+    msol_oracle = (await clearing_house.get_oracle_price_data_and_slot(ch.program.provider.connection, msol_market.oracle, msol_market.oracle_source)).data
+    sol_oracle = (await get_oracle_price_data_and_slot(ch.program.provider.connection, sol_market.oracle, sol_market.oracle_source)).data
 
 
     msol_price, stake_apr = get_stake_yield()
@@ -332,17 +332,17 @@ async def super_stake(clearing_house: ClearingHouse):
 
     #     if doit:
     #         from solana.rpc.types import MemcmpOpts
-    #         from driftpy.clearing_house_user import ClearingHouseUser
-    #         from driftpy.types import User
+    #         from driftpy.drift_user import DriftUser
+    #         from driftpy.types import UserAccount
     #         from driftpy.math.margin import MarginCategory
 
-    #         all_users = ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4267, bytes='2i')])
+    #         all_users = ch.program.account['User'].all(filters=[MemcmpOpts(offset=4267, bytes='2i')])
     #         if all_users is not None:
     #             fuser: User = all_users[0].account
-    #             chu = ClearingHouseUser(
+    #             chu = DriftUser(
     #                 ch, 
     #                 authority=fuser.authority, 
-    #                 subaccount_id=fuser.sub_account_id, 
+    #                 sub_account_id=fuser.sub_account_id, 
     #                 use_cache=True
     #             )
     #             await chu.set_cache()
@@ -351,7 +351,7 @@ async def super_stake(clearing_house: ClearingHouse):
     #                 key = str(x.public_key)
     #                 account: User = x.account
 
-    #                 chu = ClearingHouseUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, use_cache=True)
+    #                 chu = DriftUser(ch, authority=account.authority, sub_account_id=account.sub_account_id, use_cache=True)
     #                 cache['user'] = account # update cache to look at the correct user account
     #                 await chu.set_cache(cache)
     #                 margin_category = MarginCategory.INITIAL

@@ -10,18 +10,18 @@ from solana.rpc.types import MemcmpOpts
 import time
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
-from solana.keypair import Keypair
+from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.clearing_house import ClearingHouse
+from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from dataclasses import dataclass
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
 import asyncio
@@ -37,8 +37,19 @@ from plotly.subplots import make_subplots
 
 import asyncio
 
+async def slot_ts_fetch(_ch):
+    ss = json.loads((await _ch.program.provider.connection.get_slot()).to_json())['result']
+    tt = json.loads((await _ch.program.provider.connection.get_block_time(ss)).to_json())['result']
+    st.write(ss, tt)
+    return (ss, tt)
+
 @st.cache_data
-def cached_get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
+def slot_ts_fetch1(_ch):
+    loop = asyncio.new_event_loop()
+    return loop.run_until_complete(slot_ts_fetch(_ch))        
+
+@st.cache_data
+def cached_get_orders_data(_ch: DriftClient, depth_slide, market_type, market_index, order_filter):
     loop = asyncio.new_event_loop()
     return loop.run_until_complete(get_orders_data(_ch, depth_slide, market_type, market_index, order_filter))
 
@@ -54,9 +65,9 @@ async def get_price_data(market_type, market_index):
     dat = [json.loads(x) for x in requests.get(url).json()['data']['trades']]
     return pd.DataFrame(dat)
 
-async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_index, order_filter):
+async def get_orders_data(_ch: DriftClient, depth_slide, market_type, market_index, order_filter):
     try:
-        all_users = await _ch.program.account['User'].all(memcmp_opts=[MemcmpOpts(offset=4352, bytes='2')])
+        all_users = await _ch.program.account['User'].all(filters=[MemcmpOpts(offset=4352, bytes='2')])
         # st.warning('len: '+str(len(all_users)))
     except Exception as e:
         st.warning("ERROR: '"+str(e)+"', and cannot load ['User'].all() with current rpc")
@@ -70,7 +81,7 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
     # [bids/longs] [asks/shorts]
     # [price, baa], [price, baa]
     # (dec price)    (inc price)
-    from driftpy.clearing_house_user import get_oracle_data
+    from driftpy.accounts.oracle import get_oracle_price_data_and_slot
 
     state = await get_state_account(_ch.program)
     mm = state.number_of_markets if market_type == 'perp' else state.number_of_spot_markets
@@ -93,8 +104,8 @@ async def get_orders_data(_ch: ClearingHouse, depth_slide, market_type, market_i
             oracle_pubkey = market.oracle
             oracle_source = market.oracle_source
 
-        oracle_data = (await get_oracle_data(_ch.program.provider.connection, oracle_pubkey, oracle_source))
-        oracle_price = oracle_data.price
+        oracle_data = (await get_oracle_price_data_and_slot(_ch.program.provider.connection, oracle_pubkey, oracle_source))
+        oracle_price = oracle_data.data.price
         # oracle_price = 14 * 1e6
 
         order_type_dict = {'PositionDirection.Long()': [], 'PositionDirection.Short()': []}
@@ -305,8 +316,7 @@ def calc_drift_depth(mark_price, l_spr, s_spr, base_asset_reserve, price_max, or
         return drift_order_depth, drift_depth
 
 
-
-def orders_page(ch: ClearingHouse):
+def orders_rpc_page(ch: DriftClient):
 
         # time.sleep(3)
         # oracle_price = 13.5 * 1e6 
@@ -339,7 +349,7 @@ def orders_page(ch: ClearingHouse):
         zol1.image("https://app.drift.trade/assets/icons/markets/sol.svg", width=33)
         # print(oracle_data)
         # oracle_data.slot
-        zol2.metric('Oracle Price', f'${oracle_data.price/PRICE_PRECISION}', f'±{oracle_data.confidence/PRICE_PRECISION} (slot={oracle_data.slot})',
+        zol2.metric('Oracle Price', f'${oracle_data.data.price/PRICE_PRECISION}', f'±{oracle_data.data.confidence/PRICE_PRECISION} (slot={oracle_data.slot})',
         delta_color="off")
         tabs = st.tabs(['OrderBook', 'Depth', 'Recent Trades'])
 
@@ -403,7 +413,7 @@ def orders_page(ch: ClearingHouse):
 
             fig.add_trace( go.Scatter(x=drift_depth.index, y=drift_depth['bids'],  name='bids', fill='tozeroy'),  row=1, col=1)
             fig.add_trace( go.Scatter(x=drift_depth.index, y=drift_depth['asks'],  name='asks', fill='tozeroy'),  row=1, col=1)
-            fig.add_vline(x=oracle_data.price/PRICE_PRECISION, line_width=3, line_dash="dot", line_color="blue")
+            fig.add_vline(x=oracle_data.data.price/PRICE_PRECISION, line_width=3, line_dash="dot", line_color="blue")
 
             fig.add_trace( go.Scatter(x=drift_order_depth.index, y=drift_order_depth['bids'], name='bids',  fill='tozeroy'),  row=2, col=1)
             fig.add_trace( go.Scatter(x=drift_order_depth.index, y=drift_order_depth['asks'], name='asks',  fill='tozeroy'), row=2, col=1)
@@ -455,3 +465,109 @@ def orders_page(ch: ClearingHouse):
 
                 col3.dataframe(tbl.style.apply(highlight_survived, axis=1), use_container_width=True)
 
+
+
+
+def orders_page(ch: DriftClient):
+        slot_ts_fetch1(ch)
+
+        data_source = st.radio(horizontal=True, label='Data Source:', options=[None, 
+                                                                               'SERVER-BATCHL2', 
+                                                                               'SERVER-L3',
+                                                                               'RPC'])
+
+        if data_source == 'SERVER-BATCHL2':
+            url = 'https://mainnet-beta.api.drift.trade/dlob/batchL2'
+            fields = '?marketType=perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,perp,spot,spot,spot,spot,spot,spot,spot,spot,spot&marketIndex=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,0,1,2,3,4,5,6,7,8&depth=100,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20&includeVamm=true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,false,false,false,false,false,false,false,false,false&includePhoenix=false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,true,true,true,true,true,true,true,true&includeSerum=false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,true,true,true,true,true,true,true,true&includeOracle=true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true'
+            endpoint = st.text_input('endpoint:', value=url+fields)
+            result = requests.get(endpoint).json()
+
+            perp_df = pd.DataFrame(result['l2s'][:19])
+            perp_df['bids'] = perp_df['bids'].apply(lambda x: float(x[0]['price'])/PRICE_PRECISION)
+            perp_df['asks'] = perp_df['asks'].apply(lambda x: float(x[0]['price'])/PRICE_PRECISION)
+            perp_df['oracle'] = perp_df['oracle'].astype(float) /PRICE_PRECISION
+            perp_df['spread'] = ((perp_df['asks'] - perp_df['bids'])/((perp_df['bids']+perp_df['asks'])/2)) * 100
+            perp_df = perp_df[['bids', 'asks', 'oracle', 'spread', 'slot']]
+
+            st.dataframe(perp_df)
+            st.json(result, expanded=False)
+
+
+        if data_source == 'SERVER-L3':
+            url = 'https://mainnet-beta.api.drift.trade/dlob/l3'
+            s1, s2, s3 = st.columns(3)
+            mt = s1.selectbox('marketType:', list(['perp', 'spot']))
+            mi = s2.selectbox('marketIndex:', list(range(17)))
+            fields = f'?marketIndex={mi}&marketType={mt}&depth=1'
+            endpoint = s3.text_input('endpoint:', value=url+fields)
+            result = requests.get(endpoint).json()
+
+            import plotly.graph_objects as go
+
+            # Extracting bid and ask data
+            bids = result["bids"]
+            asks = result["asks"]
+            # Convert price and size to floats and scale
+            for bid in bids:
+                bid["price"] = float(bid["price"]) / 1e6
+                bid["size"] = float(bid["size"]) / 1e9
+
+            for ask in asks:
+                ask["price"] = float(ask["price"]) / 1e6
+                ask["size"] = float(ask["size"]) / 1e9
+            # Sort bids and asks by price
+            bids.sort(key=lambda x: x["price"], reverse=True)
+            asks.sort(key=lambda x: x["price"])
+
+            # Calculate cumulative bid and ask depths
+            cumulative_bid_depth = [sum(bid['size'] for bid in bids[:i + 1]) for i in range(len(bids))]
+            cumulative_ask_depth = [sum(ask['size'] for ask in asks[:i + 1]) for i in range(len(asks))]
+
+            # Extracting price, size, and maker information for hover data
+            bid_hover_text = [f"Price: {bid['price']}, Cumulative Size: {cumulative_bid_depth[i]}, Maker: {bid['maker']}" for i, bid in enumerate(bids)]
+            ask_hover_text = [f"Price: {ask['price']}, Cumulative Size: {cumulative_ask_depth[i]}, Maker: {ask['maker']}" for i, ask in enumerate(asks)]
+
+            # Creating the cumulative area plot chart with markers
+            fig = go.Figure()
+
+            # Plotting cumulative bid depth with markers
+            fig.add_trace(go.Scatter(x=[bid['price'] for bid in bids],
+                                    y=cumulative_bid_depth,
+                                    mode='lines+markers',
+                                    marker=dict(color='green'),
+                                    line=dict(color='green'),
+                                    hovertext=bid_hover_text,
+                                    name='Bid Depth'))
+
+            # Plotting cumulative ask depth with markers
+            fig.add_trace(go.Scatter(x=[ask['price'] for ask in asks],
+                                    y=cumulative_ask_depth,
+                                    mode='lines+markers',
+                                    marker=dict(color='red'),
+                                    line=dict(color='red'),
+                                    hovertext=ask_hover_text,
+                                    name='Ask Depth'))
+
+            # Setting layout
+            fig.update_layout(title='Market Liquidity Depth',
+                            xaxis=dict(title='Price'),
+                            yaxis=dict(title='Cumulative Depth'),
+                            showlegend=True)
+            
+            mid_price = (bids[0]['price'] + asks[0]['price']) / 2
+
+            so1, so2 = st.columns(2)
+            zoom_percentage = so1.selectbox('zoom:', [1,5,10,None])
+            # so2.multiselect()
+
+            if zoom_percentage is not None:
+                fig.update_xaxes(range=[mid_price * (1 - zoom_percentage / 100), mid_price * (1 + zoom_percentage / 100)])
+
+            # Show the plot
+            st.plotly_chart(fig)
+
+            st.json(result, expanded=False)
+
+
+        if data_source == 'RPC':
+            orders_rpc_page(ch)
