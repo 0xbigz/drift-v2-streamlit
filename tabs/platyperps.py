@@ -18,8 +18,8 @@ from driftpy.constants.numeric_constants import *
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from dataclasses import dataclass
 from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market

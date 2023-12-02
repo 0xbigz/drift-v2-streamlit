@@ -1,6 +1,7 @@
 import streamlit as st
-from solders.rpc.responses import GetSignaturesForAddressResp, GetTokenAccountBalanceResp
+from solders.rpc.responses import GetSignaturesForAddressResp, GetTokenAccountBalanceResp, GetTransactionResp
 import json
+from anchorpy.provider import Signature
 
 
 async def load_token_balance(connection, address):
@@ -17,9 +18,13 @@ async def transaction_history_for_account(connection, addy, before_sig1, limit, 
         # try:
             if len(res2):
                 bbs = res2[-1]['signature']
+                bbs = Signature.from_string(bbs)
             else:
                 bbs = before_sig1
-            res: GetSignaturesForAddressResp = (await connection.get_signatures_for_address(addy, before=bbs, limit=limit)).to_json()
+            res: GetSignaturesForAddressResp = (await connection.get_signatures_for_address(addy, 
+                                                                                            before=bbs, 
+                                                                                            limit=limit
+                                                                                            )).to_json()
             res = json.loads(res)
             if 'result' not in res:
                 st.warning('bad get_signatures_for_address' + str(res))

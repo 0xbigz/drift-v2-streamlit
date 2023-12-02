@@ -19,8 +19,8 @@ from driftpy.constants.numeric_constants import *
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from dataclasses import dataclass
 from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
@@ -33,9 +33,12 @@ from driftpy.types import SpotBalanceType
 import plotly.express as px
 from solana.rpc.types import MemcmpOpts
 
+MARGIN_PRECISION = 1e4
+
 async def show_pid_positions(clearing_house: DriftClient):
     ch = clearing_house
-    state = await get_state_account(ch.program)
+    await ch.account_subscriber.update_cache()
+    state = ch.get_state_account()
 
     with st.expander('state'):
         st.json(state.__dict__)
@@ -66,9 +69,9 @@ async def show_pid_positions(clearing_house: DriftClient):
     dfs = {}
     spotdfs = {}
     # healths = []
-    from driftpy.types import User
+    from driftpy.types import UserAccount
     kp = Keypair()
-    ch = DriftClient(ch.program, kp)
+    # ch = DriftClient(ch.program, kp)
 
     
     perp_liq_prices = {}
@@ -81,7 +84,7 @@ async def show_pid_positions(clearing_house: DriftClient):
         chu = DriftUser(
             ch, 
             authority=fuser.authority, 
-            subaccount_id=fuser.sub_account_id, 
+            sub_account_id=fuser.sub_account_id, 
             # use_cache=True
         )
         await chu.set_cache()
@@ -91,7 +94,7 @@ async def show_pid_positions(clearing_house: DriftClient):
             key = str(x.public_key)
             account: DriftUser = x.account
 
-            chu = DriftUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, 
+            chu = DriftUser(ch, authority=account.authority, sub_account_id=account.sub_account_id, 
                             # use_cache=True
                             )
             cache['user'] = account # update cache to look at the correct user account
@@ -226,7 +229,7 @@ async def show_pid_positions(clearing_house: DriftClient):
         num_markets = state.number_of_spot_markets
 
     tabs = st.tabs([str(x) for x in range(num_markets)])
-    usdc_market = await get_spot_market_account(ch.program, 0)
+    usdc_market = ch.get_spot_market_account(0)
 
     for market_index, tab in enumerate(tabs):
         market_index = int(market_index)

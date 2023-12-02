@@ -21,8 +21,8 @@ from driftpy.constants.numeric_constants import *
 import os
 import json
 import streamlit as st
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from dataclasses import dataclass
 from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
@@ -333,7 +333,7 @@ async def super_stake(clearing_house: DriftClient):
     #     if doit:
     #         from solana.rpc.types import MemcmpOpts
     #         from driftpy.drift_user import DriftUser
-    #         from driftpy.types import User
+    #         from driftpy.types import UserAccount
     #         from driftpy.math.margin import MarginCategory
 
     #         all_users = ch.program.account['User'].all(filters=[MemcmpOpts(offset=4267, bytes='2i')])
@@ -342,7 +342,7 @@ async def super_stake(clearing_house: DriftClient):
     #             chu = DriftUser(
     #                 ch, 
     #                 authority=fuser.authority, 
-    #                 subaccount_id=fuser.sub_account_id, 
+    #                 sub_account_id=fuser.sub_account_id, 
     #                 use_cache=True
     #             )
     #             await chu.set_cache()
@@ -351,7 +351,7 @@ async def super_stake(clearing_house: DriftClient):
     #                 key = str(x.public_key)
     #                 account: User = x.account
 
-    #                 chu = DriftUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, use_cache=True)
+    #                 chu = DriftUser(ch, authority=account.authority, sub_account_id=account.sub_account_id, use_cache=True)
     #                 cache['user'] = account # update cache to look at the correct user account
     #                 await chu.set_cache(cache)
     #                 margin_category = MarginCategory.INITIAL

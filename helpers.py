@@ -12,7 +12,7 @@ from driftpy.setup.helpers import mock_oracle, _airdrop_user, set_price_feed, se
 from driftpy.admin import Admin
 from driftpy.types import OracleSource
 
-from driftpy.drift_client import DriftClient as SDKDriftClient
+from driftpy.drift_client import DriftClient, AccountSubscriptionConfig
 from driftpy.math.amm import calculate_mark_price_amm
 from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
@@ -34,57 +34,64 @@ from tqdm import tqdm
 from driftpy.math.margin import MarginCategory
 
 
-async def all_user_stats(all_users, ch, oracle_distort=None, pure_cache=None, only_perp_index=None):
+async def all_user_stats(all_users, ch: DriftClient, oracle_distort=None, pure_cache=None, only_one_index=None):
     if all_users is not None:
-        fuser: User = all_users[0].account
+        fuser: DriftUser = all_users[0].account
         chu = DriftUser(
             ch, 
             authority=fuser.authority, 
-            subaccount_id=fuser.sub_account_id, 
+            sub_account_id=fuser.sub_account_id, 
             # use_cache=True
         )
-        if pure_cache is None:
-            await chu.set_cache()
+        if pure_cache is None and chu.drift_client.account_subscriber.cache is None:
+            await chu.drift_client.account_subscriber.update_cache()
         else:
-            chu.CACHE = pure_cache
+            chu.drift_client.account_subscriber.cache = pure_cache
             
-        cache = chu.CACHE
+        cache1 = copy.deepcopy(chu.drift_client.account_subscriber.cache)
         if oracle_distort is not None:
-            new_spots = []
-            new_perps = []
+            # new_spots = []
+            new_oracles_dat = {}
 
-            for i,x in enumerate(cache['spot_market_oracles']):
-                # sol and msol move with
-                if (i != 0 and only_perp_index is None) or (only_perp_index == 0 and i in [1,2]):
-                    x.price *= oracle_distort
-                new_spots.append(x)
-            cache['spot_market_oracles'] = new_spots
+            # for i,x in enumerate(cache1['spot_market_oracles']):
+            #     # sol and msol move with
+            #     if (i != 0 and only_one_index is None) or (only_one_index == 0 and i in [1,2]):
+            #         x.price *= oracle_distort
+            #     new_spots.append(x)
+            # cache1['spot_market_oracles'] = new_spots
 
-            for i,x in enumerate(cache['perp_market_oracles']):
-                if only_perp_index is None or only_perp_index == i:
-                    x.price *= oracle_distort
-                new_perps.append(x)
-            cache['perp_market_oracles'] = new_perps
-            chu.CACHE = cache
+            for i,(key, val) in enumerate(cache1['oracle_price_data'].items()):
+                new_oracles_dat[key] = copy.deepcopy(val)
+                if only_one_index is None or only_one_index == key:
+                    new_oracles_dat[key].data.price *= oracle_distort
+                    # if oracle_distort >= 0:
+                    #     assert(new_oracles_dat[key].data.price > 0)
+            cache1['oracle_price_data'] = new_oracles_dat
+            chu.drift_client.account_subscriber.cache = cache1
 
 
         res = []
         for x in all_users:
             key = str(x.public_key)
-            account: User = x.account
+            account: DriftUser = x.account
 
-            chu = DriftUser(ch, authority=account.authority, subaccount_id=account.sub_account_id, 
+            chu = DriftUser(ch, authority=account.authority, sub_account_id=account.sub_account_id,
+                            account_subscription=AccountSubscriptionConfig("cached"))
                             # use_cache=True
-                            )
-            cache['user'] = account # update cache to look at the correct user account
-            await chu.set_cache(cache)
-            margin_category = MarginCategory.INITIAL
-            spot_liab = await chu.get_spot_market_liability()
-            perp_liab = await chu.get_total_perp_liability()
+                            
+            chu.account_subscriber.user_and_slot = DataAndSlot(0, account)
+            chu.drift_client.account_subscriber.cache = cache1
 
-            margin_req = await chu.get_margin_requirement(margin_category, None)
-            spot_value = await chu.get_spot_market_asset_value(None, False, None)
-            upnl = await chu.get_unrealized_pnl(True, only_perp_index, None)
+            # chu.account_subscriber.
+            # cache['user'] = account # update cache to look at the correct user account
+            chu.drift_client.account_subscriber.cache = cache1
+            margin_category = MarginCategory.INITIAL
+            spot_liab = chu.get_spot_market_liability()
+            perp_liab = chu.get_total_perp_liability()
+
+            margin_req = chu.get_margin_requirement(margin_category, None)
+            spot_value = chu.get_spot_market_asset_value(None, False, None)
+            upnl = chu.get_unrealized_pnl(True, only_one_index, None)
 
             res.append([spot_liab/QUOTE_PRECISION, perp_liab/QUOTE_PRECISION, margin_req/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION])
 
@@ -240,7 +247,7 @@ def human_market_df(df):
     return df
     
 
-def serialize_perp_market_2(market: PerpMarket):
+def serialize_perp_market_2(market: PerpMarketAccount):
 
     market_df = pd.json_normalize(market.__dict__).drop(['amm', 'insurance_claim', 'pnl_pool'],axis=1).pipe(human_market_df)
     market_df.columns = ['market.'+col for col in market_df.columns]
@@ -263,7 +270,7 @@ def serialize_perp_market_2(market: PerpMarket):
     result_df = pd.concat([market_df, amm_df, amm_hist_oracle_df, market_amm_pool_df, market_if_df, market_pool_df],axis=1)
     return result_df
 
-def serialize_spot_market(spot_market: SpotMarket):
+def serialize_spot_market(spot_market: SpotMarketAccount):
     spot_market_df = pd.json_normalize(spot_market.__dict__).drop([
         'historical_oracle_data', 'historical_index_data',
         'insurance_fund', # todo

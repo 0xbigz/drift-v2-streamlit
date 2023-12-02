@@ -28,8 +28,8 @@ import os
 import json
 import streamlit as st
 from driftpy.types import MarginRequirementType
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from driftpy.addresses import *
 from dataclasses import dataclass
 from solders.pubkey import Pubkey

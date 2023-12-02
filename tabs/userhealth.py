@@ -21,8 +21,8 @@ import os
 import json
 import streamlit as st
 from driftpy.types import MarginRequirementType
-from driftpy.constants.banks import devnet_banks, Bank
-from driftpy.constants.markets import devnet_markets, Market
+from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from driftpy.addresses import *
 from dataclasses import dataclass
 from solders.pubkey import Pubkey
@@ -92,7 +92,7 @@ async def show_user_health(clearing_house: DriftClient):
                 # chu = DriftUser(
                 #     ch, 
                 #     authority=user_authority_pk, 
-                #     subaccount_id=0, 
+                #     sub_account_id=0, 
                 #     use_cache=False
                 # )
                 for sub_id in range(user_stat.number_of_sub_accounts_created):    
@@ -115,7 +115,7 @@ async def show_user_health(clearing_house: DriftClient):
             # chu = DriftUser(
             #     ch, 
             #     authority=user_authority_pk, 
-            #     subaccount_id=0, 
+            #     sub_account_id=0, 
             #     use_cache=False
             # )
             for sub_id in range(user_stat.number_of_sub_accounts_created):
@@ -123,7 +123,7 @@ async def show_user_health(clearing_house: DriftClient):
                 chu_sub = DriftUser(
                     ch, 
                     authority=user_authority_pk, 
-                    subaccount_id=sub_id, 
+                    sub_account_id=sub_id, 
                     # use_cache=True
                 )
                 CACHE = None   
