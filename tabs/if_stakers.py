@@ -71,9 +71,11 @@ async def insurance_fund_page(ch: DriftClient, env):
     total_if_value = 0
     total_month_gain = 0
 
-    p_url = 'https://raw.githubusercontent.com/0xbigz/drift-v2-flat-data/main/data/perp_markets.csv'
+    # root_url = 'https://raw.githubusercontent.com/0xbigz/drift-v2-flat-data'
+    root_url = 'https://raw.githubusercontent.com/ansatz-research/drift-v2-flat-data/my-branch-to-push/'
+    p_url = root_url+'/data/perp_markets.csv'
     perp_df = pd.DataFrame()
-    s_url = 'https://raw.githubusercontent.com/0xbigz/drift-v2-flat-data/main/data/spot_markets.csv'
+    s_url = root_url+'/data/spot_markets.csv'
     spot_df = pd.DataFrame()
     try:
         perp_df = pd.read_csv(p_url, index_col=[0]).T
