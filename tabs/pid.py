@@ -47,7 +47,7 @@ async def show_pid_positions(clearing_house: DriftClient):
     
     col1, col2, col3, col4 = st.columns(4)
 
-    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', 'OpenOrder', 'SuperStakeSOL', 'SuperStakeJitoSOL', None], 4)
+    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', 'OpenOrder', 'SuperStakeSOL', 'SuperStakeJitoSOL', None], 5)
 
     all_users = None
 
