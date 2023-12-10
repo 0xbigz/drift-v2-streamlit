@@ -32,7 +32,8 @@ from solana.transaction import Transaction
 import asyncio
 from tqdm import tqdm
 from driftpy.math.margin import MarginCategory
-
+import copy
+from driftpy.accounts import DataAndSlot
 
 async def all_user_stats(all_users, ch: DriftClient, oracle_distort=None, pure_cache=None, only_one_index=None):
     if all_users is not None:
