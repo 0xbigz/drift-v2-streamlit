@@ -36,6 +36,8 @@ from driftpy.math.margin import MarginCategory, calculate_asset_weight
 import plotly.graph_objs as go
 import requests
 
+from datafetch.s3_fetch import load_user_trades, load_user_settlepnl
+
 def load_deposit_history(userkey, source='api'):
     if source == 'api':
         url = 'https://mainnet-beta.api.drift.trade/deposits/userAccounts/?userPublicKeys='+userkey+'&pageIndex=0&pageSize=1000&sinceId=&sinceTs='
@@ -204,91 +206,6 @@ def filter_dups(df):
         ]).reset_index(drop=True)
     return df
 
-
-def load_user_settlepnl(dates, user_key, with_urls=False):
-    url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
-    url += 'user/%s/settlePnls/%s/%s'
-    dfs = []
-    data_urls = []
-    for date in dates:
-        (year, month, _) = (date.strftime("%Y"), str(date.month), str(date.day))
-        data_url = url % (user_key, year, month)
-        if data_url not in data_urls:
-            data_urls.append(data_url)
-            try:
-                dd = pd.read_csv(data_url)
-                dfs.append(dd)
-            except:
-                pass
-    if len(dfs):
-        dfs = pd.concat(dfs)
-    else:
-        dfs = pd.DataFrame()
-
-    if with_urls:
-        return dfs, data_urls
-
-    return dfs
-
-def load_user_lp(dates, user_key, with_urls=False, is_devnet=False):
-    url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
-    url_og = url_market_pp+'.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
-    url = url_og + 'user/%s/lp-records/%s/%s'
-
-    dfs = []
-    data_urls = []
-    for date in dates:
-        (year, month, _) = (date.strftime("%Y"), str(date.month), str(date.day))
-        data_url = url % (user_key, year, month)
-        if data_url not in data_urls:
-            data_urls.append(data_url)
-            try:
-                dfs.append(pd.read_csv(data_url))
-            except:
-                pass
-    if len(dfs):
-        dfs = pd.concat(dfs)
-    else:
-        dfs = pd.DataFrame()
-    if with_urls:
-        return dfs, data_urls
-
-    return dfs
-
-def load_user_trades(dates, user_key, with_urls=False):
-    url_og = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
-    url = url_og + 'user/%s/trades/%s/%s'
-
-    liq_url = url_og + 'user/%s/liquidations/%s/%s'
-
-    dfs = []
-    data_urls = []
-    for date in dates:
-        (year, month, _) = (date.strftime("%Y"), str(date.month), str(date.day))
-        data_url = url % (user_key, year, month)
-        if data_url not in data_urls:
-            data_urls.append(data_url)
-            try:
-                dd = pd.read_csv(data_url, nrows=50000)
-                if 'liquidation' in dd['actionExplanation'].unique():
-                    if user_key in dd[dd['actionExplanation']=='liquidation'].taker.unique():
-                        data_liq_url = liq_url % (user_key, year, month)
-                        print(data_liq_url)
-                        data_urls.append(data_liq_url)
-                        dd1 = pd.read_csv(data_liq_url)
-                        dd = dd.merge(dd1, suffixes=('', '_l'), how='outer', on='txSig')
-                dfs.append(dd)
-            except Exception as e:
-                st.warning(data_url+ ' + liq files failed to load ('+str(e)+')')
-    if len(dfs):
-        dfs = pd.concat(dfs)
-    else:
-        dfs = pd.DataFrame()
-    if with_urls:
-        return dfs, data_urls
-
-    return dfs
-
 async def show_user_perf(clearing_house: DriftClient):
     frens = get_loaded_auths()
 
@@ -334,8 +251,8 @@ async def show_user_perf(clearing_house: DriftClient):
         balances = []
         positions = []
 
-        url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
-        url += 'user/%s/trades/%s/%s'
+        # url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
+        # url += 'user/%s/trades/%s/%s'
 
         userAccountKeys = []
         user_stat = None

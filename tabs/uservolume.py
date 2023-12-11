@@ -8,6 +8,7 @@ from driftpy.accounts.oracle import *
 from constants import ALL_MARKET_NAMES
 
 import plotly.express as px
+from datafetch.s3_fetch import load_volumes
 
 pd.options.plotting.backend = "plotly"
 
@@ -73,23 +74,6 @@ async def get_user_stats(clearing_house: DriftClient):
     user_stats_df = pd.DataFrame([x.account.__dict__ for x in all_user_stats])
     return user_stats_df
 
-
-def load_volumes(dates, market_name, with_urls=False):
-    url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
-    url += "market/%s/trades/%s/%s/%s"
-    dfs = []
-    data_urls = []
-    for date in dates:
-        (year, month, day) = (date.strftime("%Y"), str(date.month), str(date.day))
-        data_url = url % (market_name, year, month, day)
-        data_urls.append(data_url)
-        dfs.append(pd.read_csv(data_url))
-    dfs = pd.concat(dfs)
-
-    if with_urls:
-        return dfs, data_urls
-
-    return dfs
 
 def calc_maker_exec_price(row):
     if row["makerOrderDirection"] == "long":
@@ -185,8 +169,6 @@ def calculate_agg_counterparty_volume(fills_df: pd.DataFrame, user_make_or_taker
 
 
 async def show_user_volume(clearing_house: DriftClient):
-    url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
-    url += "market/%s/trades/%s/%s/%s"
     mol1, molselect, mol0, mol2, _ = st.columns([3, 3, 3, 3, 10])
     market_name = mol1.selectbox(
         "market",
