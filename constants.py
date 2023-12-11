@@ -6,6 +6,6 @@ ALL_MARKET_NAMES = ["SOL-PERP", "BTC-PERP", "ETH-PERP",
                  
                 'OP-PERP', 'RNDR-PERP', 'XRP-PERP',
                 'HNT-PERP', 'INJ-PERP', 'LINK-PERP', 'RLB-PERP',
-                'PYTH-PERP',
+                'PYTH-PERP', 'JTO-PERP',
                 
-                "SOL", "mSOL", "wBTC", "wETH", "USDT", 'JitoSOL', 'PYTH']
+                "SOL", "mSOL", "wBTC", "wETH", "USDT", 'JitoSOL', 'PYTH', 'JTO']
