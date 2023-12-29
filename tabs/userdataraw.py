@@ -55,7 +55,7 @@ async def userdataraw(clearing_house: DriftClient):
             # st.write(str(type(obj)))
             if 'Position' in str(type(obj)) or 'Order' in str(type(obj)):
                 return obj.__dict__
-            elif isinstance(obj, PublicKey):
+            elif isinstance(obj, Pubkey):
                 return str(obj)
             else:
                 return str(obj)

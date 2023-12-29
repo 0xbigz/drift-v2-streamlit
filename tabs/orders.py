@@ -66,12 +66,12 @@ async def get_price_data(market_type, market_index):
     return pd.DataFrame(dat)
 
 async def get_orders_data(_ch: DriftClient, depth_slide, market_type, market_index, order_filter):
-    try:
-        all_users = await _ch.program.account['User'].all(filters=[MemcmpOpts(offset=4352, bytes='2')])
+    # try:
+    all_users = await _ch.program.account['User'].all(filters=[MemcmpOpts(offset=4352, bytes='2')])
         # st.warning('len: '+str(len(all_users)))
-    except Exception as e:
-        st.warning("ERROR: '"+str(e)+"', and cannot load ['User'].all() with current rpc")
-        return
+    # except Exception as e:
+    #     st.warning("ERROR: '"+str(e)+"', and cannot load ['User'].all() with current rpc")
+    #     return
 
     st.sidebar.text('cached on: ' + _ch.time)
     
@@ -323,30 +323,32 @@ def orders_rpc_page(ch: DriftClient):
 
         depth_slide = st.slider('depth:', 1, 1000, 10)
 
-        col1, col2 = st.columns(2)
-        market = col1.radio('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'SOL-USDC'], horizontal=True)
-        order_filter = col2.radio('order filter:', ['Limit', 'Trigger', 'All'], horizontal=True)
+        s1, s2, s3 = st.columns(3)
+        market_type = s1.selectbox('marketType:', list(['perp', 'spot']))
+        market_index = s2.selectbox('marketIndex:', list(range(21)))
+        # market = col1.radio('select market:', ['SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'SOL-USDC'], horizontal=True)
+        order_filter = s3.radio('order filter:', ['Limit', 'Trigger', 'All'], horizontal=True)
 
-        if market == 'SOL-PERP':
-            market_type = 'perp'
-            market_index= 0
-        elif market == 'BTC-PERP':
-            market_type = 'perp'
-            market_index= 1        
-        elif market == 'ETH-PERP':
-            market_type = 'perp'
-            market_index= 2
-        else:
-            market_type = 'spot'
-            market_index = 1
+        # if market == 'SOL-PERP':
+        #     market_type = 'perp'
+        #     market_index= 0
+        # elif market == 'BTC-PERP':
+        #     market_type = 'perp'
+        #     market_index= 1        
+        # elif market == 'ETH-PERP':
+        #     market_type = 'perp'
+        #     market_index= 2
+        # else:
+        #     market_type = 'spot'
+        #     market_index = 1
 
         data, oracle_data, drift_order_depth, drift_depth  = cached_get_orders_data(ch, depth_slide, market_type, market_index, order_filter)
         # if len(data):
         #     st.write(f'{data.market.values[0]}')
 
-        zol1, zol2, zol3 = st.columns([1,6,20])
+        zol2, zol3 = st.columns([6,20])
 
-        zol1.image("https://app.drift.trade/assets/icons/markets/sol.svg", width=33)
+        # zol1.image("https://app.drift.trade/assets/icons/markets/sol.svg", width=33)
         # print(oracle_data)
         # oracle_data.slot
         zol2.metric('Oracle Price', f'${oracle_data.data.price/PRICE_PRECISION}', f'±{oracle_data.data.confidence/PRICE_PRECISION} (slot={oracle_data.slot})',
@@ -497,7 +499,7 @@ def orders_page(ch: DriftClient):
             url = 'https://mainnet-beta.api.drift.trade/dlob/l3'
             s1, s2, s3 = st.columns(3)
             mt = s1.selectbox('marketType:', list(['perp', 'spot']))
-            mi = s2.selectbox('marketIndex:', list(range(17)))
+            mi = s2.selectbox('marketIndex:', list(range(21)))
             fields = f'?marketIndex={mi}&marketType={mt}&depth=1'
             endpoint = s3.text_input('endpoint:', value=url+fields)
             result = requests.get(endpoint).json()
@@ -507,6 +509,7 @@ def orders_page(ch: DriftClient):
             # Extracting bid and ask data
             bids = result["bids"]
             asks = result["asks"]
+            st.write('server slot:', result['slot'])
             # Convert price and size to floats and scale
             for bid in bids:
                 bid["price"] = float(bid["price"]) / 1e6

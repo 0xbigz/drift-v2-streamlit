@@ -1,7 +1,7 @@
 
 from driftpy.math.amm import *
 from driftpy.math.trade import *
-from driftpy.math.positions import *
+from driftpy.math.perp_position import *
 from driftpy.math.market import *
 from driftpy.math.user import *
 
@@ -88,15 +88,16 @@ async def all_user_stats(all_users, ch: DriftClient, oracle_distort=None, pure_c
             chu.drift_client.account_subscriber.cache = cache1
             margin_category = MarginCategory.INITIAL
             spot_liab = chu.get_spot_market_liability()
-            perp_liab = chu.get_total_perp_liability()
+            perp_liab = chu.get_perp_market_liability()
 
             margin_req = chu.get_margin_requirement(margin_category, None)
             spot_value = chu.get_spot_market_asset_value(None, False, None)
             upnl = chu.get_unrealized_pnl(True, only_one_index, None)
+            leverage = chu.get_leverage(None)
 
-            res.append([spot_liab/QUOTE_PRECISION, perp_liab/QUOTE_PRECISION, margin_req/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION])
+            res.append([leverage/MARGIN_PRECISION, spot_liab/QUOTE_PRECISION, perp_liab/QUOTE_PRECISION, margin_req/QUOTE_PRECISION, spot_value/QUOTE_PRECISION, upnl/QUOTE_PRECISION])
 
-        res = pd.DataFrame(res, columns=['spot_liability', 'perp_liability', 'margin_requirement', 'spot_value', 'upnl'], index=[x.public_key for x in all_users])
+        res = pd.DataFrame(res, columns=['leverage', 'spot_liability', 'perp_liability', 'margin_requirement', 'spot_value', 'upnl'], index=[x.public_key for x in all_users])
         res['total_liability'] = res['perp_liability']+res['spot_liability']
 
 

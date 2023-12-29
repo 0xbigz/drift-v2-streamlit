@@ -169,11 +169,20 @@ async def competitions(ch: DriftClient, env):
         if preset_programs == 'drift-competitions':
             draw_tabs = st.tabs(['current', 'past'])
             with draw_tabs[0]:
-                every_user_stats = await ch.program.account['UserStats'].fetch_multiple(vault_df['user_stats'].values)
-                # mode = st.radio('mode:', ['current state', 'extrapolated'], horizontal=True)
                 derived_snap_name = 'latest_snapshot(wb)'
-                vault_df[derived_snap_name] = [x.fees.total_fee_paid//100 for x in every_user_stats]
-                vault_df['last trade ts'] = [pd.to_datetime(x.last_taker_volume30d_ts*1e9) for x in every_user_stats]
+                vault_df[derived_snap_name] = 0
+                vault_df['last trade ts'] = 0
+                try:
+                    user_stats_pubkeys = [Pubkey.from_string(x) for x in vault_df['user_stats'].values]
+                    every_user_stats = await ch.program.account['UserStats'].fetch_multiple(
+                        user_stats_pubkeys
+                        )
+                    # mode = st.radio('mode:', ['current state', 'extrapolated'], horizontal=True)
+                    vault_df[derived_snap_name] = [x.fees.total_fee_paid//100 for x in every_user_stats]
+                    vault_df['last trade ts'] = [pd.to_datetime(x.last_taker_volume30d_ts*1e9) for x in every_user_stats]
+                except Exception as e:
+                    st.warning('couldnt load user stats')
+                    st.warning('error:'+str(e))
 
                 comp_acct = accounts[0][0].account
                 vsum = vault_df.sum()
@@ -190,7 +199,10 @@ async def competitions(ch: DriftClient, env):
                 max_prize = np.round((pol_vault - comp_acct.sponsor_info.min_sponsor_amount/1e6) * comp_acct.sponsor_info.max_sponsor_fraction/1e6, 2)
                 
                 max_prize = max(0, max_prize)
-                prizes = [np.round(min(1000, max_prize/10),2), np.round(min(5000, max_prize/2),2), max_prize]
+                prizes = [np.round(min(10000, max_prize/25),2),
+                          np.round(min(50000, max_prize/12),2),
+                           max_prize
+                           ]
                 prize_ev = 2000
 
                 odds = [sum(prizes)/x for x in prizes]
@@ -214,7 +226,7 @@ async def competitions(ch: DriftClient, env):
                 # st.write(ddf)
                 # st.write(ddf.describe())
                 
-                vault_df['entries'] = vault_df[derived_snap_name] + vault_df['bonus_score'] - vault_df['previous_snapshot_score']
+                vault_df['entries'] = (vault_df[derived_snap_name] - vault_df['previous_snapshot_score']).max(0) + vault_df['bonus_score'] 
                 vault_df['entries'] =  vault_df['entries'].apply(lambda x: min(x, comp_acct.max_entries_per_competitor))
                 vault_df['EV ($)'] = vault_df['entries']/vault_df['entries'].sum() * prize_ev
                 vault_df['chance of a win'] = 1 - ((1- vault_df['entries']/vault_df['entries'].sum()) ** comp_acct.number_of_winners)

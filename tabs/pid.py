@@ -14,7 +14,7 @@ from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from driftpy.drift_client import DriftClient
 from driftpy.drift_user import DriftUser as DriftUser
-from driftpy.math.positions import calculate_position_funding_pnl
+from driftpy.math.perp_position import calculate_position_funding_pnl
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
@@ -35,6 +35,8 @@ import plotly.express as px
 from solana.rpc.types import MemcmpOpts
 from datafetch.transaction_fetch import load_token_balance
 MARGIN_PRECISION = 1e4
+PERCENTAGE_PRECISION = 10**6
+
 from driftpy.drift_client import AccountSubscriptionConfig
 
 async def show_pid_positions(clearing_house: DriftClient):
@@ -238,10 +240,50 @@ async def show_pid_positions(clearing_house: DriftClient):
     else:
         num_markets = state.number_of_spot_markets
 
-    tabs = st.tabs([str(x) for x in range(num_markets)])
+    tabs = st.tabs(['overview'] + [str(x) for x in range(num_markets)])
     usdc_market = ch.get_spot_market_account(0)
 
-    for market_index, tab in enumerate(tabs):
+    with tabs[0]:
+        dd1 = {}
+        dd2 = {}
+        for market_index in range(state.number_of_markets):
+            FUNDING_RATE_BUFFER
+            perp_i = ch.get_perp_market_account(market_index)
+            market_name = ''.join(map(chr, perp_i.name)).strip(" ")
+            otwap = perp_i.amm.historical_oracle_data.last_oracle_price_twap
+            pred_fund = ((perp_i.amm.last_mark_price_twap - otwap)/otwap) / (3600.0/perp_i.amm.funding_period * 24)
+            fundings = [x* 100 * 365.25 * 24 for x in (pred_fund,
+                        perp_i.amm.last_funding_rate / otwap / FUNDING_RATE_BUFFER,
+                        perp_i.amm.last24h_avg_funding_rate / otwap / FUNDING_RATE_BUFFER,
+                        )]
+
+            dd1[market_name] = fundings
+        for market_index in range(state.number_of_spot_markets):
+            market = ch.get_spot_market_account(market_index)
+            market_name = ''.join(map(chr, market.name)).strip(" ")
+            deposits = market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
+            borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
+            utilization =  borrows/(deposits+1e-12) * 100
+            opt_util = market.optimal_utilization/PERCENTAGE_PRECISION * 100
+            opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION
+            max_borrow = market.max_borrow_rate/PERCENTAGE_PRECISION
+
+            bor_ir_curve = [
+                opt_borrow* (100/opt_util)*x/100 
+                if x <= opt_util
+                else ((max_borrow-opt_borrow) * (100/(100-opt_util)))*(x-opt_util)/100 + opt_borrow
+                for x in [utilization]
+            ]
+
+            dep_ir_curve = [ir*utilization*(1-market.insurance_fund.total_factor/1e6)/100 for idx,ir in enumerate(bor_ir_curve)]
+            
+            dd2[market_name] = (dep_ir_curve[0]*100, bor_ir_curve[0]*100)
+        s1, s2 = st.columns(2)
+        s1.write(pd.DataFrame(dd1, index=['predicted funding rate', 'last funding rate', '24h avg funding rate']).T)
+        s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate']).T)
+
+
+    for market_index, tab in enumerate(tabs[1:]):
         market_index = int(market_index)
         with tab:
             if markettype == 'Perp':
@@ -456,7 +498,6 @@ async def show_pid_positions(clearing_house: DriftClient):
                 else:
                     col4.metric(f'{market_name} vault balance', str(sv_amount/token_scale) , str(iv_amount/token_scale)+' (insurance)')
                 
-                PERCENTAGE_PRECISION = 10**6
                 df1 = None
                 if all_users is not None:
                     df1 = spots[(spots.scaled_balance!=0) & (spots.market_index==market_index)

@@ -52,7 +52,8 @@ from tabs.userdataraw import userdataraw
 from tabs.vaults import vaults
 from tabs.competition import competitions
 from tabs.openbookv2 import tab_openbookv2
-
+from tabs.usermap import usermap_page
+from tabs.backtester import backtester_page
 def main():
     current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
     if st.sidebar.button('Clear Cache'):
@@ -92,7 +93,9 @@ def main():
      'UserDataRaw',
      'Vaults',
      'DriftDraw',
-     'Openbookv2'
+     'Openbookv2',
+     'UserMap',
+     'Backtester',
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -273,7 +276,12 @@ def main():
         loop.run_until_complete(competitions(clearing_house, env))   
     elif tab.lower() == 'openbookv2':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(tab_openbookv2(clearing_house, env))              
+        loop.run_until_complete(tab_openbookv2(clearing_house, env))      
+    elif tab.lower() == 'usermap':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(usermap_page(clearing_house, env))   
+    elif tab.lower() == 'backtester':
+        backtester_page(clearing_house, env)         
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
