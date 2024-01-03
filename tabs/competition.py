@@ -48,6 +48,26 @@ async def competitions(ch: DriftClient, env):
     idl = None
     pid = None
     preset_programs = None
+
+    try:
+        api_result = requests.get('https://mainnet-beta.api.drift.trade/sweepstakes/results').json()
+    except:
+        api_result = {}
+
+    if 'data' in api_result:
+        dfs = []
+        # st.write(api_result['data']['competitionHistory'])
+        for x in api_result['data']['competitionHistory']:
+            dfs.append(pd.Series(x))
+        df = pd.concat(dfs, axis=1).T
+        df['prize'] = df['summaryEvent'].apply(lambda x: float(x['prizeValue']))/1e6
+        st.write(df)
+        st.metric('total prize', df['prize'].astype(float).sum())
+    dochainload = st.radio('do chain load:', [True, False], index=1)
+
+    if not dochainload:
+        return 0
+    
     with tabs[3]:
         preset_programs = st.radio('presets:', ['drift-competitions', 'drift-vaults', 'metadaoproject', 'custom'],
                                    horizontal=True)

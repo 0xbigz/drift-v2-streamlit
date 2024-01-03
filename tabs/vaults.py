@@ -13,7 +13,7 @@ from solana.rpc.async_api import AsyncClient
 from driftpy.drift_client import DriftClient, AccountSubscriptionConfig
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
-from driftpy.drift_user import get_token_amount
+from driftpy.drift_user import get_token_amount, UserAccount
 
 import os
 import json
@@ -110,17 +110,19 @@ async def vaults(ch: DriftClient, env):
         s1.metric('number of vaults:', len(all_vaults), str(len(all_vault_deps))+' vault depositor(s)')
         chu = None
         if len(vault_df):
-            vu = [Pubkey.from_string(x) for x in vault_df.astype(str).T.sort_values(by='init_ts', ascending=False).T.loc['user'].values]
+            user_keys = vault_df.astype(str).T.sort_values(by='init_ts', ascending=False).T.loc['user'].values
+            vu = [Pubkey.from_string(x) for x in user_keys]
             # st.write(vu)
             vault_users = await ch.program.account["User"].fetch_multiple(vu)
             from driftpy.drift_user import DriftUser
-            fuser = vault_users[0]
+            fuser: UserAccount = vault_users[0]
             # st.write(vault_users)
             # st.write(fuser)
 
             chu = DriftUser(
                 ch, 
-                authority=fuser.authority, 
+                user_public_key=Pubkey.from_string(user_keys[0]),
+                # authority=fuser., 
                 sub_account_id=fuser.sub_account_id, 
                 # use_cache=True
                 account_subscription=AccountSubscriptionConfig('cached')
@@ -132,8 +134,8 @@ async def vaults(ch: DriftClient, env):
             for i, vault_user in enumerate(vault_users):
                 chu = DriftUser(
                     ch, 
-                    authority=vault_user.authority, 
-                    sub_account_id=vault_user.sub_account_id, 
+                    user_public_key=Pubkey.from_string(user_keys[i]), 
+                    # sub_account_id=vault_user.sub_account_id, 
                     account_subscription=AccountSubscriptionConfig('cached')
                     # use_cache=False
                 )

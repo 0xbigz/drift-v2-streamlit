@@ -12,7 +12,7 @@ pd.options.plotting.backend = "plotly"
 from anchorpy import Provider, Wallet
 from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.drift_client import DriftClient
+from driftpy.drift_client import DriftClient, AccountSubscriptionConfig
 from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
@@ -120,22 +120,25 @@ async def show_user_health(clearing_house: DriftClient):
             # )
             for sub_id in range(user_stat.number_of_sub_accounts_created):
                 print('sub_id:', sub_id)
+                user_account_pk = get_user_account_public_key(ch.program.program_id,
+                    user_authority_pk,
+                    sub_id)
                 chu_sub = DriftUser(
                     ch, 
-                    authority=user_authority_pk, 
+                    user_public_key=user_account_pk, 
                     sub_account_id=sub_id, 
+                    account_subscription=AccountSubscriptionConfig("cached")
                     # use_cache=True
                 )
+                chu_sub.account_subscriber.update_cache()
                 CACHE = None   
-                try:
-                    await chu_sub.set_cache(CACHE)
-                except Exception as e:
-                    print(e, 'fail')
-                    continue
+                # try:
+                #     await chu_sub.set_cache(CACHE)
+                # except Exception as e:
+                #     print(e, 'fail')
+                #     continue
 
-                user_account_pk = get_user_account_public_key(chu_sub.clearing_house.program_id,
-                    chu_sub.authority,
-                    sub_id)
+              
 
 
                 url2 = url % (str(user_account_pk), '2023', '7')

@@ -230,6 +230,13 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
     elif cov_matrix == 'stables only':
         skipped_oracles = [str(x.oracle) for x in mainnet_spot_market_configs if 'USD' not in x.symbol]
 
+    if len(only_one_index) > 12:
+        only_one_index_key = only_one_index
+    else:
+        only_one_index_key = ([str(x.oracle) for x in mainnet_perp_market_configs if x.base_asset_symbol == only_one_index] \
+         +[str(x.oracle) for x in mainnet_spot_market_configs if x.symbol == only_one_index])[0]
+
+
 
     if mode == 'margins':
         levs_none = list(do_dict(x, None) for x in user_vals)
@@ -253,7 +260,7 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
                 new_oracles_dat_down[i][key] = copy.deepcopy(val)
             if cov_matrix is not None and key in skipped_oracles:
                 continue
-            if only_one_index is None or only_one_index == key:
+            if only_one_index is None or only_one_index_key == key:
                 for i in range(num_entrs):
                     oracle_distort_up = max(1 + oracle_distor * (i+1), 1)
                     oracle_distort_down = max(1 - oracle_distor * (i+1), 0)
@@ -356,8 +363,10 @@ def usermap_page(drift_client: DriftClient, env):
             'Select an oracle distort step',
             0.0, 1.0, .1, step=.05, help='3 intervals of the this step will be used for price scenario analysis')
 
+        all_symbols = sorted(list(set([x.base_asset_symbol for x in mainnet_perp_market_configs] 
+                                      + [x.symbol.replace('w', '') for x in mainnet_spot_market_configs])))
         only_one_index = s4.selectbox('only single oracle:', 
-                                      ([None, 'H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG'] 
+                                      ([None]+all_symbols 
                                     #    + list(drift_client.account_subscriber.cache['oracle_price_data'].keys())
                                        ),
                                       index=0,

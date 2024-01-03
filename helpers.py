@@ -40,8 +40,8 @@ async def all_user_stats(all_users, ch: DriftClient, oracle_distort=None, pure_c
         fuser: DriftUser = all_users[0].account
         chu = DriftUser(
             ch, 
-            authority=fuser.authority, 
-            sub_account_id=fuser.sub_account_id, 
+            user_public_key=fuser.user_public_key, 
+            # sub_account_id=fuser.sub_account_id, 
             # use_cache=True
         )
         if pure_cache is None and chu.drift_client.account_subscriber.cache is None:
@@ -76,7 +76,8 @@ async def all_user_stats(all_users, ch: DriftClient, oracle_distort=None, pure_c
             key = str(x.public_key)
             account: DriftUser = x.account
 
-            chu = DriftUser(ch, authority=account.authority, sub_account_id=account.sub_account_id,
+            chu = DriftUser(ch, user_public_key=account.user_public_key, 
+                            # sub_account_id=account.sub_account_id,
                             account_subscription=AccountSubscriptionConfig("cached"))
                             # use_cache=True
                             
