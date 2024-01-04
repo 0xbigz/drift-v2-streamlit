@@ -43,16 +43,24 @@ async def imf_page(clearing_house: DriftClient):
             market = ch.get_perp_market_account(i)
             nom = bytes(market.name).decode('utf-8')
             size = not_size * BASE_PRECISION/(market.amm.historical_oracle_data.last_oracle_price/PRICE_PRECISION)
-            res = [calculate_market_margin_ratio(market, size, MarginCategory.INITIAL),
+            res = [
+                calculate_market_margin_ratio(market, 0, MarginCategory.INITIAL),
+                calculate_market_margin_ratio(market, size, MarginCategory.INITIAL),
+                calculate_market_margin_ratio(market, 0, MarginCategory.MAINTENANCE),
                 calculate_market_margin_ratio(market, size, MarginCategory.MAINTENANCE),
             ]
             res = [1/(x/MARGIN_PRECISION) for x in res]
+            res = [market.imf_factor/1e6] + res
             overview[nom] = res
+
         s1, s2 = st.columns(2)
 
 
         s1.write('perps')
-        s1.write(pd.DataFrame(overview, index=['init leverage', 'maint leverage']).T)
+        s1.write(pd.DataFrame(overview, index=['imf factor', 'init leverage', 
+                                               'init leverage (size)', 
+                                               'maint leverage',
+                                               'maint leverage (size)']).T.reset_index())
 
 
         overview2 = {}
@@ -61,15 +69,18 @@ async def imf_page(clearing_house: DriftClient):
             nom = bytes(market.name).decode('utf-8')
             oracle_price = market.historical_oracle_data.last_oracle_price
             size = not_size * (10 ** market.decimals)/(oracle_price/PRICE_PRECISION)
-            res = [calculate_asset_weight(size, oracle_price, market, MarginCategory.INITIAL),
+            res = [
+                calculate_asset_weight(0, oracle_price, market, MarginCategory.INITIAL),
+                calculate_asset_weight(size, oracle_price, market, MarginCategory.INITIAL),
                 calculate_asset_weight(size, oracle_price, market, MarginCategory.MAINTENANCE),
             ]
             # 1 is liability weight of usdc
             res = [1/(1 - x/MARGIN_PRECISION + 1e-6) for x in res]
+            res = [market.imf_factor/1e6] + res
             overview2[nom] = res
 
         s2.write('spot')
-        s2.write(pd.DataFrame(overview2, index=['init leverage', 'maint leverage']).T)
+        s2.write(pd.DataFrame(overview2, index=['imf factor', 'init leverage', 'init leverage (size)', 'maint leverage']).T.reset_index())
 
     with tabs[1]:
         col1, col2 = st.columns(2)
