@@ -2,6 +2,8 @@
 from typing import Tuple
 from driftpy.constants.numeric_constants import *
 from driftpy.types import PerpMarketAccount
+
+from driftpy.math.amm import calculate_spread
 PERCENTAGE_PRECISION = 10**6
 DEFAULT_REVENUE_SINCE_LAST_FUNDING_SPREAD_RETREAT = 100
 
@@ -159,7 +161,7 @@ def calculate_inventory_liquidity_ratio(
 
     return amm_inventory_pct
 
-def calculate_spread(
+def calculate_spread_local(
     base_spread: int,
     last_oracle_reserve_price_spread_pct: int,
     last_oracle_conf_pct: int,
@@ -564,7 +566,7 @@ async def vamm(ch: DriftClient):
         volume_24h = s4.slider("Volume 24h", value=market.amm.volume24h/1e6) 
 
         # Call the calculate_spread function with the slider values
-        result = calculate_spread(
+        result = calculate_spread_local(
             base_spread * 1e6,
             last_oracle_reserve_price_spread_pct  * 1e6,
             last_oracle_conf_pct * 1e6,
@@ -588,3 +590,8 @@ async def vamm(ch: DriftClient):
 
         # Display the result
         st.write("Result:", result)
+
+        op = ch.get_oracle_price_data_for_perp_market(0)
+        result2 = calculate_spread(market.amm, oracle_price_data=op)
+        st.write("Result2:", result2)
+

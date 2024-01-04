@@ -277,10 +277,10 @@ async def show_pid_positions(clearing_house: DriftClient):
 
             dep_ir_curve = [ir*utilization*(1-market.insurance_fund.total_factor/1e6)/100 for idx,ir in enumerate(bor_ir_curve)]
             
-            dd2[market_name] = (dep_ir_curve[0]*100, bor_ir_curve[0]*100)
+            dd2[market_name] = (dep_ir_curve[0]*100, bor_ir_curve[0]*100, utilization)
         s1, s2 = st.columns(2)
         s1.write(pd.DataFrame(dd1, index=['predicted funding rate', 'last funding rate', '24h avg funding rate']).T)
-        s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate']).T)
+        s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate', 'utilization']).T)
 
 
     for market_index, tab in enumerate(tabs[1:]):
