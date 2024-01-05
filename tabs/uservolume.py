@@ -225,6 +225,10 @@ async def show_user_volume(clearing_house: DriftClient):
         st.write(data_urls)
 
     selected = st.radio('', ["Volume", "Referrals"], index=0, horizontal=True)
+
+    tabs = st.tabs(['overview', 'user breakdown', 'fill quality'])
+    
+    df = pd.DataFrame()
     if selected == 'Volume':
         dfs['taker'] = dfs['taker'].replace('undefined', 'vAMM' if 'perp' in market_name.lower() else 'external')
         dfs['maker'] = dfs['maker'].replace('undefined', 'vAMM' if 'perp' in market_name.lower() else 'external')
@@ -236,250 +240,261 @@ async def show_user_volume(clearing_house: DriftClient):
         df['total volume'] = df[['maker volume', 'taker volume']].sum(axis=1)
         df = df[['total volume', 'taker volume', 'maker volume']]
         df = df.sort_values("total volume", ascending=False)
-        st.dataframe(df, use_container_width=True)
-
-        n_bins = st.number_input("Fill Bins:", value=100)
-        authority = st.text_input(
-            "Public Key:",
-            value=dfs['maker'].values[0],
-        )
-        auth_maker_df = dfs[dfs["maker"] == authority]
-        auth_taker_df = dfs[dfs["taker"] == authority]
-
-        st.text(
-            "Price improvement is defined as `oraclePrice/execPrice - 1` if pubKey is long, and `execPrice/oraclePrice - 1` if pubKey is short."
-        )
-        start_date = dt.fromtimestamp(auth_maker_df["ts"].min())
-        end_date = dt.fromtimestamp(auth_maker_df["ts"].max())
-        st.text(f"Start date: {start_date} -> end date: {end_date}")
-
-        if auth_maker_df.shape[0] > 0 or auth_taker_df.shape[0] > 0:
-            color_discrete_map = {"green": "rgb(255,0,50)", "green": "rgb(0,255,50)"}
 
 
-            st.markdown("## Maker fills:")
-            if not auth_maker_df.empty:
-                col11, col12 = st.columns(2)
-                auth_maker_df["execPrice"] = auth_maker_df.apply(calc_maker_exec_price, axis=1)
-                auth_maker_df["ts"] = pd.to_datetime(auth_maker_df["ts"], unit="s", utc=True)
-                auth_maker_df["priceImprovement"] = auth_maker_df.apply(
-                    calc_maker_price_improvement, axis=1
+    with tabs[1]:
+        if selected == 'Volume':
+            s1,s2,s3 = st.columns(3)
+            s1.metric('total volume:', f'${df["taker volume"].sum():,.2f}', f'{len(df):,} unique traders')
+            st.dataframe(df, use_container_width=True)
+
+        if selected == 'Referrals':
+            opt = st.radio("users:", ["by trader", "by referrer"])
+            if "referrerReward" in dfs.columns:
+                reward_volume = pd.DataFrame(
+                    dfs[dfs.referrerReward.replace('undefined', 0).fillna(0).astype(float) > 0]
+                    .groupby("taker")["quoteAssetAmountFilled"]
+                    .sum()
                 )
-                auth_maker_df["color"] = auth_maker_df.apply(calc_color, axis=1)
+                reward_volume.columns = ["taker volume"]
+                if opt == "by referrer":
+                    user_stats_df = await get_user_stats(clearing_house)
+                    user_stats_df = user_stats_df[
+                        user_stats_df.referrer.astype(str)
+                        != "11111111111111111111111111111111"
+                    ]
 
-                st.dataframe(
-                    pd.DataFrame(
-                        {
-                            "ts": auth_maker_df["ts"],
-                            "slot": auth_maker_df["slot"],
-                            "maker": auth_maker_df["maker"],
-                            "makerOrderId": auth_maker_df["makerOrderId"],
-                            "makerOrderDirection": auth_maker_df["makerOrderDirection"],
-                            "taker": auth_maker_df["taker"],
-                            "takerOrderId": auth_maker_df["takerOrderId"],
-                            "takerOrderDirection": auth_maker_df["takerOrderDirection"],
-                            "baseAssetAmountFilled": auth_maker_df["baseAssetAmountFilled"],
-                            "quoteAssetAmountFilled": auth_maker_df["quoteAssetAmountFilled"],
-                            "execPrice": auth_maker_df["execPrice"],
-                            "oraclePrice": auth_maker_df["oraclePrice"],
-                            "priceImprovement": auth_maker_df["priceImprovement"],
-                            "actionExplanation": auth_maker_df["actionExplanation"],
-                            "txSig": auth_maker_df["txSig"],
-                            "color": auth_maker_df["color"],
-                        }
+                    def get_subaccounts(authority, number_of_sub_accounts_created):
+                        userAccountKeys = []
+                        for sub_id in range(number_of_sub_accounts_created):
+                            user_account_pk = get_user_account_public_key(
+                                clearing_house.program_id, authority, sub_id
+                            )
+                            userAccountKeys.append(str(user_account_pk))
+                        return ",".join(userAccountKeys)
+
+                    user_stats_df["subAccounts"] = user_stats_df.apply(
+                        lambda x: get_subaccounts(
+                            x["authority"], x["number_of_sub_accounts_created"]
+                        ),
+                        axis=1,
                     )
-                )
+                    reward_volume = reward_volume.reset_index()
+                    reward_volume['taker'] = reward_volume['taker'].astype(str)
+                    reward_volume.index = reward_volume['taker'].apply(lambda x: str(user_stats_df[user_stats_df['subAccounts'].str.contains(x)]['referrer'].dropna().values[0]))
+                    reward_volume.index.name = 'referrer'
+                    reward_volume.columns = ['taker', 'referred taker volume']
+                    reward_volume = reward_volume.reset_index().groupby('referrer').sum()
+                    
+                st.dataframe(reward_volume)
 
-                fig = px.histogram(
-                    auth_maker_df,
-                    x=auth_maker_df["priceImprovement"],
-                    y=auth_maker_df["baseAssetAmountFilled"],
-                    nbins=n_bins,
-                    labels={"x": "priceImprovement", "y": "baseAssetAmountFilled"},
-                    color="color",
-                    color_discrete_map=color_discrete_map,
-                    opacity=0.3,
-                )
-                fig.add_vline(x=0, line_color="red", annotation_text="OraclePrice")
-                fig = fig.update_layout(
-                    xaxis_title="Price Improvement on Maker Fills (positive is better)",
-                    yaxis_title="Base amount filled at this price improvement",
-                )
-                col11.plotly_chart(fig)
-
-                fig = px.scatter(
-                    auth_maker_df,
-                    x=auth_maker_df["ts"],
-                    y=auth_maker_df["priceImprovement"],
-                    labels={"x": "ts", "y": "priceImprovement"},
-                    color="color",
-                    color_discrete_map=color_discrete_map,
-                    opacity=0.3,
-                )
-                fig = fig.update_layout(
-                    xaxis_title="Price Improvement over time",
-                    yaxis_title="Price improvement (positive is better))",
-                )
-                col12.plotly_chart(fig)
-
-                st.markdown("### Counterparty fills:")
-                col21, col22 = st.columns(2)
-                counterparty_df = calculate_agg_counterparty_volume(auth_maker_df, 'maker')
-
-                fig = px.pie(counterparty_df, values='baseAssetAmountFilled', title='Counterparty Base Volume', names='taker')
-                col21.plotly_chart(fig)
-
-                fig = px.pie(counterparty_df, values='quoteAssetAmountFilled', title='Counterparty Quote Volume', names='taker')
-                col22.plotly_chart(fig)
-
-                st.dataframe(
-                    pd.DataFrame(
-                        {
-                            "taker": counterparty_df["taker"],
-                            "baseAssetAmountFilled": counterparty_df["baseAssetAmountFilled"],
-                            "quoteAssetAmountFilled": counterparty_df["quoteAssetAmountFilled"],
-                            "basePercentage": counterparty_df['basePercentage'],
-                            "quotePercentage": counterparty_df['quotePercentage'],
-                        }
-                    )
-                )
+                if opt == 'by referrer':
+                    with st.expander('referrer map'):
+                        st.dataframe(user_stats_df[["authority", "subAccounts", "referrer"]])
             else:
-                st.write("No maker fills")
-
-            st.markdown("## Taker fills:")
-            if not auth_taker_df.empty:
-                col11, col12 = st.columns(2)
-                auth_taker_df["execPrice"] = auth_taker_df.apply(calc_taker_exec_price, axis=1)
-                auth_taker_df["ts"] = pd.to_datetime(auth_taker_df["ts"], unit="s", utc=True)
-                auth_taker_df["priceImprovement"] = auth_taker_df.apply(
-                    calc_taker_price_improvement, axis=1
-                )
-                auth_taker_df["color"] = auth_taker_df.apply(calc_color, axis=1)
-
-                st.dataframe(
-                    pd.DataFrame(
-                        {
-                            "ts": auth_taker_df["ts"],
-                            "slot": auth_taker_df["slot"],
-                            "maker": auth_taker_df["maker"],
-                            "makerOrderId": auth_taker_df["makerOrderId"],
-                            "makerOrderDirection": auth_taker_df["makerOrderDirection"],
-                            "taker": auth_taker_df["taker"],
-                            "takerOrderId": auth_taker_df["takerOrderId"],
-                            "takerOrderDirection": auth_taker_df["takerOrderDirection"],
-                            "baseAssetAmountFilled": auth_taker_df["baseAssetAmountFilled"],
-                            "quoteAssetAmountFilled": auth_taker_df["quoteAssetAmountFilled"],
-                            "execPrice": auth_taker_df["execPrice"],
-                            "oraclePrice": auth_taker_df["oraclePrice"],
-                            "priceImprovement": auth_taker_df["priceImprovement"],
-                            "actionExplanation": auth_taker_df["actionExplanation"],
-                            "txSig": auth_taker_df["txSig"],
-                            "color": auth_taker_df["color"],
-                        }
-                    )
-                )
-                fig = px.histogram(
-                    auth_taker_df,
-                    x="priceImprovement",
-                    y="baseAssetAmountFilled",
-                    nbins=n_bins,
-                    labels={"x": "priceImprovement", "y": "baseAssetAmountFilled"},
-                    color="color",
-                    color_discrete_map=color_discrete_map,
-                    opacity=0.3,
-                )
-                fig.add_vline(x=0, line_color="red", annotation_text="OraclePrice")
-                fig = fig.update_layout(
-                    xaxis_title="Price Improvement on Taker Fills (positive is better)",
-                    yaxis_title="Base amount filled at this price improvement",
-                )
-                col11.plotly_chart(fig)
-
-                fig = px.scatter(
-                    auth_taker_df,
-                    x=auth_taker_df["ts"],
-                    y=auth_taker_df["priceImprovement"],
-                    labels={"x": "ts", "y": "priceImprovement"},
-                    color="color",
-                    color_discrete_map=color_discrete_map,
-                    opacity=0.3,
-                )
-                fig = fig.update_layout(
-                    xaxis_title="Price Improvement over time",
-                    yaxis_title="Price improvement (positive is better))",
-                )
-                col12.plotly_chart(fig)
-
-                st.markdown("### Counterparty fills:")
-                col21, col22 = st.columns(2)
-                counterparty_df = calculate_agg_counterparty_volume(auth_maker_df, 'taker')
-
-                fig = px.pie(counterparty_df, values='baseAssetAmountFilled', title='Counterparty Base Volume', names='maker')
-                col21.plotly_chart(fig)
-
-                fig = px.pie(counterparty_df, values='quoteAssetAmountFilled', title='Counterparty Quote Volume', names='maker')
-                col22.plotly_chart(fig)
-
-                st.dataframe(
-                    pd.DataFrame(
-                        {
-                            "maker": counterparty_df["maker"],
-                            "baseAssetAmountFilled": counterparty_df["baseAssetAmountFilled"],
-                            "quoteAssetAmountFilled": counterparty_df["quoteAssetAmountFilled"],
-                            "basePercentage": counterparty_df['basePercentage'],
-                            "quotePercentage": counterparty_df['quotePercentage'],
-                        }
-                    )
-                )
-            else:
-                st.write("No taker fills")
-
-        else:
-            st.markdown(f"public key not found...")
-    if selected == 'Referrals':
-        opt = st.radio("users:", ["by trader", "by referrer"])
-        if "referrerReward" in dfs.columns:
-            reward_volume = pd.DataFrame(
-                dfs[dfs.referrerReward.replace('undefined', 0).fillna(0).astype(float) > 0]
-                .groupby("taker")["quoteAssetAmountFilled"]
-                .sum()
-            )
-            reward_volume.columns = ["taker volume"]
-            if opt == "by referrer":
-                user_stats_df = await get_user_stats(clearing_house)
-                user_stats_df = user_stats_df[
-                    user_stats_df.referrer.astype(str)
-                    != "11111111111111111111111111111111"
-                ]
-
-                def get_subaccounts(authority, number_of_sub_accounts_created):
-                    userAccountKeys = []
-                    for sub_id in range(number_of_sub_accounts_created):
-                        user_account_pk = get_user_account_public_key(
-                            clearing_house.program_id, authority, sub_id
-                        )
-                        userAccountKeys.append(str(user_account_pk))
-                    return ",".join(userAccountKeys)
-
-                user_stats_df["subAccounts"] = user_stats_df.apply(
-                    lambda x: get_subaccounts(
-                        x["authority"], x["number_of_sub_accounts_created"]
-                    ),
-                    axis=1,
-                )
-                reward_volume = reward_volume.reset_index()
-                reward_volume['taker'] = reward_volume['taker'].astype(str)
-                reward_volume.index = reward_volume['taker'].apply(lambda x: str(user_stats_df[user_stats_df['subAccounts'].str.contains(x)]['referrer'].dropna().values[0]))
-                reward_volume.index.name = 'referrer'
-                reward_volume.columns = ['taker', 'referred taker volume']
-                reward_volume = reward_volume.reset_index().groupby('referrer').sum()
-                
-            st.dataframe(reward_volume)
-
-            if opt == 'by referrer':
-                 with st.expander('referrer map'):
-                    st.dataframe(user_stats_df[["authority", "subAccounts", "referrer"]])
-        else:
-            st.code("no referrerRewards were seen in this market")
+                st.code("no referrerRewards were seen in this market")
 
     
+
+
+    with tabs[2]:
+        if selected == 'Volume':
+
+            n_bins = st.number_input("Fill Bins:", value=100)
+            authority = st.text_input(
+                "Public Key:",
+                value=dfs['maker'].values[0],
+            )
+            auth_maker_df = dfs[dfs["maker"] == authority]
+            auth_taker_df = dfs[dfs["taker"] == authority]
+
+            st.text(
+                "Price improvement is defined as `oraclePrice/execPrice - 1` if pubKey is long, and `execPrice/oraclePrice - 1` if pubKey is short."
+            )
+            start_date = dt.fromtimestamp(auth_maker_df["ts"].min())
+            end_date = dt.fromtimestamp(auth_maker_df["ts"].max())
+            st.text(f"Start date: {start_date} -> end date: {end_date}")
+
+            if auth_maker_df.shape[0] > 0 or auth_taker_df.shape[0] > 0:
+                color_discrete_map = {"green": "rgb(255,0,50)", "green": "rgb(0,255,50)"}
+
+
+                st.markdown("## Maker fills:")
+                if not auth_maker_df.empty:
+                    col11, col12 = st.columns(2)
+                    auth_maker_df["execPrice"] = auth_maker_df.apply(calc_maker_exec_price, axis=1)
+                    auth_maker_df["ts"] = pd.to_datetime(auth_maker_df["ts"], unit="s", utc=True)
+                    auth_maker_df["priceImprovement"] = auth_maker_df.apply(
+                        calc_maker_price_improvement, axis=1
+                    )
+                    auth_maker_df["color"] = auth_maker_df.apply(calc_color, axis=1)
+
+                    st.dataframe(
+                        pd.DataFrame(
+                            {
+                                "ts": auth_maker_df["ts"],
+                                "slot": auth_maker_df["slot"],
+                                "maker": auth_maker_df["maker"],
+                                "makerOrderId": auth_maker_df["makerOrderId"],
+                                "makerOrderDirection": auth_maker_df["makerOrderDirection"],
+                                "taker": auth_maker_df["taker"],
+                                "takerOrderId": auth_maker_df["takerOrderId"],
+                                "takerOrderDirection": auth_maker_df["takerOrderDirection"],
+                                "baseAssetAmountFilled": auth_maker_df["baseAssetAmountFilled"],
+                                "quoteAssetAmountFilled": auth_maker_df["quoteAssetAmountFilled"],
+                                "execPrice": auth_maker_df["execPrice"],
+                                "oraclePrice": auth_maker_df["oraclePrice"],
+                                "priceImprovement": auth_maker_df["priceImprovement"],
+                                "actionExplanation": auth_maker_df["actionExplanation"],
+                                "txSig": auth_maker_df["txSig"],
+                                "color": auth_maker_df["color"],
+                            }
+                        )
+                    )
+
+                    fig = px.histogram(
+                        auth_maker_df,
+                        x=auth_maker_df["priceImprovement"],
+                        y=auth_maker_df["baseAssetAmountFilled"],
+                        nbins=n_bins,
+                        labels={"x": "priceImprovement", "y": "baseAssetAmountFilled"},
+                        color="color",
+                        color_discrete_map=color_discrete_map,
+                        opacity=0.3,
+                    )
+                    fig.add_vline(x=0, line_color="red", annotation_text="OraclePrice")
+                    fig = fig.update_layout(
+                        xaxis_title="Price Improvement on Maker Fills (positive is better)",
+                        yaxis_title="Base amount filled at this price improvement",
+                    )
+                    col11.plotly_chart(fig)
+
+                    fig = px.scatter(
+                        auth_maker_df,
+                        x=auth_maker_df["ts"],
+                        y=auth_maker_df["priceImprovement"],
+                        labels={"x": "ts", "y": "priceImprovement"},
+                        color="color",
+                        color_discrete_map=color_discrete_map,
+                        opacity=0.3,
+                    )
+                    fig = fig.update_layout(
+                        xaxis_title="Price Improvement over time",
+                        yaxis_title="Price improvement (positive is better))",
+                    )
+                    col12.plotly_chart(fig)
+
+                    st.markdown("### Counterparty fills:")
+                    col21, col22 = st.columns(2)
+                    counterparty_df = calculate_agg_counterparty_volume(auth_maker_df, 'maker')
+
+                    fig = px.pie(counterparty_df, values='baseAssetAmountFilled', title='Counterparty Base Volume', names='taker')
+                    col21.plotly_chart(fig)
+
+                    fig = px.pie(counterparty_df, values='quoteAssetAmountFilled', title='Counterparty Quote Volume', names='taker')
+                    col22.plotly_chart(fig)
+
+                    st.dataframe(
+                        pd.DataFrame(
+                            {
+                                "taker": counterparty_df["taker"],
+                                "baseAssetAmountFilled": counterparty_df["baseAssetAmountFilled"],
+                                "quoteAssetAmountFilled": counterparty_df["quoteAssetAmountFilled"],
+                                "basePercentage": counterparty_df['basePercentage'],
+                                "quotePercentage": counterparty_df['quotePercentage'],
+                            }
+                        )
+                    )
+                else:
+                    st.write("No maker fills")
+
+                st.markdown("## Taker fills:")
+                if not auth_taker_df.empty:
+                    col11, col12 = st.columns(2)
+                    auth_taker_df["execPrice"] = auth_taker_df.apply(calc_taker_exec_price, axis=1)
+                    auth_taker_df["ts"] = pd.to_datetime(auth_taker_df["ts"], unit="s", utc=True)
+                    auth_taker_df["priceImprovement"] = auth_taker_df.apply(
+                        calc_taker_price_improvement, axis=1
+                    )
+                    auth_taker_df["color"] = auth_taker_df.apply(calc_color, axis=1)
+
+                    st.dataframe(
+                        pd.DataFrame(
+                            {
+                                "ts": auth_taker_df["ts"],
+                                "slot": auth_taker_df["slot"],
+                                "maker": auth_taker_df["maker"],
+                                "makerOrderId": auth_taker_df["makerOrderId"],
+                                "makerOrderDirection": auth_taker_df["makerOrderDirection"],
+                                "taker": auth_taker_df["taker"],
+                                "takerOrderId": auth_taker_df["takerOrderId"],
+                                "takerOrderDirection": auth_taker_df["takerOrderDirection"],
+                                "baseAssetAmountFilled": auth_taker_df["baseAssetAmountFilled"],
+                                "quoteAssetAmountFilled": auth_taker_df["quoteAssetAmountFilled"],
+                                "execPrice": auth_taker_df["execPrice"],
+                                "oraclePrice": auth_taker_df["oraclePrice"],
+                                "priceImprovement": auth_taker_df["priceImprovement"],
+                                "actionExplanation": auth_taker_df["actionExplanation"],
+                                "txSig": auth_taker_df["txSig"],
+                                "color": auth_taker_df["color"],
+                            }
+                        )
+                    )
+                    fig = px.histogram(
+                        auth_taker_df,
+                        x="priceImprovement",
+                        y="baseAssetAmountFilled",
+                        nbins=n_bins,
+                        labels={"x": "priceImprovement", "y": "baseAssetAmountFilled"},
+                        color="color",
+                        color_discrete_map=color_discrete_map,
+                        opacity=0.3,
+                    )
+                    fig.add_vline(x=0, line_color="red", annotation_text="OraclePrice")
+                    fig = fig.update_layout(
+                        xaxis_title="Price Improvement on Taker Fills (positive is better)",
+                        yaxis_title="Base amount filled at this price improvement",
+                    )
+                    col11.plotly_chart(fig)
+
+                    fig = px.scatter(
+                        auth_taker_df,
+                        x=auth_taker_df["ts"],
+                        y=auth_taker_df["priceImprovement"],
+                        labels={"x": "ts", "y": "priceImprovement"},
+                        color="color",
+                        color_discrete_map=color_discrete_map,
+                        opacity=0.3,
+                    )
+                    fig = fig.update_layout(
+                        xaxis_title="Price Improvement over time",
+                        yaxis_title="Price improvement (positive is better))",
+                    )
+                    col12.plotly_chart(fig)
+
+                    st.markdown("### Counterparty fills:")
+                    col21, col22 = st.columns(2)
+                    counterparty_df = calculate_agg_counterparty_volume(auth_maker_df, 'taker')
+
+                    fig = px.pie(counterparty_df, values='baseAssetAmountFilled', title='Counterparty Base Volume', names='maker')
+                    col21.plotly_chart(fig)
+
+                    fig = px.pie(counterparty_df, values='quoteAssetAmountFilled', title='Counterparty Quote Volume', names='maker')
+                    col22.plotly_chart(fig)
+
+                    st.dataframe(
+                        pd.DataFrame(
+                            {
+                                "maker": counterparty_df["maker"],
+                                "baseAssetAmountFilled": counterparty_df["baseAssetAmountFilled"],
+                                "quoteAssetAmountFilled": counterparty_df["quoteAssetAmountFilled"],
+                                "basePercentage": counterparty_df['basePercentage'],
+                                "quotePercentage": counterparty_df['quotePercentage'],
+                            }
+                        )
+                    )
+                else:
+                    st.write("No taker fills")
+
+            else:
+                st.markdown(f"public key not found...")

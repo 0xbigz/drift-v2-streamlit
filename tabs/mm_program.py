@@ -41,7 +41,7 @@ def load_realtime_book(market_index):
         print(x)
         
     market_to_oracle_map = pd.DataFrame(x['oracles']).set_index('marketIndex').to_dict()['price']
-    market_to_oracle_map
+    # market_to_oracle_map
 
     df = pd.DataFrame([order['order'] for order in x['orders']])
     user = pd.DataFrame([order['user'] for order in x['orders']], columns=['user'])
@@ -88,16 +88,18 @@ def load_realtime_book(market_index):
 
 
 def get_mm_score_for_slot(df):
-    d = df[(df.orderType=='limit') 
+    d = df 
+    #df[(df.orderType=='limit') 
     # & (df.postOnly)
-    ]
+    #]
     d['baseAssetAmountLeft'] = d['baseAssetAmount'] - d['baseAssetAmountFilled']
     assert(len(d.slot.unique())==1)
 
     market_index = d.marketIndex.max()
-    oracle = d.oraclePrice.max()
     best_bid = d[d.direction=='long']['price'].max()
     best_ask = d[d.direction=='short']['price'].min()
+    oracle = (best_ask+best_bid)/2
+
     if(best_bid > best_ask):
         if best_bid > oracle:
             best_bid = best_ask
@@ -170,7 +172,7 @@ def get_mm_score_for_slot(df):
 def get_mm_stats(df, user, oracle, bbo2):
     all_slots = sorted(list(df.slot.unique()))
     df = df[df.user == user]
-    # print(df.columns)
+    print(df.columns)
 
     bbo = df.groupby(['direction', 'slot']).agg({'price':['min', 'max']}).unstack(0)['price'].swaplevel(axis=1)
     ll = {}
@@ -228,7 +230,34 @@ def get_mm_stats(df, user, oracle, bbo2):
 
     return bbo_user, bbo_stats
 
+def load_scored_snapshot_file(x, source):
+    #liq-score-${marketType}-${marketIndex}-${slot}.csv.g
+    df = pd.read_csv(source+x)
+    if 'oraclePrice' not in df.columns:
+        df['oraclePrice'] = df['price'] # todo
 
+    return df
+
+def load_snapshot_file(x, source):
+    json_list = requests.get(source+x).json()
+    rows = []
+    for i, r in enumerate(json_list['orders']):
+        # st.write(r)
+        df = pd.DataFrame(r['order'], index=[i])
+        df['user'] = r['user']
+        rows.append(df)
+
+    df = pd.concat(rows)
+    df['slot'] = int(x.split('/')[-1].split('.')[0])
+
+    df['oraclePrice'] = df['price'].astype(float) # todo
+    df['oracle'] = df['price'].astype(float) # todo
+
+    for col in ['price', 'baseAssetAmount', 'baseAssetAmountFilled']:
+        df[col] = df[col].astype(float)
+
+    df = get_mm_score_for_slot(df)
+    return df
 
 
 @st.cache_data(ttl=3600*2)  # 2 hr TTL this time
@@ -244,25 +273,12 @@ def get_data_by_market_index(market_type, market_index, env, date, source):
     df = None
     if True:
         print('building new data file with', len(ggs), 'records!')
-        for x in sorted(ggs)[-2:]:
-            json_list = requests.get(source+x).json()
-            rows = []
-            for i, r in enumerate(json_list['orders']):
-                # st.write(r)
-                df = pd.DataFrame(r['order'], index=[i])
-                df['user'] = r['user']
-                rows.append(df)
-
-            df = pd.concat(rows)
-            df['slot'] = int(x.split('/')[-1].split('.')[0])
-
-            df['oraclePrice'] = df['price'].astype(float) # todo
-            df['oracle'] = df['price'].astype(float) # todo
-
-            for col in ['price', 'baseAssetAmount', 'baseAssetAmountFilled']:
-                df[col] = df[col].astype(float)
-
-            df = get_mm_score_for_slot(df)
+        for x in sorted(ggs)[-10:]:
+            new_x = x.split('/')
+            new_x[-1] = f'liq-score-{market_type}-{str(market_index)}-'+new_x[-1]
+            new_x = '/'.join(new_x).replace('json.gz', 'csv.gz')
+            # st.write(new_x)s
+            df = load_scored_snapshot_file(new_x, source)
             dfs.append(df)
         df = pd.concat(dfs, axis=0)
         # df.to_csv('data/'+tt+'.csv.gz', index=False, compression='gzip')
@@ -275,7 +291,7 @@ def get_data_by_market_index(market_type, market_index, env, date, source):
         # df = pd.read_csv('data/'+tt+'.csv.gz')
         df = pd.read_csv(source)
     df = df.reset_index(drop=True)
-    return df
+    return df, ggs
 
 async def mm_program_page(clearing_house: DriftClient, env):    
     ss1, ss2, ss3 = st.columns([3,1,1])
@@ -320,12 +336,16 @@ async def mm_program_page(clearing_house: DriftClient, env):
     now = datetime.datetime.now()
     current_ts = time.mktime(now.timetuple())
     tt = market_type+str(market_index)
-    df_full = get_data_by_market_index(market_type, market_index, env, '2024-01-03',
-                                       source if 'amazonaws' in source else '')
 
+    url_agg = source+'mainnet-beta/aggregate-liq-score/'+market_type+'-'+str(market_index)+'.csv.gz'
+    st.write(url_agg)
+    total_agg_df = pd.read_csv(url_agg).dropna()
+    
+   
+    # st.write(ffs[-1])
     # all_slots = df_full.slot.unique()
-    oldest_slot = df_full.slot.min()
-    newest_slot = df_full.slot.max()
+    oldest_slot = total_agg_df.slot.min()
+    newest_slot = total_agg_df.slot.max()
 
     # load_volumes([now], 'SOL-PERP')
     latest_slot = None
@@ -336,24 +356,48 @@ async def mm_program_page(clearing_house: DriftClient, env):
     # if ts_for_latest_slot == 0:
         # ts_for_latest_slot = None
 
-    week_ago_slot = df_full[df_full.slot>newest_slot-(2*60*60*24*7)].slot.min()
+    week_ago_slot = total_agg_df[total_agg_df.slot>newest_slot-(2*60*60*24*7)].slot.min()
+    tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot', 'real time', 'csv reader', 'program tx'])    # st.write('slot range:', values)
+    # print(base_trade_size)
 
+    tzInfo = pytz.timezone('UTC')
+    latest_slot_full = total_agg_df.slot.max()
+
+    range_selected = molselect.selectbox('range select:', ['daily', 'range', 'weekly', 'last month'], 0)
+    if range_selected == 'daily':
+        lastest_date = pd.to_datetime(slot_to_timestamp_est(latest_slot_full, ts_for_latest_slot, latest_slot)*1e9, utc=True)
+        date = mol0.date_input('select approx. date:', lastest_date, min_value=datetime.datetime(2022,11,4), max_value=lastest_date) #(datetime.datetime.now(tzInfo)))
+        values = get_slots_for_date(date)
+    elif range_selected == 'range':
+        start_slot = mol2.number_input('start slot:', oldest_slot, newest_slot, oldest_slot)
+        end_slot = mol2.number_input('end slot:', oldest_slot, newest_slot, newest_slot)
+        values = [start_slot, end_slot]
+        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
+    elif range_selected == 'weekly':
+        values = mol2.slider(
+        'Select a range of slot values',
+        int(week_ago_slot), int(newest_slot), (int(week_ago_slot), int(newest_slot)))
+        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
+    elif range_selected == 'last month':
+        values = mol2.slider(
+        'Select a range of slot values',
+        int(oldest_slot), int(newest_slot), (int(oldest_slot), int(newest_slot)))
+        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
+
+    date_strr = date.strftime("%Y-%m-%d")
+    df_full, ffs = get_data_by_market_index(market_type, market_index, env, date_strr,
+                                       source if 'amazonaws' in source else '')
     # oracle = 1 #todo
-    oracle = df_full.groupby('slot')['oraclePrice'].max()
-    tabs = st.tabs(['bbo', 'leaderboard', 'individual mm', 'individual snapshot', 'real time', 'csv reader', 'program tx'])
-
-    # st.write('slot range:', values)
+    oracle = df_full.groupby('slot')['oraclePrice'].median()
     with tabs[0]:
-        st.title('best bid/offer')
-        do1, do2, do3 = st.columns([3, 1, 1])
-        quote_trade_size = do1.number_input('trade size ($)', 0, None, 50000)
-        do2 = do2.write('base size=' + str((quote_trade_size/oracle.max().max())))
-        threshold = do3.slider('threshold (bps)', 0, 100, 20, step=5)
+            st.title('best bid/offer')
+            do1, do2, do3 = st.columns([3, 1, 1])
+            quote_trade_size = do1.number_input('trade size ($)', 0, None, 50000)
+            do2 = do2.write('base size=' + str((quote_trade_size/oracle.max().max())))
+            threshold = do3.slider('threshold (bps)', 0, 100, 20, step=5)
 
 
     base_trade_size = (quote_trade_size/oracle.max().max()).round(4)
-    # print(base_trade_size)
-
     def wm(x):
         weights = df.loc[x.index, "baseAssetAmount"].astype(float)
 
@@ -386,29 +430,9 @@ async def mm_program_page(clearing_house: DriftClient, env):
 
         return np.average(x, weights=weights)
 
-    tzInfo = pytz.timezone('UTC')
-    latest_slot_full = df_full.slot.max()
 
-    range_selected = molselect.selectbox('range select:', ['daily', 'range', 'weekly', 'last month'], 0)
-    if range_selected == 'daily':
-        lastest_date = pd.to_datetime(slot_to_timestamp_est(latest_slot_full, ts_for_latest_slot, latest_slot)*1e9, utc=True)
-        date = mol0.date_input('select approx. date:', lastest_date, min_value=datetime.datetime(2022,11,4), max_value=lastest_date) #(datetime.datetime.now(tzInfo)))
-        values = get_slots_for_date(date)
-    elif range_selected == 'range':
-        start_slot = mol2.number_input('start slot:', oldest_slot, newest_slot, oldest_slot)
-        end_slot = mol2.number_input('end slot:', oldest_slot, newest_slot, newest_slot)
-        values = [start_slot, end_slot]
-        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
-    elif range_selected == 'weekly':
-        values = mol2.slider(
-        'Select a range of slot values',
-        int(week_ago_slot), int(newest_slot), (int(week_ago_slot), int(newest_slot)))
-        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
-    elif range_selected == 'last month':
-        values = mol2.slider(
-        'Select a range of slot values',
-        int(oldest_slot), int(newest_slot), (int(oldest_slot), int(newest_slot)))
-        mol2.write('approx date range: '+ str(list(pd.to_datetime([slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9 for x in values]))))
+
+
 
     df = df_full[(df_full.slot>=values[0]) & (df_full.slot<=values[1])]
     # print(df_full.slot.max(), 'vs', values[0], values[1])
@@ -440,9 +464,9 @@ async def mm_program_page(clearing_house: DriftClient, env):
 
 
     bbo2snippet = bbo2#.loc[values[0]:values[1]]
-    st.markdown('[data source](https://github.com/0xbigz/drift-v2-orderbook-snap)'+\
-        ' ([start slot='+str(bbo2snippet.index[0])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[0])+'.csv))'+\
-        ' ([end slot='+str(bbo2snippet.index[-1])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[-1])+'.csv))')
+    # st.markdown('[data source](https://github.com/0xbigz/drift-v2-orderbook-snap)'+\
+    #     ' ([start slot='+str(bbo2snippet.index[0])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[0])+'.csv))'+\
+    #     ' ([end slot='+str(bbo2snippet.index[-1])+'](https://github.com/0xbigz/drift-v2-orderbook-snap/blob/main/'+tt+'/orderbook_slot_'+str(bbo2snippet.index[-1])+'.csv))')
 
     # st.write('slot range:', values)
     with tabs[0]:
@@ -488,9 +512,6 @@ async def mm_program_page(clearing_house: DriftClient, env):
     top10users = all_users[:10].tolist()
 
     with tabs[1]:
-        url_agg = source+'mainnet-beta/aggregate-liq-score/'+market_type+'-'+str(market_index)+'.csv.gz'
-        st.write(url_agg)
-        total_agg_df = pd.read_csv(url_agg).dropna()
         total_agg_df['slot'] = total_agg_df['slot'].astype(int)
         piv_agg = total_agg_df.pivot_table(index='slot', columns='user', values='score')
         # st.plotly_chart(piv_agg.cumsum().plot())
@@ -517,8 +538,8 @@ async def mm_program_page(clearing_house: DriftClient, env):
             # all_stats.append(bbo_user_stats)
         # all_stats = df
         all_stats_df = df.sort_values('score', ascending=False)
-        metmet1.metric('total avg score:', np.round(all_stats_df['score'].sum(),2))
-        lbtable.dataframe(all_stats_df)
+        metmet1.metric('total avg score:', np.round(piv_agg.sum(axis=1).mean(),2))
+        # lbtable.dataframe(all_stats_df)
         # print(topmm)
         dat = piv_agg[users].fillna(0)
         if use_ts_est == 'est_utc_timestamp':
@@ -531,23 +552,23 @@ async def mm_program_page(clearing_house: DriftClient, env):
         s1, s2 = st.columns(2)
         user = s1.selectbox('individual maker', all_users, 0)
         use_ts_est = s2.selectbox('index:', ['slot', 'est_utc_timestamp'], help='est utc uses "slot ref:" and "unix_timestamp_ref" to deduce timestamps')
-        bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2)
+        # bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2)
 
         # st.text('user bestbid time='+str(np.round(offer_best_pct*100, 2))+'%')
         # st.text('user bid within 3bps of best time='+str(np.round(offer_within_best_pct*100, 2))+'%')
         # st.text('user bestoffer time='+str(np.round(offer_best_pct*100, 2))+'%')
         # st.text('user offer within 3bps of best time='+str(np.round(offer_within_best_pct*100, 2))+'%')
         # st.text('user uptime='+str(np.round(uptime_pct*100, 2))+'%')
-        bbo_user['score'] = bbo_user['score'].fillna(0)
-        bbo_user['ema_score'] = bbo_user['score'].fillna(0).ewm(100).mean()
-        dat = bbo_user.loc[values[0]:values[1]]
-        if use_ts_est == 'est_utc_timestamp':
-            dat.index = [pd.to_datetime(slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9, utc=True) for x in dat.index]
-        st.plotly_chart(dat.plot(title=market_type+' market index='+str(market_index)))
+        # bbo_user['score'] = bbo_user['score'].fillna(0)
+        # bbo_user['ema_score'] = bbo_user['score'].fillna(0).ewm(100).mean()
+        # dat = bbo_user.loc[values[0]:values[1]]
+        # if use_ts_est == 'est_utc_timestamp':
+        #     dat.index = [pd.to_datetime(slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9, utc=True) for x in dat.index]
+        # st.plotly_chart(dat.plot(title=market_type+' market index='+str(market_index)))
 
-        best_slot = bbo_user.score.idxmax()
-        worst_slot = bbo_user.score.idxmin()
-        st.write('best slot:'+str(best_slot), ' | worst slot:'+str(worst_slot))
+        # best_slot = bbo_user.score.idxmax()
+        # worst_slot = bbo_user.score.idxmin()
+        # st.write('best slot:'+str(best_slot), ' | worst slot:'+str(worst_slot))
 
     def cooling_highlight(val):
         color = '#ACE5EE' if val=='long' else 'pink'
@@ -571,24 +592,42 @@ async def mm_program_page(clearing_house: DriftClient, env):
     with tabs[3]:
         st.title('individual snapshot lookup')
         # print(df.columns)
-
+        # st.write(ffs)
         sol1, sol10, sol11, sol0, sol2 = st.columns([2,1,1, 1,2])
         slot = sol1.select_slider('individual snapshot', df.slot.unique().tolist(), df.slot.max())
         slot = sol10.number_input('slot:', value=slot)
         score_color = sol11.radio('show score highlights:', [True, False], 0)
+        dol1, dol2 = st.columns([2,2])
+        snapshot_type = dol1.radio('snapshot_type:', ['raw', 'scored'], index=1, horizontal=True)
+        snapshot_display = dol2.radio('snapshot_display:', ['raw', 'filtered'], index=1, horizontal=True)
 
+        outf = [ff for ff in ffs if str(slot) in ff]
+
+        df = pd.DataFrame()
+        if snapshot_type == 'raw':
+                st.write('loading:', source+ outf)
+                outf = [ff for ff in ffs if str(slot) in ff]
+                if len(outf):
+                    df = load_snapshot_file(outf[0], source)
+        else:
+            path = 'mainnet-beta/'+date_strr+'/liq-score-'+market_type+'-'+str(market_index)\
+                +'-' + str(slot) \
+                + '.csv.gz'
+            st.write('loading:', source+ path)
+            df = load_scored_snapshot_file(path, source)
         slippage = sol2.select_slider('slippage (%)', list(range(1, 100)), 5)
         toshow = df[['level', 'score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
-        'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'slot', 'orderId', 'userOrderId', 
+        'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'orderId', 'userOrderId', 
         'baseAssetAmountFilled', 'quoteAssetAmountFilled', 'reduceOnly',
         'triggerPrice', 'triggerCondition', 'existingPositionDirection',
         'postOnly', 'immediateOrCancel', 'oraclePriceOffset', 'auctionDuration',
         'auctionStartPrice', 'auctionEndPrice', 'maxTs', 
         ]]
+        # toshow_snap = toshow[df.slot.astype(int)==int(slot)]
+        # st.write(toshow_snap)
+        st.metric('total score:', np.round(df.score.sum(),2))
 
-        toshow_snap = toshow[df.slot.astype(int)==int(slot)]
-
-        st.metric('total score:', np.round(toshow_snap.score.sum(),2))
+        toshow_snap = toshow[toshow.orderType=='limit']
 
         bids1 = toshow_snap[toshow_snap.direction=='long'].groupby('price').sum().sort_index(ascending=False)
         bids = bids1['baseAssetAmountLeft'].cumsum()
@@ -609,14 +648,15 @@ async def mm_program_page(clearing_house: DriftClient, env):
         plotly1.plotly_chart(fig, use_container_width=True)
         plotly2.plotly_chart(fig2, use_container_width=True)
 
-        if score_color:
-            toshow_snap = toshow_snap.replace(0, np.nan).dropna(subset=['score'],axis=0)
-
-
-        st.dataframe(toshow_snap.style.applymap(cooling_highlight, subset=['direction'])
-                .applymap(level_highlight, subset=['level'])
-                    #  ,(heating_highlight, subset=['Heating inputs', 'Heating outputs'])             
-                     , use_container_width=True)
+        if snapshot_display == 'raw':
+            st.write(df)
+        else:
+            if score_color:
+                toshow_snap = toshow_snap.replace(0, np.nan).dropna(subset=['score'],axis=0)
+            st.dataframe(toshow_snap.style.applymap(cooling_highlight, subset=['direction'])
+                    .applymap(level_highlight, subset=['level'])
+                        #  ,(heating_highlight, subset=['Heating inputs', 'Heating outputs'])             
+                        , use_container_width=True)
 
 
     with tabs[4]:
@@ -650,22 +690,7 @@ async def mm_program_page(clearing_house: DriftClient, env):
                 st.dataframe(toshow.style.applymap(cooling_highlight, subset=['direction'])
                         .applymap(level_highlight, subset=['level'])  , use_container_width=True)
 
-            if live:
-                with st.empty():
-                     while ts:
-                        # mins, secs = divmod(ts, 60)
-                        # time_now = '{:02d}:{:02d}'.format(mins, secs)
-                        # st.header(f"{time_now}")
-                        do_it()
-                        time.sleep(10)
-                        ts -= 1
-            else:
-                do_it()
-        time_in_seconds = 60
-        if is_live == 'on':
-            count_down(int(time_in_seconds), True)
-        else:
-            count_down(int(time_in_seconds))
+            return 0
 
     with tabs[5]:
         url = st.text_input('url to csv:', '')
