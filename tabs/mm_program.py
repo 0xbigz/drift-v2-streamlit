@@ -46,7 +46,8 @@ def load_realtime_book(market_index):
     df = pd.DataFrame([order['order'] for order in x['orders']])
     user = pd.DataFrame([order['user'] for order in x['orders']], columns=['user'])
     df = pd.concat([df, user],axis=1)
-    df['oraclePrice'] = None
+    if 'oraclePrice' not in df.columns:
+        df['oraclePrice'] = None
     df.loc[df.marketType=='perp', 'oraclePrice'] = df.loc[df.marketType=='perp', 'marketIndex'].apply(lambda x: market_to_oracle_map.get(x, 0))
 
     #todo, invariant may change w/ future spot markets
@@ -232,9 +233,16 @@ def get_mm_stats(df, user, oracle, bbo2):
 
 def load_scored_snapshot_file(x, source):
     #liq-score-${marketType}-${marketIndex}-${slot}.csv.g
-    df = pd.read_csv(source+x)
-    if 'oraclePrice' not in df.columns:
-        df['oraclePrice'] = df['price'] # todo
+    ff = source+x
+    # st.warning(ff)
+    try:
+        df = pd.read_csv(ff)
+    except:
+        st.warning('couldnt load: ' + ff)
+        df = pd.DataFrame()
+
+    if 'oraclePrice' not in df.columns and 'price' in df.columns:
+        df['oraclePrice'] = df[df['price']!=0].dropna().median() # todo
 
     return df
 
@@ -250,8 +258,8 @@ def load_snapshot_file(x, source):
     df = pd.concat(rows)
     df['slot'] = int(x.split('/')[-1].split('.')[0])
 
-    df['oraclePrice'] = df['price'].astype(float) # todo
-    df['oracle'] = df['price'].astype(float) # todo
+    # df['oraclePrice'] = df['price'].astype(float) # todo
+    # df['oracle'] = df['price'].astype(float) # todo
 
     for col in ['price', 'baseAssetAmount', 'baseAssetAmountFilled']:
         df[col] = df[col].astype(float)
@@ -268,7 +276,7 @@ def get_data_by_market_index(market_type, market_index, env, date, source):
     url = source+env+'/'+date+'/index.json'
     st.write(url)
     ggs = requests.get(url).json()
-    # st.write(ggs)
+    st.write(ggs)
 
     df = None
     if True:
@@ -361,7 +369,9 @@ async def mm_program_page(clearing_house: DriftClient, env):
     # print(base_trade_size)
 
     tzInfo = pytz.timezone('UTC')
-    latest_slot_full = total_agg_df.slot.max()
+    latest_slot_full = int(total_agg_df.slot.max())
+    st.write(total_agg_df)
+    st.markdown(f"[{(latest_slot_full)}](https://explorer.solana.com/block/{(latest_slot_full)})")
 
     range_selected = molselect.selectbox('range select:', ['daily', 'range', 'weekly', 'last month'], 0)
     if range_selected == 'daily':
@@ -388,7 +398,11 @@ async def mm_program_page(clearing_house: DriftClient, env):
     df_full, ffs = get_data_by_market_index(market_type, market_index, env, date_strr,
                                        source if 'amazonaws' in source else '')
     # oracle = 1 #todo
-    oracle = df_full.groupby('slot')['oraclePrice'].median()
+    st.write(df_full)
+    if len(df_full):
+        oracle = df_full.groupby('currentSlot')['oraclePrice'].median()#.apply(lambda x: 1)
+
+    # st.write('oracel', oracle)
     with tabs[0]:
             st.title('best bid/offer')
             do1, do2, do3 = st.columns([3, 1, 1])
@@ -434,15 +448,16 @@ async def mm_program_page(clearing_house: DriftClient, env):
 
 
 
-    df = df_full[(df_full.slot>=values[0]) & (df_full.slot<=values[1])]
+    df = df_full[(df_full.currentSlot>=values[0]) & (df_full.currentSlot<=values[1])]
     # print(df_full.slot.max(), 'vs', values[0], values[1])
     st.write(df_full.slot.max())
     # st.write(df.columns)
+    # st.write('full', df_full)
     assert(df_full.slot.max() >= values[0])
     df['price'] = df['price'].astype(float)
-    df['oraclePrice'] = df['price'].astype(float) # todo
+    # st.write('not full', df)
 
-    bbo = df.groupby(['direction', 'slot']).agg(
+    bbo = df.groupby(['direction', 'currentSlot']).agg(
         baseAssetAmount=("baseAssetAmount", "sum"),
         max_price=("price", 'max'), 
         min_price=("price", 'min'), 
@@ -450,12 +465,13 @@ async def mm_program_page(clearing_house: DriftClient, env):
     ).unstack(0)
     # print(bbo)
     bbo = bbo.swaplevel(axis=1)
+    # st.write(bbo)
     lmax = bbo['long']['max_price']
     smin = bbo['short']['min_price']
     lpwm = bbo['long']['price_weighted_mean']
     spwm = bbo['short']['price_weighted_mean']
 
-    bbo2 = pd.concat([lpwm, lmax, df.groupby('slot')['oraclePrice'].max(), smin, spwm],axis=1)
+    bbo2 = pd.concat([lpwm, lmax, df.groupby('currentSlot')['oraclePrice'].max(), smin, spwm],axis=1)
     bbo2.columns = ['short fill', 'best dlob bid', 'oracle', 'best dlob offer', 'long fill']
     last_slot_update = bbo2.index[-1]
 
@@ -605,30 +621,53 @@ async def mm_program_page(clearing_house: DriftClient, env):
 
         df = pd.DataFrame()
         if snapshot_type == 'raw':
-                st.write('loading:', source+ outf)
-                outf = [ff for ff in ffs if str(slot) in ff]
-                if len(outf):
-                    df = load_snapshot_file(outf[0], source)
+            st.write('loading:', source+str(outf))
+            outf = [ff for ff in ffs if str(slot) in ff]
+            if len(outf):
+                dfr = load_snapshot_file(outf[0], source)
+                df = dfr[(dfr.marketIndex==market_index) 
+                            & (dfr.marketType==market_type)
+                            & (dfr.orderType=='limit')
+                            & (dfr.price != 0)
+                            ]
+                st.write(df)
+                for col in ['price', 'oraclePrice', 'oraclePriceOffset']:
+                    df[col] = df[col].astype(int)
+                    df[col] /= 1e6
+                    
+                for col in ['quoteAssetAmountFilled']:
+                    df[col] = df[col].astype(int)
+                    df[col] /= 1e6 
+
+                for col in ['baseAssetAmount', 'baseAssetAmountFilled']:
+                    df[col] = df[col].astype(int)
+                    df[col] /= 1e9
+                
+                df['score'] = np.nan
+                toshow = df
+                toshow_snap = toshow
         else:
             path = 'mainnet-beta/'+date_strr+'/liq-score-'+market_type+'-'+str(market_index)\
                 +'-' + str(slot) \
                 + '.csv.gz'
             st.write('loading:', source+ path)
             df = load_scored_snapshot_file(path, source)
-        slippage = sol2.select_slider('slippage (%)', list(range(1, 100)), 5)
-        toshow = df[['level', 'score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
+            toshow = df[['level', 'score', 'price', 'priceRounded', 'baseAssetAmountLeft', 'direction', 'user', 'status', 'orderType',
         'marketType', 'baseAssetAmount', 'marketIndex',  'oraclePrice', 'slot', 'orderId', 'userOrderId', 
         'baseAssetAmountFilled', 'quoteAssetAmountFilled', 'reduceOnly',
         'triggerPrice', 'triggerCondition', 'existingPositionDirection',
         'postOnly', 'immediateOrCancel', 'oraclePriceOffset', 'auctionDuration',
         'auctionStartPrice', 'auctionEndPrice', 'maxTs', 
-        ]]
+        ]]  
+            toshow_snap = toshow[toshow.orderType=='limit']
+
+        slippage = sol2.select_slider('slippage (%)', list(range(1, 100)), 5)
+       
         # toshow_snap = toshow[df.slot.astype(int)==int(slot)]
         # st.write(toshow_snap)
         st.metric('total score:', np.round(df.score.sum(),2))
 
-        toshow_snap = toshow[toshow.orderType=='limit']
-
+        st.write(toshow_snap)
         bids1 = toshow_snap[toshow_snap.direction=='long'].groupby('price').sum().sort_index(ascending=False)
         bids = bids1['baseAssetAmountLeft'].cumsum()
         bscores = bids1['score'].dropna()#.cumsum()
