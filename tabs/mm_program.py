@@ -273,7 +273,8 @@ def get_data_by_market_index(market_type, market_index, env, date, source, url_a
     dfs = []
     tt = market_type+str(market_index)
     # ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
-    url = source+env+'/'+date+'/index.json'
+    url = source+env+'/'+date+'/index.json.gz'
+    # liq-score-index.json.gz
     ggs = requests.get(url).json()
     with st.expander('data source: ' + url):
         st.write(url_agg)
@@ -371,7 +372,7 @@ async def mm_program_page(clearing_house: DriftClient, env):
     tzInfo = pytz.timezone('UTC')
     latest_slot_full = int(total_agg_df.slot.max())
     # st.write(total_agg_df)
-    st.markdown(f"[{(latest_slot_full)}](https://explorer.solana.com/block/{(latest_slot_full)})")
+    st.markdown(f"largest slot in aggregate dataframe: [{(latest_slot_full)}](https://explorer.solana.com/block/{(latest_slot_full)})")
 
     range_selected = molselect.selectbox('range select:', ['daily', 'range', 'weekly', 'last month'], 0)
     if range_selected == 'daily':
@@ -453,7 +454,9 @@ async def mm_program_page(clearing_house: DriftClient, env):
     st.write(df_full.currentSlot.max())
     # st.write(df.columns)
     # st.write('full', df_full)
-    assert(df_full.currentSlot.max() >= values[0])
+    if df_full.currentSlot.max() < values[0]:
+        st.write('err of max currentslot:', df_full.currentSlot.max(), values[0])
+        assert(df_full.currentSlot.max() >= values[0])
     df['price'] = df['price'].astype(float)
     # st.write('not full', df)
 
