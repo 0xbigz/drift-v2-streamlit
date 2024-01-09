@@ -269,14 +269,15 @@ def load_snapshot_file(x, source):
 
 
 @st.cache_data(ttl=3600*2)  # 2 hr TTL this time
-def get_data_by_market_index(market_type, market_index, env, date, source):
+def get_data_by_market_index(market_type, market_index, env, date, source, url_agg):
     dfs = []
     tt = market_type+str(market_index)
     # ggs = glob('../drift-v2-orderbook-snap/'+tt+'/*.csv')
     url = source+env+'/'+date+'/index.json'
-    st.write(url)
     ggs = requests.get(url).json()
-    st.write(ggs)
+    with st.expander('data source: ' + url):
+        st.write(url_agg)
+        st.json(ggs, expanded=False)
 
     df = None
     if True:
@@ -346,7 +347,6 @@ async def mm_program_page(clearing_house: DriftClient, env):
     tt = market_type+str(market_index)
 
     url_agg = source+'mainnet-beta/aggregate-liq-score/'+market_type+'-'+str(market_index)+'.csv.gz'
-    st.write(url_agg)
     total_agg_df = pd.read_csv(url_agg).dropna()
     
    
@@ -370,7 +370,7 @@ async def mm_program_page(clearing_house: DriftClient, env):
 
     tzInfo = pytz.timezone('UTC')
     latest_slot_full = int(total_agg_df.slot.max())
-    st.write(total_agg_df)
+    # st.write(total_agg_df)
     st.markdown(f"[{(latest_slot_full)}](https://explorer.solana.com/block/{(latest_slot_full)})")
 
     range_selected = molselect.selectbox('range select:', ['daily', 'range', 'weekly', 'last month'], 0)
@@ -396,19 +396,19 @@ async def mm_program_page(clearing_house: DriftClient, env):
 
     date_strr = date.strftime("%Y-%m-%d")
     df_full, ffs = get_data_by_market_index(market_type, market_index, env, date_strr,
-                                       source if 'amazonaws' in source else '')
+                                       source if 'amazonaws' in source else '', url_agg)
     # oracle = 1 #todo
-    st.write(df_full)
+    # st.write(df_full)
     if len(df_full):
         oracle = df_full.groupby('currentSlot')['oraclePrice'].median()#.apply(lambda x: 1)
 
     # st.write('oracel', oracle)
     with tabs[0]:
-            st.title('best bid/offer')
-            do1, do2, do3 = st.columns([3, 1, 1])
-            quote_trade_size = do1.number_input('trade size ($)', 0, None, 50000)
-            do2 = do2.write('base size=' + str((quote_trade_size/oracle.max().max())))
-            threshold = do3.slider('threshold (bps)', 0, 100, 20, step=5)
+        st.title('best bid/offer')
+        do1, do2, do3 = st.columns([3, 1, 1])
+        quote_trade_size = do1.number_input('trade size ($)', 0, None, 50000)
+        do2 = do2.write('base size=' + str((quote_trade_size/oracle.max().max())))
+        threshold = do3.slider('threshold (bps)', 0, 100, 20, step=5)
 
 
     base_trade_size = (quote_trade_size/oracle.max().max()).round(4)
@@ -450,10 +450,10 @@ async def mm_program_page(clearing_house: DriftClient, env):
 
     df = df_full[(df_full.currentSlot>=values[0]) & (df_full.currentSlot<=values[1])]
     # print(df_full.slot.max(), 'vs', values[0], values[1])
-    st.write(df_full.slot.max())
+    st.write(df_full.currentSlot.max())
     # st.write(df.columns)
     # st.write('full', df_full)
-    assert(df_full.slot.max() >= values[0])
+    assert(df_full.currentSlot.max() >= values[0])
     df['price'] = df['price'].astype(float)
     # st.write('not full', df)
 
@@ -561,6 +561,8 @@ async def mm_program_page(clearing_house: DriftClient, env):
         if use_ts_est == 'est_utc_timestamp':
             dat.index = [pd.to_datetime(slot_to_timestamp_est(x, ts_for_latest_slot, latest_slot)*1e9, utc=True) for x in dat.index]
         echart.plotly_chart(dat.rolling(rolling_window).mean().plot(), use_container_width=True)
+        st.header('total aggregate dataframe')
+        st.write(total_agg_df)
 
     with tabs[2]:
 
