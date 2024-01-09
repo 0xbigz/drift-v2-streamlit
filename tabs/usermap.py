@@ -100,6 +100,7 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
         'authority': str(user_account.authority),
         'has_open_order': user_account.has_open_order,
         'sub_account_id': user_account.sub_account_id,
+        'next_liquidation_id': user_account.next_liquidation_id,
         }
         levs0['net_usd_value'] = levs0['spot_asset'] + levs0['upnl'] - levs0['spot_liability']
         return levs0
@@ -303,7 +304,8 @@ def usermap_page(drift_client: DriftClient, env):
     update_drift_cache(drift_client)
     (vamm, vamm_upnl, aa, spot_vaults, spot_states, spot_acct_dep, spot_acct_bor, num_subs) = cached_get_protocol_summary(drift_client)
 
-    tabs = st.tabs(['summary', 'price scenario bankruptcies', 'leverage', 'spot0', 'scatter', 'raw tables'])
+    tabs = st.tabs(['summary', 'price scenario bankruptcies', 'leverage', 'spot0', 'scatter', 'raw tables',
+                    'account profiles'])
     with tabs[0]:
         user_usdc_total = df['tokens'].apply(lambda x: x[0]).sum()/1e6
         usdc_excess = spot_vaults['spot0'] - user_usdc_total
@@ -445,3 +447,18 @@ def usermap_page(drift_client: DriftClient, env):
     with tabs[5]:
         st.dataframe(res)
         st.dataframe(df)
+
+    with tabs[6]:
+        df['ever_liquidated'] = (df['next_liquidation_id']>1)
+        name_res = df.groupby('name').agg({'leverage':'median', 
+                                'perp_liability':'sum', 'net_usd_value':'sum',
+                                'settled_perp_pnl':'sum', 'authority':'count',
+                                'ever_liquidated':'mean',
+                                }).sort_values('authority', ascending=False)
+        
+        st.dataframe(name_res)
+
+        st.header('DLP users')
+        dlp_df = df[df.name=='Drift Liquidity Provider']
+        st.write(dlp_df)
+        st.write(dlp_df.describe())
