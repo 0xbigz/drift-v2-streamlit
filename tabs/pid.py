@@ -247,11 +247,14 @@ async def show_pid_positions(clearing_house: DriftClient):
         dd1 = {}
         dd2 = {}
         for market_index in range(state.number_of_markets):
-            FUNDING_RATE_BUFFER
             perp_i = ch.get_perp_market_account(market_index)
             market_name = ''.join(map(chr, perp_i.name)).strip(" ")
+            
             otwap = perp_i.amm.historical_oracle_data.last_oracle_price_twap
-            pred_fund = ((perp_i.amm.last_mark_price_twap - otwap)/otwap) / (3600.0/perp_i.amm.funding_period * 24)
+            market_price_spread = (perp_i.amm.last_mark_price_twap - otwap)
+            funding_offset = otwap / 5000 # ~ 7% annual premium
+            pred_fund = ((market_price_spread + funding_offset)/otwap) / (3600.0/perp_i.amm.funding_period * 24)
+            
             fundings = [x* 100 * 365.25 * 24 for x in (pred_fund,
                         perp_i.amm.last_funding_rate / otwap / FUNDING_RATE_BUFFER,
                         perp_i.amm.last24h_avg_funding_rate / otwap / FUNDING_RATE_BUFFER,

@@ -28,6 +28,7 @@ from anchorpy import EventParser
 import asyncio
 import datetime
 from anchorpy.provider import Signature
+from anchorpy import ProgramAccount
 
 import requests
 from aiocache import Cache
@@ -43,30 +44,12 @@ from datafetch.transaction_fetch import transaction_history_for_account, load_to
 
 
 async def competitions(ch: DriftClient, env):
+    dochainload = st.radio('do chain load:', [True, False], index=1, horizontal=True)
 
     tabs = st.tabs(['summary', 'accounts', 'transactions', 'settings'])
     idl = None
     pid = None
     preset_programs = None
-
-    try:
-        api_result = requests.get('https://mainnet-beta.api.drift.trade/sweepstakes/results').json()
-    except:
-        api_result = {}
-
-    if 'data' in api_result:
-        dfs = []
-        # st.write(api_result['data']['competitionHistory'])
-        for x in api_result['data']['competitionHistory']:
-            dfs.append(pd.Series(x))
-        df = pd.concat(dfs, axis=1).T
-        df['prize'] = df['summaryEvent'].apply(lambda x: float(x['prizeValue']))/1e6
-        st.write(df)
-        st.metric('total prize', df['prize'].astype(float).sum())
-    dochainload = st.radio('do chain load:', [True, False], index=1)
-
-    if not dochainload:
-        return 0
     
     with tabs[3]:
         preset_programs = st.radio('presets:', ['drift-competitions', 'drift-vaults', 'metadaoproject', 'custom'],
@@ -159,17 +142,31 @@ async def competitions(ch: DriftClient, env):
             tts[idx].json(([field]), expanded=False)
             tts[idx].dataframe(pd.DataFrame(idl[field]).astype(str))
 
-    accounts = [(await program.account[act['name']].all()) for act in idl['accounts']]
+    target_key = Pubkey.from_string('EDVhTaKcxfnkNxcnVCVrgdRuSact8p6ywwt1KJWjyX8Q')
+    if not dochainload:
+        # just load a single competition account
+        act = await program.account['Competition'].fetch(target_key)
+        accounts = [[act], []]
+        # return 0
+    else:
+        accounts = [(await program.account[act['name']].all()) for act in idl['accounts']]
     vault_df = pd.DataFrame()
     vault_dep_def = pd.DataFrame()
     with tabs[1]:
         for acts in accounts:
             res = []
             for x in acts:
-                dd = x.account.__dict__
+                dd = None
+                if isinstance(x, ProgramAccount):
+                    key = x.public_key
+                    dd = x.account.__dict__
+                else:
+                    key = target_key
+                    dd = x.__dict__
+
                 if 'name' in dd:
                    dd['name'] = bytes(dd['name']).decode('utf-8').strip(' ')
-                ser = pd.Series(dd, name=x.public_key)
+                ser = pd.Series(dd, name=key)
                 res.append(ser)
             if len(res):
                 res = pd.concat(res,axis=1)
@@ -184,27 +181,29 @@ async def competitions(ch: DriftClient, env):
     with tabs[0]:
         s1, s2, s3 = st.columns(3)
         s1.metric('number of '+idl['accounts'][0]['name']+'(s):', len(accounts[0]), str(len(accounts[1]))+' '+idl['accounts'][1]['name']+'(s)')
-        
-
+    
         if preset_programs == 'drift-competitions':
             draw_tabs = st.tabs(['current', 'past'])
             with draw_tabs[0]:
-                derived_snap_name = 'latest_snapshot(wb)'
-                vault_df[derived_snap_name] = 0
-                vault_df['last trade ts'] = 0
-                try:
-                    user_stats_pubkeys = [Pubkey.from_string(x) for x in vault_df['user_stats'].values]
-                    every_user_stats = await ch.program.account['UserStats'].fetch_multiple(
-                        user_stats_pubkeys
-                        )
-                    # mode = st.radio('mode:', ['current state', 'extrapolated'], horizontal=True)
-                    vault_df[derived_snap_name] = [x.fees.total_fee_paid//100 for x in every_user_stats]
-                    vault_df['last trade ts'] = [pd.to_datetime(x.last_taker_volume30d_ts*1e9) for x in every_user_stats]
-                except Exception as e:
-                    st.warning('couldnt load user stats')
-                    st.warning('error:'+str(e))
+                if dochainload:
+                    derived_snap_name = 'latest_snapshot(wb)'
+                    vault_df[derived_snap_name] = 0
+                    vault_df['last trade ts'] = 0
+                    try:
+                        user_stats_pubkeys = [Pubkey.from_string(x) for x in vault_df['user_stats'].values]
+                        every_user_stats = await ch.program.account['UserStats'].fetch_multiple(
+                            user_stats_pubkeys
+                            )
+                        # mode = st.radio('mode:', ['current state', 'extrapolated'], horizontal=True)
+                        vault_df[derived_snap_name] = [x.fees.total_fee_paid//100 for x in every_user_stats]
+                        vault_df['last trade ts'] = [pd.to_datetime(x.last_taker_volume30d_ts*1e9) for x in every_user_stats]
+                    except Exception as e:
+                        st.warning('couldnt load user stats')
+                        st.warning('error:'+str(e))
 
-                comp_acct = accounts[0][0].account
+                comp_acct = accounts[0][0]
+                if isinstance(comp_acct, ProgramAccount):
+                    comp_acct = comp_acct.account
                 vsum = vault_df.sum()
 
                 spot = await get_spot_market_account(ch.program, 0)
@@ -223,7 +222,7 @@ async def competitions(ch: DriftClient, env):
                           np.round(min(50000, max_prize/12),2),
                            max_prize
                            ]
-                prize_ev = 2000
+                # prize_ev = 2000
 
                 odds = [sum(prizes)/x for x in prizes]
                 odds_rounded = [np.ceil(odds[0]), np.ceil(odds[1]), np.floor(odds[2])]
@@ -245,64 +244,85 @@ async def competitions(ch: DriftClient, env):
                 # ddf = pd.read_csv('https://drift-historical-data-v2.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/SOL-PERP/tradeRecords/2023/20230205')
                 # st.write(ddf)
                 # st.write(ddf.describe())
-                
-                vault_df['entries'] = (vault_df[derived_snap_name] - vault_df['previous_snapshot_score']).max(0) + vault_df['bonus_score'] 
-                vault_df['entries'] =  vault_df['entries'].apply(lambda x: min(x, comp_acct.max_entries_per_competitor))
-                vault_df['EV ($)'] = vault_df['entries']/vault_df['entries'].sum() * prize_ev
-                vault_df['chance of a win'] = 1 - ((1- vault_df['entries']/vault_df['entries'].sum()) ** comp_acct.number_of_winners)
-                vault_df[takervolnom] = (vault_df[derived_snap_name] - vault_df['previous_snapshot_score'])/10
+                if dochainload:
+                    vault_df['entries'] = (vault_df[derived_snap_name] - vault_df['previous_snapshot_score']).max(0) + vault_df['bonus_score'] 
+                    vault_df['entries'] =  vault_df['entries'].apply(lambda x: min(x, comp_acct.max_entries_per_competitor))
+                    vault_df['EV ($)'] = vault_df['entries']/vault_df['entries'].sum() * prize_ev
+                    vault_df['chance of a win'] = 1 - ((1- vault_df['entries']/vault_df['entries'].sum()) ** comp_acct.number_of_winners)
+                    vault_df[takervolnom] = (vault_df[derived_snap_name] - vault_df['previous_snapshot_score'])/10
 
-                s2.metric('total entries:', f"{vault_df['entries'].sum():,.0f}",
-                        f"{vsum['bonus_score']} from bonus_score")
-                d1, = st.columns(1)        
-                
-                vault_df1 = vault_df.reset_index().set_index('authority')
-                vault_df1 = vault_df1[['entries', 'EV ($)', 'chance of a win', 'unclaimed_winnings', takervolnom, 'last trade ts']].sort_values(by='entries', ascending=False)
-                vault_df1 = vault_df1.reset_index()
-                vault_df1.index.name = 'rank'
-                vault_df1.index += 1
+                    s2.metric('total entries:', f"{vault_df['entries'].sum():,.0f}",
+                            f"{vsum['bonus_score']} from bonus_score")
+                    d1, = st.columns(1)        
+                    
+                    vault_df1 = vault_df.reset_index().set_index('authority')
+                    vault_df1 = vault_df1[['entries', 'EV ($)', 'chance of a win', 'unclaimed_winnings', takervolnom, 'last trade ts']].sort_values(by='entries', ascending=False)
+                    vault_df1 = vault_df1.reset_index()
+                    vault_df1.index.name = 'rank'
+                    vault_df1.index += 1
 
-                d1.dataframe(vault_df1, use_container_width=True)
+                    d1.dataframe(vault_df1, use_container_width=True)
 
-                st.markdown('### odds calculator:')
-                do0, do1, do2 = st.columns([1,2,5])
-                up_to_n_entries = do1.number_input('entries:', min_value=0, value=1000)
+                    st.markdown('### odds calculator:')
+                    do0, do1, do2 = st.columns([1,2,5])
+                    up_to_n_entries = do1.number_input('entries:', min_value=0, value=1000)
 
-                direct = do0.radio('direction:', ['less than', 'greater than', 'precisely'])
-                dd = 1
-                dddf = pd.DataFrame([1])
-                if direct == 'less than':
-                    dddf =  vault_df[vault_df.entries <= up_to_n_entries].entries
-                    dd = dddf.sum()
-                    st.write(dd)
-                elif direct == 'greater than':
-                    dddf = vault_df[vault_df.entries >= up_to_n_entries].entries
-                    dd = dddf.sum()
-                else:
-                    dd = up_to_n_entries
-                win_type = do1.radio('win type:', ['top 3', 'any win'])
-                if win_type == 'top 3':
-                    n = min(3, comp_acct.number_of_winners)
-                else:
-                    n = comp_acct.number_of_winners
-                d1 = dd/vault_df['entries'].sum()
-                chance_of_a_win = 1 - ((1- d1) ** n)
+                    direct = do0.radio('direction:', ['less than', 'greater than', 'precisely'])
+                    dd = 1
+                    dddf = pd.DataFrame([1])
+                    if direct == 'less than':
+                        dddf =  vault_df[vault_df.entries <= up_to_n_entries].entries
+                        dd = dddf.sum()
+                        st.write(dd)
+                    elif direct == 'greater than':
+                        dddf = vault_df[vault_df.entries >= up_to_n_entries].entries
+                        dd = dddf.sum()
+                    else:
+                        dd = up_to_n_entries
+                    win_type = do1.radio('win type:', ['top 3', 'any win'])
+                    if win_type == 'top 3':
+                        n = min(3, comp_acct.number_of_winners)
+                    else:
+                        n = comp_acct.number_of_winners
+                    d1 = dd/vault_df['entries'].sum()
+                    chance_of_a_win = 1 - ((1- d1) ** n)
 
-                pplnom = 'anyone of '+str(len(dddf)) if direct != 'someone' else direct
-                if chance_of_a_win * 100 > 0.02:
-                    do2.write(f'{pplnom} who has {direct} {up_to_n_entries} tickets has a {chance_of_a_win*100:,.2f}% of {win_type}!')
-                    do2.write(f'odds: 1 in {int(np.ceil(1/chance_of_a_win))}')
+                    pplnom = 'anyone of '+str(len(dddf)) if direct != 'someone' else direct
+                    if chance_of_a_win * 100 > 0.02:
+                        do2.write(f'{pplnom} who has {direct} {up_to_n_entries} tickets has a {chance_of_a_win*100:,.2f}% of {win_type}!')
+                        do2.write(f'odds: 1 in {int(np.ceil(1/chance_of_a_win))}')
 
-                else:
-                    do2.write(f'{pplnom} who has {direct} {up_to_n_entries} tickets has a {chance_of_a_win*100:,.9f}% of {win_type}!')
-                    do2.write(f'odds: 1 in {int(np.ceil(1/chance_of_a_win))}')
+                    else:
+                        do2.write(f'{pplnom} who has {direct} {up_to_n_entries} tickets has a {chance_of_a_win*100:,.9f}% of {win_type}!')
+                        do2.write(f'odds: 1 in {int(np.ceil(1/chance_of_a_win))}')
 
-                st.write('never traded on drift:', (vault_df[derived_snap_name]<=1e-6).sum(), '/', len(vault_df))
+                    st.write('never traded on drift:', (vault_df[derived_snap_name]<=1e-6).sum(), '/', len(vault_df))
 
-                st.write('never traded this round:', ((vault_df[derived_snap_name] - vault_df['previous_snapshot_score'])<=1e-6).sum(), '/', len(vault_df))
-                # st.write((vault_df[derived_snap_name]))
-        with draw_tabs[1]:
+                    st.write('never traded this round:', ((vault_df[derived_snap_name] - vault_df['previous_snapshot_score'])<=1e-6).sum(), '/', len(vault_df))
+                    # st.write((vault_df[derived_snap_name]))
+            with draw_tabs[1]:
+                try:
+                    api_result = requests.get('https://mainnet-beta.api.drift.trade/sweepstakes/results').json()
+                except:
+                    api_result = {}
 
+                if 'data' in api_result:
+                    dfs = []
+                    # st.write(api_result['data']['competitionHistory'])
+                    for x in api_result['data']['competitionHistory']:
+                        dfs.append(pd.Series(x))
+                    df = pd.concat(dfs, axis=1).T
+                    df_cols_old = list(df.columns)
+                    df['prize'] = df['summaryEvent'].apply(lambda x: float(x['prizeValue']))/1e6
+                    df['startDate'] = df['startTs'].apply(lambda x: pd.to_datetime(int(x*1e9)))
+                    df['endDate'] = df['endTs'].apply(lambda x: pd.to_datetime(int(x*1e9)))
+
+                    st.metric('total prize', f'${df["prize"].astype(float).sum():,.2f}')
+            
+                    st.write(df[['endDate', 'prize']+df_cols_old])
+
+
+                return 0 
                 winner_txs = [x.strip(' ') for x in '''2D2PwCxXAoJSnycuzoCwu2ayER9MkTYnEuCYhe6JxdzLdwtQNcrUrpVwJH1xxrX4jNTnS7Cd6WNhF8DR6fGSTz5c
                 5WfmX3foRoaapwPjKMsDnc7iCcmDBhX1Zd3YvSjX3yq88EgReuEz3vKTZ8TonyxiQadwpna3M56maSa5dA5LvYx4
                 41xCXx5CWav7RuJ2RVTAqJvRvzmK65KvUBa2VfQ1xEgnpjGJSBzxLeQAuRmEsNTgn848P54adWFr57KMNNeUT8VT
