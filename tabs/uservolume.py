@@ -36,12 +36,13 @@ from dataclasses import dataclass
 from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
-import asyncio
 import time
 from enum import Enum
 from driftpy.math.margin import MarginCategory, calculate_asset_weight
 import datetime
 
+import asyncio
+import httpx
 
 def find_value(df, search_column, search_string, target_column):
     """
@@ -73,6 +74,41 @@ async def get_user_stats(clearing_house: DriftClient):
     user_stats_df = pd.DataFrame([x.account.__dict__ for x in all_user_stats])
     return user_stats_df
 
+from io import StringIO
+
+async def fetch_data(date, market_name):
+    if market_name == 'JitoSOL':
+        market_name = 'jitoSOL'
+
+    url = f"https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/{market_name}/trades/{date.year}/{date.month}/{date.day}"
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        if response.status_code == 403:
+            return None, ''
+        response.raise_for_status()
+        return pd.read_csv(StringIO(response.text)), url
+
+async def load_volumes_async(dates, market_names, with_urls=False):
+    data_urls = []
+    dfs = []
+
+    tasks = [fetch_data(date, market_name) for market_name in market_names for date in dates]
+
+    # Use asyncio.gather to run the tasks concurrently
+    results = await asyncio.gather(*tasks)
+
+    for df, data_url in results:
+        if df is not None:
+            dfs.append(df)
+            data_urls.append(data_url)
+
+    result_df = pd.concat(dfs)
+
+    if with_urls:
+        return result_df, data_urls
+
+    return result_df
 
 def load_volumes(dates, market_name, with_urls=False):
     url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
@@ -190,7 +226,8 @@ async def show_user_volume(clearing_house: DriftClient):
     mol1, molselect, mol0, mol2, _ = st.columns([3, 3, 3, 3, 10])
     market_name = mol1.selectbox(
         "market",
-        ALL_MARKET_NAMES,
+        ['All', 'All PERP', 'All SPOT'] + ALL_MARKET_NAMES,
+        index=3
     )
     range_selected = molselect.selectbox("range select:", ["daily", "weekly"], 0)
 
@@ -218,29 +255,67 @@ async def show_user_volume(clearing_house: DriftClient):
             max_value=lastest_date,
         )  # (datetime.datetime.now(tzInfo)))
         dates = pd.date_range(start_date, end_date)
+    if market_name == 'All':
+        market_names = ALL_MARKET_NAMES
+    elif market_name == 'All PERP':
+        market_names = [x for x in ALL_MARKET_NAMES if '-PERP' in x]
+    elif market_name == 'All SPOT':
+        market_names = [x for x in ALL_MARKET_NAMES if '-PERP' not in x]
+    else:
+        market_names = [market_name]
 
-    dfs, data_urls = load_volumes(dates, market_name, with_urls=True)
+    dfs, data_urls = await load_volumes_async(dates, market_names, with_urls=True)
     dd, _ = st.columns([6, 5])
-    with dd.expander("data sources"):
+    with dd.expander(f"data sources ({len(data_urls)})"):
         st.write(data_urls)
 
+    subset_dedup = list(set(dfs.columns) - set(['recordKey']))
+    dfs = dfs.drop_duplicates(subset=subset_dedup)
     selected = st.radio('', ["Volume", "Referrals"], index=0, horizontal=True)
 
-    tabs = st.tabs(['overview', 'user breakdown', 'fill quality'])
+    tabs = st.tabs(['overview', 'user breakdown', 'fill quality', 'lp breakdown', 'score'])
     
     df = pd.DataFrame()
     if selected == 'Volume':
-        dfs['taker'] = dfs['taker'].replace('undefined', 'vAMM' if 'perp' in market_name.lower() else 'external')
-        dfs['maker'] = dfs['maker'].replace('undefined', 'vAMM' if 'perp' in market_name.lower() else 'external')
+        'orderFilledWithAmm'
+        mapping_dict = {'orderFilledWithAmm': 'vAMM',
+                        'orderFillWithPhoenix': 'Phoenix',
+                        'orderFillWithSerum': 'Openbook',
+                        'orderFilledWithLpJit': 'vAMM',
+                        'orderFilledWithAmmJitLpSplit': 'vAMM',
+                        'orderFilledWithAmmJit': 'vAMM',
+                        }
+
+        # Apply the mapping using map and provide a default value of 'external' for values not found in the dictionary
+        # dfs['taker'] = dfs['actionExplanation'].map(mapping_dict).fillna('external')
+        dfs.loc[dfs['taker'] == 'undefined', 'taker'] = dfs.loc[dfs['taker'] == 'undefined', 'actionExplanation'].map(mapping_dict).fillna('external')
+        dfs.loc[dfs['maker'] == 'undefined', 'maker'] = dfs.loc[dfs['maker'] == 'undefined', 'actionExplanation'].map(mapping_dict).fillna('external')
+
+        # dfs['taker'] = dfs['taker'].replace('undefined', 'vAMM' if 'perp' in market_name.lower() else 'external')
+        # dfs['maker'] = dfs['maker'].replace('undefined', 'vAMM' if 'perp' in market_name.lower() else 'external')
         maker_volume = dfs.groupby("maker")["quoteAssetAmountFilled"].sum().fillna(0)
         taker_volume = dfs.groupby("taker")["quoteAssetAmountFilled"].sum().fillna(0)
+        maker_jit_volume = dfs[dfs['actionExplanation']=='orderFilledWithMatchJit'].groupby("maker")["quoteAssetAmountFilled"].sum().fillna(0)
+
         df = pd.concat(
-            {"maker volume": maker_volume, "taker volume": taker_volume}, axis=1
+            {"maker volume": maker_volume, 
+             "taker volume": taker_volume,
+             "maker jit volume": maker_jit_volume,
+             }, axis=1
         )
         df['total volume'] = df[['maker volume', 'taker volume']].sum(axis=1)
-        df = df[['total volume', 'taker volume', 'maker volume']]
+        df = df[['total volume', 'taker volume', 'maker volume', 'maker jit volume']]
         df = df.sort_values("total volume", ascending=False)
 
+    with tabs[0]:
+        # st.write(dfs.columns)
+        s1,s2,s3 = st.columns(3)
+        s1.metric('total volume:', f'${dfs["quoteAssetAmountFilled"].sum():,.2f}', f'{len(dfs):,} trades')
+        s2.metric('total fees:', f'${dfs[["takerFee", "makerRebate"]].sum().sum():,.2f}')
+
+        fill_types = dfs.groupby('actionExplanation')['quoteAssetAmountFilled'].sum()\
+            .sort_values(ascending=False)
+        st.write(fill_types)
 
     with tabs[1]:
         if selected == 'Volume':
@@ -498,3 +573,71 @@ async def show_user_volume(clearing_house: DriftClient):
 
             else:
                 st.markdown(f"public key not found...")
+
+
+    with tabs[3]:
+        dolpeval = st.radio('do lp eval:', [True, False], index=1)
+        if dolpeval:
+            import requests
+            url = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{dates[0].strftime("%Y-%m-%d")}/lp-shares-index.json.gz'
+            try:
+                index_lp = requests.get(url).json()
+                st.write(index_lp)
+            except:
+                st.warning('cannot load ' + url)
+            from driftpy.constants.perp_markets import mainnet_perp_market_configs
+
+            market_index = [x.market_index for x in mainnet_perp_market_configs if x.symbol == market_names[0]][0]
+            url2 = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{dates[0].strftime("%Y-%m-%d")}/lp-shares-{market_index}.csv.gz'
+            st.write(url2)
+            lps_over_time = pd.read_csv(url2)
+            st.write(lps_over_time)
+
+            lp_over_time_df = lps_over_time[['slot', 'sqrtK', 'lpShares']].astype(int).groupby('slot').agg({'sqrtK':'mean', 'lpShares':'sum'})
+
+            st.write(lp_over_time_df)
+            st.plotly_chart(lp_over_time_df.plot())
+
+
+    with tabs[4]:
+        # total score per week is 0.00125
+        dfs2 = dfs
+
+        dfs2['volumeScore1'] = dfs2['quoteAssetAmountFilled'] * \
+            dfs2['actionExplanation'].apply(lambda x: {'orderFilledWithMatchJit': 10}.get(x, 1))
+        market_groupings = dfs.groupby(['marketType', 'marketIndex'])[['quoteAssetAmountFilled', 'volumeScore1']].sum()\
+            .sort_values(by='quoteAssetAmountFilled', ascending=False)
+
+        market_groupings = pd.DataFrame(market_groupings)
+
+        market_groupings['percentOfVolume'] = market_groupings['quoteAssetAmountFilled']/market_groupings['quoteAssetAmountFilled'].sum() * 100
+        market_groupings['ScorePercentage'] = market_groupings['percentOfVolume']
+
+        # Normalize to sum to 100 and update ScorePercentage
+        total_percentage = market_groupings['percentOfVolume'].sum()
+        market_groupings['ScorePercentage'] = market_groupings['ScorePercentage'] / total_percentage * 100
+
+
+        # Define lower bounds
+        perp_lower_bound = 0.5
+        other_lower_bound = 0.05
+        # Apply lower bounds based on marketType
+        mask_perp = market_groupings.index.get_level_values('marketType').str.contains('perp')
+        market_groupings.loc[mask_perp, 'ScorePercentage'] = market_groupings.loc[mask_perp, 'ScorePercentage'].clip(
+            lower=perp_lower_bound
+        )
+
+        market_groupings.loc[~mask_perp, 'ScorePercentage'] = market_groupings.loc[
+            ~mask_perp, 'ScorePercentage'].clip(lower=other_lower_bound)
+
+        # Adjust the remaining values to ensure the total sums to 100
+        non_lb_markets = market_groupings['ScorePercentage'] == market_groupings['percentOfVolume']
+        extra_amounts = 1 - (100 - market_groupings[non_lb_markets]['ScorePercentage'] .sum())/100
+
+        # Subtract the extra amounts from rows that weren't clipped with a lower bound
+        market_groupings.loc[non_lb_markets, 'ScorePercentage'] = market_groupings.loc[non_lb_markets, 'ScorePercentage'] * extra_amounts
+        # Display the result
+        st.write(market_groupings)
+
+
+        
