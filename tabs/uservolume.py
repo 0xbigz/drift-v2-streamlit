@@ -311,8 +311,12 @@ async def show_user_volume(clearing_house: DriftClient):
         # st.write(dfs.columns)
         s1,s2,s3 = st.columns(3)
         s1.metric('total volume:', f'${dfs["quoteAssetAmountFilled"].sum():,.2f}', f'{len(dfs):,} trades')
-        s2.metric('total fees:', f'${dfs[["takerFee", "makerRebate"]].sum().sum():,.2f}')
-
+        s2.metric('total fees:', f'${dfs[["takerFee"]].sum().sum():,.2f} taker',
+                  f'{len(dfs["taker"].unique())} unique takers',
+                  )
+        s3.metric('total rebates:', f'${dfs[["makerFee"]].sum().sum():,.2f} maker',
+                  f'${-dfs[["fillerReward"]].sum().sum():,.2f} filler',
+                  )
         fill_types = dfs.groupby('actionExplanation')['quoteAssetAmountFilled'].sum()\
             .sort_values(ascending=False)
         st.write(fill_types)
@@ -641,7 +645,7 @@ async def show_user_volume(clearing_house: DriftClient):
 
         res = dfs2.groupby(['marketType', 'marketIndex', 'maker'])['volumeScore1']
                 # Define constant value N
-        N = 0.000125
+        N = 0.005/4 * 100
 
         # Multiply each row in dfs2 by the applicable ScorePercentage/100 * N * 0.75 * 1/volumeScore1
         dfs2['multiplied_score'] = dfs2.apply(lambda row: row['volumeScore1'] * \
@@ -650,7 +654,12 @@ async def show_user_volume(clearing_house: DriftClient):
                                                 * (1 / market_groupings.loc[(row['marketType'], row['marketIndex']), 'volumeScore1']), axis=1)
 
         # Display the multiplied_score column in dfs2
-        st.write('user scores')
+        st.metric('total maker volume score distributed', dfs2['multiplied_score'].sum())
+        
+        st.header('user scores')
+        st.write(dfs2.groupby(['maker'])['multiplied_score'].sum().sort_values(ascending=False))
+
+        st.header('user scores by market')
         st.write(dfs2.groupby(['marketType', 'marketIndex', 'maker'])['multiplied_score'].sum().sort_values(ascending=False))
 
 
