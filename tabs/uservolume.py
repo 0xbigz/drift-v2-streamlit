@@ -639,5 +639,19 @@ async def show_user_volume(clearing_house: DriftClient):
         # Display the result
         st.write(market_groupings)
 
+        res = dfs2.groupby(['marketType', 'marketIndex', 'maker'])['volumeScore1']
+                # Define constant value N
+        N = 0.000125
 
-        
+        # Multiply each row in dfs2 by the applicable ScorePercentage/100 * N * 0.75 * 1/volumeScore1
+        dfs2['multiplied_score'] = dfs2.apply(lambda row: row['volumeScore1'] * \
+                                              (market_groupings.loc[(row['marketType'], row['marketIndex']), 'ScorePercentage'] / 100) \
+                                                * N * 0.75 
+                                                * (1 / market_groupings.loc[(row['marketType'], row['marketIndex']), 'volumeScore1']), axis=1)
+
+        # Display the multiplied_score column in dfs2
+        st.write('user scores')
+        st.write(dfs2.groupby(['marketType', 'marketIndex', 'maker'])['multiplied_score'].sum().sort_values(ascending=False))
+
+
+                
