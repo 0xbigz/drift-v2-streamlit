@@ -30,7 +30,7 @@ import json
 import streamlit as st
 from driftpy.types import MarginRequirementType
 from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
-from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
+from driftpy.constants.perp_markets import mainnet_perp_market_configs, devnet_perp_market_configs, PerpMarketConfig
 from driftpy.addresses import *
 from dataclasses import dataclass
 from solders.pubkey import Pubkey
@@ -76,7 +76,44 @@ async def get_user_stats(clearing_house: DriftClient):
 
 from io import StringIO
 
-async def fetch_data(date, market_name):
+
+async def fetch_lp_data(date, market_name):
+    market_index = [x.market_index for x in mainnet_perp_market_configs if market_name == x.symbol]
+    if len(market_index) == 1:
+        market_index = market_index[0]
+    else:
+        return None, ''
+    url = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{date.strftime("%Y-%m-%d")}/lp-shares-{market_index}.csv.gz'
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        if response.status_code == 403:
+            return None, ''
+        response.raise_for_status()
+        return pd.read_csv(StringIO(response.text)), url
+
+async def load_lp_info_async(dates, market_names, with_urls=False):
+    data_urls = []
+    dfs = []
+
+    tasks = [fetch_lp_data(date, market_name) for market_name in market_names for date in dates]
+
+    # Use asyncio.gather to run the tasks concurrently
+    results = await asyncio.gather(*tasks)
+
+    for df, data_url in results:
+        if df is not None:
+            df['name'] = data_url.split('/')[-1].split('-')[-1].split('.')[0]
+            dfs.append(df)
+            data_urls.append(data_url)
+
+    result_df = pd.concat(dfs)
+
+    if with_urls:
+        return result_df, data_urls
+
+    return result_df
+
+async def fetch_volume_data(date, market_name):
     if market_name == 'JitoSOL':
         market_name = 'jitoSOL'
 
@@ -93,7 +130,7 @@ async def load_volumes_async(dates, market_names, with_urls=False):
     data_urls = []
     dfs = []
 
-    tasks = [fetch_data(date, market_name) for market_name in market_names for date in dates]
+    tasks = [fetch_volume_data(date, market_name) for market_name in market_names for date in dates]
 
     # Use asyncio.gather to run the tasks concurrently
     results = await asyncio.gather(*tasks)
@@ -273,7 +310,7 @@ async def show_user_volume(clearing_house: DriftClient):
     dfs = dfs.drop_duplicates(subset=subset_dedup)
     selected = st.radio('', ["Volume", "Referrals"], index=0, horizontal=True)
 
-    tabs = st.tabs(['overview', 'user breakdown', 'fill quality', 'lp breakdown', 'score'])
+    tabs = st.tabs(['overview', 'user breakdown', 'fill quality', 'lp breakdown', 'score', 'snapshot inspect'])
     
     df = pd.DataFrame()
     if selected == 'Volume':
@@ -578,31 +615,6 @@ async def show_user_volume(clearing_house: DriftClient):
             else:
                 st.markdown(f"public key not found...")
 
-
-    with tabs[3]:
-        dolpeval = st.radio('do lp eval:', [True, False], index=1)
-        if dolpeval:
-            import requests
-            url = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{dates[0].strftime("%Y-%m-%d")}/lp-shares-index.json.gz'
-            try:
-                index_lp = requests.get(url).json()
-                st.write(index_lp)
-            except:
-                st.warning('cannot load ' + url)
-            from driftpy.constants.perp_markets import mainnet_perp_market_configs
-
-            market_index = [x.market_index for x in mainnet_perp_market_configs if x.symbol == market_names[0]][0]
-            url2 = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{dates[0].strftime("%Y-%m-%d")}/lp-shares-{market_index}.csv.gz'
-            st.write(url2)
-            lps_over_time = pd.read_csv(url2)
-            st.write(lps_over_time)
-
-            lp_over_time_df = lps_over_time[['slot', 'sqrtK', 'lpShares']].astype(int).groupby('slot').agg({'sqrtK':'mean', 'lpShares':'sum'})
-
-            st.write(lp_over_time_df)
-            st.plotly_chart(lp_over_time_df.plot())
-
-
     with tabs[4]:
         # total score per week is 0.00125
         dfs2 = dfs
@@ -643,9 +655,11 @@ async def show_user_volume(clearing_house: DriftClient):
         # Display the result
         st.write(market_groupings)
 
-        res = dfs2.groupby(['marketType', 'marketIndex', 'maker'])['volumeScore1']
-                # Define constant value N
-        N = 0.005/4 * 100
+        # res = dfs2.groupby(['marketType', 'marketIndex', 'maker'])['volumeScore1']
+        # Define constant value N
+        N = st.number_input('score given away each weekly period:', 0.005/4 * 100)
+
+        st.write('75/25 pct split between volume/liquidity score')
 
         # Multiply each row in dfs2 by the applicable ScorePercentage/100 * N * 0.75 * 1/volumeScore1
         dfs2['multiplied_score'] = dfs2.apply(lambda row: row['volumeScore1'] * \
@@ -662,5 +676,93 @@ async def show_user_volume(clearing_house: DriftClient):
         st.header('user scores by market')
         st.write(dfs2.groupby(['marketType', 'marketIndex', 'maker'])['multiplied_score'].sum().sort_values(ascending=False))
 
-
                 
+    lp_result = None
+    with tabs[3]:
+        dolpeval = st.radio('do lp eval:', [True, False], index=1)
+        if dolpeval:
+            lp_dfs, data_urls = await load_lp_info_async(dates, market_names, True)
+            with st.expander(f'{len(data_urls)} sources:'):
+                st.write(data_urls)
+            lp_result = lp_dfs
+            lp_result['marketIndex'] = lp_result['name'].astype(int)
+            lp_agg_result = lp_dfs[['name', 'slot', 'sqrtK', 'lpShares']].astype(int).groupby(['name', 'slot']).agg({'sqrtK':'mean', 'lpShares':'sum'})
+            # lp_result.to_csv("~/tmp2.csv")
+
+            st.write(lp_agg_result)
+            
+             
+        #     import requests
+        #     url = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{dates[0].strftime("%Y-%m-%d")}/lp-shares-index.json.gz'
+        #     try:
+        #         index_lp = requests.get(url).json()
+        #         st.write(index_lp)
+        #     except:
+        #         st.warning('cannot load ' + url)
+        #     from driftpy.constants.perp_markets import mainnet_perp_market_configs
+
+        #     market_index = [x.market_index for x in mainnet_perp_market_configs if x.symbol == market_names[0]][0]
+        #     url2 = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{dates[0].strftime("%Y-%m-%d")}/lp-shares-{market_index}.csv.gz'
+        #     st.write(url2)
+        #     lps_over_time = pd.read_csv(url2)
+        #     st.write(lps_over_time)
+
+        #     lp_over_time_df = lps_over_time[['slot', 'sqrtK', 'lpShares']].astype(int).groupby('slot').agg({'sqrtK':'mean', 'lpShares':'sum'})
+
+        #     st.write(lp_over_time_df)
+        #     st.plotly_chart(lp_over_time_df.plot())
+
+    with tabs[4]:
+        if lp_result is not None:
+            st.header('dlp user scores by market')
+            rrrr = dfs2[dfs2.maker=='vAMM'][['slot', 'marketType', 'marketIndex', 'maker', 'multiplied_score']]
+
+            rrrr['marketIndex'] = rrrr['marketIndex'].astype(int)
+
+            # t1 = pd.read_csv("~/tmp1.csv", index_col=[0]).sort_values('slot')
+            # t2 = pd.read_csv("~/tmp2.csv", index_col=[0]).sort_values('slot')
+
+            st.write(rrrr)
+            st.write(lp_result)
+            merged_df = pd.merge_asof(lp_result.sort_values('slot'), 
+                                      rrrr.sort_values('slot'), 
+                                      by='marketIndex', on='slot', direction='forward')
+            st.write(merged_df.shape)
+
+            st.write(merged_df['multiplied_score'].sum(), rrrr['multiplied_score'].sum())
+
+            merged_df['dlp_multiplied_score'] = (merged_df['lpShares']/merged_df['sqrtK'])*merged_df['multiplied_score']
+            dlp_scored = merged_df.groupby(['user', 
+                                            # 'marketIndex', 
+                                            'marketType']).agg({'dlp_multiplied_score':'sum'})
+            
+            st.write('total dlp score:', dlp_scored['dlp_multiplied_score'].sum())
+            st.write(dlp_scored.shape)
+            st.write(dlp_scored)
+
+            dlp_scored_by_market = merged_df.groupby([
+                # 'user', 
+                                            'marketIndex', 
+                                            'marketType']).agg({'dlp_multiplied_score':'sum'})
+            
+            st.write('total dlp score by market:', dlp_scored_by_market['dlp_multiplied_score'].sum())
+            st.write(dlp_scored_by_market.shape)
+            st.write(dlp_scored_by_market)
+
+            # st.write(rrrr)
+            # rrrr.to_csv("~/tmp1.csv")
+
+
+            # res2 = rrrr.merge(lp_result)
+            # st.write(res2)
+
+    with tabs[5]:
+        vvv = st.text_input('source:',
+
+            value='https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/2024-01-11/241100306.json.gz'
+        )
+        dolpeval = st.radio('load raw snap:', [True, False], index=1)
+        if dolpeval:
+            import requests
+            r = requests.get(vvv).json()
+            st.json(r)

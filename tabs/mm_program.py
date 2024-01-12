@@ -651,6 +651,8 @@ async def mm_program_page(clearing_house: DriftClient, env):
                 df['score'] = np.nan
                 toshow = df
                 toshow_snap = toshow
+            else:
+                st.warning(ffs)
         else:
             path = 'mainnet-beta/'+date_strr+'/liq-score-'+market_type+'-'+str(market_index)\
                 +'-' + str(slot) \
@@ -670,7 +672,8 @@ async def mm_program_page(clearing_house: DriftClient, env):
        
         # toshow_snap = toshow[df.slot.astype(int)==int(slot)]
         # st.write(toshow_snap)
-        st.metric('total score:', np.round(df.score.sum(),2))
+        if 'score' in df.columns:
+            st.metric('total score:', np.round(df.score.sum(),2))
 
         st.write(toshow_snap)
         bids1 = toshow_snap[toshow_snap.direction=='long'].groupby('price').sum().sort_index(ascending=False)
