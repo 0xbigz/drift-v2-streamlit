@@ -147,6 +147,54 @@ async def load_volumes_async(dates, market_names, with_urls=False):
 
     return result_df
 
+
+async def fetch_liquidity_data(market_name):
+    market_index = [x.market_index for x in mainnet_perp_market_configs if market_name == x.symbol]
+    if len(market_index) == 1:
+        market_index = market_index[0]
+    else:
+        return None, ''
+    
+    market_type = 'spot'
+    if 'perp' in market_name.lower():
+        market_type = 'perp'
+
+    url = f"https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/aggregate-liq-score/{market_type}-{str(market_index)}.csv.gz"
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        if response.status_code == 403:
+            return None, ''
+        response.raise_for_status()
+        df = pd.read_csv(StringIO(response.text))
+        df['market_name'] = market_name
+        df['market_index'] = market_index
+        df['market_type'] = market_type
+        return df, url
+
+async def load_liquidity_agg_score_async(market_names, with_urls=False):
+    # doesnt use date
+    data_urls = []
+    dfs = []
+
+    tasks = [fetch_liquidity_data(market_name) for market_name in market_names]
+
+    # Use asyncio.gather to run the tasks concurrently
+    results = await asyncio.gather(*tasks)
+
+    for df, data_url in results:
+        if df is not None:
+            dfs.append(df)
+            data_urls.append(data_url)
+
+    result_df = pd.concat(dfs)
+
+    if with_urls:
+        return result_df, data_urls
+
+    return result_df  
+
+
 def load_volumes(dates, market_name, with_urls=False):
     url = "https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
     url += "market/%s/trades/%s/%s/%s"
@@ -310,7 +358,7 @@ async def show_user_volume(clearing_house: DriftClient):
     dfs = dfs.drop_duplicates(subset=subset_dedup)
     selected = st.radio('', ["Volume", "Referrals"], index=0, horizontal=True)
 
-    tabs = st.tabs(['overview', 'user breakdown', 'fill quality', 'lp breakdown', 'score', 'snapshot inspect'])
+    tabs = st.tabs(['overview', 'user breakdown', 'fill quality', 'score', 'snapshot inspect'])
     
     df = pd.DataFrame()
     if selected == 'Volume':
@@ -615,14 +663,26 @@ async def show_user_volume(clearing_house: DriftClient):
             else:
                 st.markdown(f"public key not found...")
 
-    with tabs[4]:
+    min_slot_in_view = 0
+    lp_result = None
+
+    with tabs[3]:
         # total score per week is 0.00125
+        s1, s2 = st.columns(2)
+        N = s1.number_input('score given away each weekly period:', 0.005/4 * 100)
+        s1.write('75/25 pct split between volume/liquidity score')
+
+        dolpeval = s2.radio('do lp eval:', [True, False], index=1)
+
+        subtabs = st.tabs(['overview', 'per market alloc', 'liquidity only', 'volume only'])
         dfs2 = dfs
 
         dfs2['volumeScore1'] = dfs2['quoteAssetAmountFilled'] * \
             dfs2['actionExplanation'].apply(lambda x: {'orderFilledWithMatchJit': 10}.get(x, 1))
         market_groupings = dfs.groupby(['marketType', 'marketIndex'])[['quoteAssetAmountFilled', 'volumeScore1']].sum()\
             .sort_values(by='quoteAssetAmountFilled', ascending=False)
+
+        min_slot_in_view = dfs2.slot.min()
 
         market_groupings = pd.DataFrame(market_groupings)
 
@@ -653,13 +713,14 @@ async def show_user_volume(clearing_house: DriftClient):
         # Subtract the extra amounts from rows that weren't clipped with a lower bound
         market_groupings.loc[non_lb_markets, 'ScorePercentage'] = market_groupings.loc[non_lb_markets, 'ScorePercentage'] * extra_amounts
         # Display the result
-        st.write(market_groupings)
 
         # res = dfs2.groupby(['marketType', 'marketIndex', 'maker'])['volumeScore1']
         # Define constant value N
-        N = st.number_input('score given away each weekly period:', 0.005/4 * 100)
+        with subtabs[1]:
+            st.header('per market groupings')
+            st.write(market_groupings)
 
-        st.write('75/25 pct split between volume/liquidity score')
+ 
 
         # Multiply each row in dfs2 by the applicable ScorePercentage/100 * N * 0.75 * 1/volumeScore1
         dfs2['multiplied_score'] = dfs2.apply(lambda row: row['volumeScore1'] * \
@@ -668,95 +729,144 @@ async def show_user_volume(clearing_house: DriftClient):
                                                 * (1 / market_groupings.loc[(row['marketType'], row['marketIndex']), 'volumeScore1']), axis=1)
 
         # Display the multiplied_score column in dfs2
-        st.metric('total maker volume score distributed', dfs2['multiplied_score'].sum())
-        
-        st.header('user scores')
-        st.write(dfs2.groupby(['maker'])['multiplied_score'].sum().sort_values(ascending=False))
-
-        st.header('user scores by market')
-        st.write(dfs2.groupby(['marketType', 'marketIndex', 'maker'])['multiplied_score'].sum().sort_values(ascending=False))
-
-                
-    lp_result = None
-    with tabs[3]:
-        dolpeval = st.radio('do lp eval:', [True, False], index=1)
-        if dolpeval:
-            lp_dfs, data_urls = await load_lp_info_async(dates, market_names, True)
-            with st.expander(f'{len(data_urls)} sources:'):
-                st.write(data_urls)
-            lp_result = lp_dfs
-            lp_result['marketIndex'] = lp_result['name'].astype(int)
-            lp_agg_result = lp_dfs[['name', 'slot', 'sqrtK', 'lpShares']].astype(int).groupby(['name', 'slot']).agg({'sqrtK':'mean', 'lpShares':'sum'})
-            # lp_result.to_csv("~/tmp2.csv")
-
-            st.write(lp_agg_result)
+        with subtabs[2]:
+            st.metric('total maker volume score distributed', dfs2['multiplied_score'].sum())
             
-             
-        #     import requests
-        #     url = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{dates[0].strftime("%Y-%m-%d")}/lp-shares-index.json.gz'
-        #     try:
-        #         index_lp = requests.get(url).json()
-        #         st.write(index_lp)
-        #     except:
-        #         st.warning('cannot load ' + url)
-        #     from driftpy.constants.perp_markets import mainnet_perp_market_configs
+            st.header('user scores')
+            st.write(dfs2.groupby(['maker'])['multiplied_score'].sum().sort_values(ascending=False))
 
-        #     market_index = [x.market_index for x in mainnet_perp_market_configs if x.symbol == market_names[0]][0]
-        #     url2 = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{dates[0].strftime("%Y-%m-%d")}/lp-shares-{market_index}.csv.gz'
-        #     st.write(url2)
-        #     lps_over_time = pd.read_csv(url2)
-        #     st.write(lps_over_time)
+            st.header('user scores by market')
+            st.write(dfs2.groupby(['marketType', 'marketIndex', 'maker'])['multiplied_score'].sum().sort_values(ascending=False))
+                    
+            if dolpeval:
+                lp_dfs, data_urls = await load_lp_info_async(dates, market_names, True)
+                with st.expander(f'{len(data_urls)} sources:'):
+                    st.write(data_urls)
+                lp_result = lp_dfs
+                lp_result['marketIndex'] = lp_result['name'].astype(int)
+                lp_agg_result = lp_dfs[['name', 'slot', 'sqrtK', 'lpShares']].astype(int).groupby(['name', 'slot']).agg({'sqrtK':'mean', 'lpShares':'sum'})
+                # lp_result.to_csv("~/tmp2.csv")
 
-        #     lp_over_time_df = lps_over_time[['slot', 'sqrtK', 'lpShares']].astype(int).groupby('slot').agg({'sqrtK':'mean', 'lpShares':'sum'})
+                lp_agg_result['user own %'] = lp_agg_result['lpShares']/lp_agg_result['sqrtK'] * 100
 
-        #     st.write(lp_over_time_df)
-        #     st.plotly_chart(lp_over_time_df.plot())
+                st.write(lp_agg_result)
+
+            if lp_result is not None:
+                st.header('dlp user scores by market')
+                rrrr = dfs2[dfs2.maker=='vAMM'][['slot', 'marketType', 'marketIndex', 'maker', 'multiplied_score']]
+
+                rrrr['marketIndex'] = rrrr['marketIndex'].astype(int)
+                rrrr = rrrr.groupby(['slot', 'marketIndex', 'marketType', 'maker']).sum().reset_index()#.set_index('slot')
+                
+                unique_slots = lp_result.groupby('slot').sum().index
+                def get_most_recent_slot(x):
+                    for i in unique_slots:
+                        if i >= x:
+                            return i
+                    return unique_slots[-1]
+                        
+                rrrr['lp_snap_slot'] = rrrr['slot'].apply(lambda x: get_most_recent_slot(x)).astype(int)
+                rrrr = rrrr.groupby(['marketIndex', 'marketType', 'maker', 'lp_snap_slot']).sum().reset_index().drop(['slot'], axis=1)
+
+                # t1 = pd.read_csv("~/tmp1.csv", index_col=[0]).sort_values('slot')
+                # t2 = pd.read_csv("~/tmp2.csv", index_col=[0]).sort_values('slot')
+
+                st.write(rrrr)
+                merged_df = pd.merge_asof(lp_result.sort_values('slot'), 
+                                        rrrr.sort_values('lp_snap_slot'), 
+                                        by='marketIndex', left_on='slot', right_on='lp_snap_slot', direction='forward')
+                st.write(merged_df.shape)
+                st.write(merged_df)
+
+                st.write(merged_df['multiplied_score'].sum(), rrrr['multiplied_score'].sum())
+
+                merged_df['dlp_multiplied_score'] = (merged_df['lpShares']/merged_df['sqrtK'])*merged_df['multiplied_score']
+                dlp_scored = merged_df.groupby(['user', 
+                                                # 'marketIndex', 
+                                                'marketType']).agg({'dlp_multiplied_score':'sum'})
+                
+                st.write('total dlp score:', dlp_scored['dlp_multiplied_score'].sum())
+                st.write(dlp_scored.shape)
+                st.write(dlp_scored)
+
+                dlp_scored_by_market = merged_df.groupby([
+                    # 'user', 
+                                                'marketIndex', 
+                                                'marketType']).agg({'dlp_multiplied_score':'sum'})
+                
+                st.write('total dlp score by market:', dlp_scored_by_market['dlp_multiplied_score'].sum())
+                st.write(dlp_scored_by_market.shape)
+                st.write(dlp_scored_by_market)
+
+                # st.write(rrrr)
+                # rrrr.to_csv("~/tmp1.csv")
+
+
+                # res2 = rrrr.merge(lp_result)
+                # st.write(res2)
+
+        with subtabs[3]:
+
+            liquidity_dfs, liqudity_data_urls = await load_liquidity_agg_score_async(market_names, True)
+            with st.expander(f'{len(liqudity_data_urls)} liquidity score sources:'):
+                    st.write(liqudity_data_urls)
+            st.write(liquidity_dfs.shape)
+            # st.write(liquidity_dfs)
+
+            # todo: filter by first slot of volume score 
+            liquidity_dfs = liquidity_dfs[liquidity_dfs.slot > min_slot_in_view]
+            st.write(f'after slot filter ({min_slot_in_view})',liquidity_dfs.shape)
+
+            st.write(list(liquidity_dfs.columns))
+
+            total_score_by_market = liquidity_dfs.groupby(['market_type', 'market_index'])['score'].sum()
+
+            def get_mult_score(row):
+                idx = (row['market_type'], row['market_index'])
+                t1 = row['score'] / total_score_by_market.loc[idx]
+
+                if idx in market_groupings.index:
+                    t2 = t1 * (market_groupings.loc[idx, 'ScorePercentage'] / 100) * N * 0.25 
+                    return t2
+                else:
+                    # not in market grouping
+                    return 0
+                
+
+            ldf3 = liquidity_dfs.groupby(['user', 'market_type', 'market_index'])[['score']].sum().reset_index()
+            ldf3['multiplied_score'] = ldf3.apply(lambda x: get_mult_score(x), axis=1)
+            st.write(ldf3.shape)
+
+            st.write(ldf3.head(1000))
+
+            st.write(f'ensure it all sums to target { N * 0.25 }')
+            st.write(ldf3.groupby(['market_type', 'market_index']).sum())
+
+
+        with subtabs[0]:
+
+            if not dolpeval:
+                liq_comp = ldf3.groupby('user')['multiplied_score'].sum()
+                liq_comp.index.name = 'maker'
+                vol_comp = dfs2.groupby(['maker'])['multiplied_score'].sum().sort_values(ascending=False)
+                fin = pd.concat([vol_comp, liq_comp]).reset_index().groupby('maker').sum()\
+                    .sort_values(by='multiplied_score', ascending=False)
+                st.metric('total score distributed', f'{fin["multiplied_score"].sum()}')
+                st.write(fin)
+            else:
+                #todo
+                liq_comp = ldf3.groupby('user')['multiplied_score'].sum()
+                
+                vol_comp = dlp_scored['dlp_multiplied_score'].sort_values(ascending=False)
+                vol_comp.name = 'multiplied_score'
+                st.write(vol_comp)
+                fin = pd.concat([vol_comp, liq_comp]).reset_index().groupby('user').sum()\
+                    .sort_values(by='multiplied_score', ascending=False)
+                st.metric('total score distributed', f'{fin["multiplied_score"].sum()}')
+                st.write(fin)
+
 
     with tabs[4]:
-        if lp_result is not None:
-            st.header('dlp user scores by market')
-            rrrr = dfs2[dfs2.maker=='vAMM'][['slot', 'marketType', 'marketIndex', 'maker', 'multiplied_score']]
-
-            rrrr['marketIndex'] = rrrr['marketIndex'].astype(int)
-
-            # t1 = pd.read_csv("~/tmp1.csv", index_col=[0]).sort_values('slot')
-            # t2 = pd.read_csv("~/tmp2.csv", index_col=[0]).sort_values('slot')
-
-            st.write(rrrr)
-            st.write(lp_result)
-            merged_df = pd.merge_asof(lp_result.sort_values('slot'), 
-                                      rrrr.sort_values('slot'), 
-                                      by='marketIndex', on='slot', direction='forward')
-            st.write(merged_df.shape)
-
-            st.write(merged_df['multiplied_score'].sum(), rrrr['multiplied_score'].sum())
-
-            merged_df['dlp_multiplied_score'] = (merged_df['lpShares']/merged_df['sqrtK'])*merged_df['multiplied_score']
-            dlp_scored = merged_df.groupby(['user', 
-                                            # 'marketIndex', 
-                                            'marketType']).agg({'dlp_multiplied_score':'sum'})
-            
-            st.write('total dlp score:', dlp_scored['dlp_multiplied_score'].sum())
-            st.write(dlp_scored.shape)
-            st.write(dlp_scored)
-
-            dlp_scored_by_market = merged_df.groupby([
-                # 'user', 
-                                            'marketIndex', 
-                                            'marketType']).agg({'dlp_multiplied_score':'sum'})
-            
-            st.write('total dlp score by market:', dlp_scored_by_market['dlp_multiplied_score'].sum())
-            st.write(dlp_scored_by_market.shape)
-            st.write(dlp_scored_by_market)
-
-            # st.write(rrrr)
-            # rrrr.to_csv("~/tmp1.csv")
-
-
-            # res2 = rrrr.merge(lp_result)
-            # st.write(res2)
-
-    with tabs[5]:
         vvv = st.text_input('source:',
 
             value='https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/2024-01-11/241100306.json.gz'
