@@ -669,16 +669,22 @@ async def show_user_volume(clearing_house: DriftClient):
     with tabs[3]:
         # total score per week is 0.00125
         s1, s2 = st.columns(2)
-        N = s1.number_input('score given away each weekly period:', 0.005/4 * 100)
-        s1.write('75/25 pct split between volume/liquidity score')
+        N = s1.number_input('score given away each weekly period:', 
+                            1e6
+                            # 0.005/4 * 100
+                            )
+        s1.write('50-50 taker/maker. maker: 75/25 pct split between volume/liquidity score')
+
+        N /= 2 #half for maker
 
         dolpeval = s2.radio('do lp eval:', [True, False], index=1)
 
-        subtabs = st.tabs(['overview', 'per market alloc', 'liquidity only', 'volume only'])
+        subtabs = st.tabs(['overview', 'per market alloc', 'volume only', 'liquidity only'])
         dfs2 = dfs
 
         dfs2['volumeScore1'] = dfs2['quoteAssetAmountFilled'] * \
             dfs2['actionExplanation'].apply(lambda x: {'orderFilledWithMatchJit': 10}.get(x, 1))
+        dfs2['ticketScore1'] = dfs2['takerFee']
         market_groupings = dfs.groupby(['marketType', 'marketIndex'])[['quoteAssetAmountFilled', 'volumeScore1']].sum()\
             .sort_values(by='quoteAssetAmountFilled', ascending=False)
 
@@ -837,7 +843,7 @@ async def show_user_volume(clearing_house: DriftClient):
             ldf3['multiplied_score'] = ldf3.apply(lambda x: get_mult_score(x), axis=1)
             st.write(ldf3.shape)
 
-            st.write(ldf3.head(1000))
+            # st.write(ldf3.head(1000))
 
             st.write(f'ensure it all sums to target { N * 0.25 }')
             st.write(ldf3.groupby(['market_type', 'market_index']).sum())
@@ -847,22 +853,59 @@ async def show_user_volume(clearing_house: DriftClient):
 
             if not dolpeval:
                 liq_comp = ldf3.groupby('user')['multiplied_score'].sum()
+                liq_comp.index = [x if x !='vamm' else 'vAMM' for x in liq_comp.index ]
                 liq_comp.index.name = 'maker'
+
                 vol_comp = dfs2.groupby(['maker'])['multiplied_score'].sum().sort_values(ascending=False)
+                
                 fin = pd.concat([vol_comp, liq_comp]).reset_index().groupby('maker').sum()\
                     .sort_values(by='multiplied_score', ascending=False)
                 st.metric('total score distributed', f'{fin["multiplied_score"].sum()}')
                 st.write(fin)
             else:
                 #todo
-                liq_comp = ldf3.groupby('user')['multiplied_score'].sum()
+                liq_comp = ldf3.groupby('user')[['multiplied_score']].sum()
+                liq_comp.index = [x if x !='vamm' else 'vAMM' for x in liq_comp.index ]
+                liq_comp.index.name = 'user'
+                liq_comp.columns = ['liq_multiplied_score']
+                liq_comp['marketType'] = 'perp'
+
+                vol_comp_dlp = dlp_scored['dlp_multiplied_score']#.sort_values(ascending=False)
+                # vol_comp_dlp.name = 'multiplied_score'
+                vol_comp_dlp = vol_comp_dlp.reset_index().set_index('user')
+
+
+                vol_comp = dfs2.groupby(['maker'])[['multiplied_score']].sum()#.sort_values(ascending=False)
+                vol_comp.index.name = 'user'
+
+                # remove dlp attributed volume score
+                vol_comp.loc['vAMM', 'multiplied_score'] -= vol_comp_dlp['dlp_multiplied_score'].sum()
+
+
+                dfs2['ticketScore1'] = dfs2['ticketScore1'].clip(0, 10_000)
+                # st.write('N', N)
+                taker_score = (dfs2.groupby(['taker'])['ticketScore1'].sum() / dfs2['ticketScore1'].sum()) * N
+                taker_score.index.name = 'user'
+                taker_score = pd.DataFrame(taker_score)
+                taker_score.columns = ['taker_score']
+                # taker_score.name = 'taker_score'
+
+                # st.write(taker_score)
+
+                # st.write(liq_comp)
+                # st.write(vol_comp_dlp)
+                # st.write(vol_comp)
+                fin = pd.concat([vol_comp, liq_comp, vol_comp_dlp, taker_score]).fillna(0)
+                # st.write(fin)
+                fin = fin.reset_index().groupby('user').sum()
+                fin['maker_score'] = fin[['dlp_multiplied_score',
+                                            'multiplied_score', 
+                                          'liq_multiplied_score',
+                                          ]].sum(axis=1)
                 
-                vol_comp = dlp_scored['dlp_multiplied_score'].sort_values(ascending=False)
-                vol_comp.name = 'multiplied_score'
-                st.write(vol_comp)
-                fin = pd.concat([vol_comp, liq_comp]).reset_index().groupby('user').sum()\
-                    .sort_values(by='multiplied_score', ascending=False)
-                st.metric('total score distributed', f'{fin["multiplied_score"].sum()}')
+                
+                # fin = fin.groupby('user').fillna(0).sum()
+                st.metric('maker_score score distributed', f'{fin["maker_score"].sum()}')
                 st.write(fin)
 
 
