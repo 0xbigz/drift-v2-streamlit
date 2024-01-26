@@ -356,7 +356,8 @@ async def mm_program_page(clearing_house: DriftClient, env):
         st.write(mainnet_perp_market_configs[market_index].symbol)
     else:
         st.write(mainnet_spot_market_configs[market_index].symbol)
-        
+    
+    st.write('subject to change liquidity score component of maker scores. these numbers are relative standings per market. final score are calculated over larger interval and aggregated across markets.')
     tabs = st.tabs(['mm leaderboard', 'mm individual', 'individual snapshot', 'settings'])
 
     with tabs[3]:
