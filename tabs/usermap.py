@@ -86,7 +86,7 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
         'leverage': x.get_leverage() / MARGIN_PRECISION, 
         'perp_liability': x.get_perp_market_liability(None, margin_category) / QUOTE_PRECISION,
         'spot_asset': x.get_spot_market_asset_value(None, margin_category) / QUOTE_PRECISION,
-        'spot_liability': x.get_spot_market_liability(None, margin_category) / QUOTE_PRECISION,
+        'spot_liability': x.get_spot_market_liability_value(None, margin_category) / QUOTE_PRECISION,
         'upnl': x.get_unrealized_pnl(True) / QUOTE_PRECISION,
         'funding_upnl': x.get_unrealized_funding_pnl() / QUOTE_PRECISION,
         'total_collateral': x.get_total_collateral(margin_category or MarginCategory.INITIAL) / QUOTE_PRECISION,
@@ -104,8 +104,8 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
         }
         levs0['net_usd_value'] = levs0['spot_asset'] + levs0['upnl'] - levs0['spot_liability']
         return levs0
-    perp_n = 22
-    spot_n = 10
+    perp_n = 23
+    spot_n = 11
     user_map_result: UserMap = await load_user_map(_drift_client, user_map_settings)
     
     user_keys = list(user_map_result.user_map.keys())
@@ -242,7 +242,7 @@ def update_drift_cache(drift_client):
 def usermap_page(drift_client: DriftClient, env):
     s1, s11, s2, s3, s4 = st.columns(5)
     # await drift_client.account_subscriber.update_cache();
-    perp_market_inspect = s1.selectbox('perp market:', list(range(22)))
+    perp_market_inspect = s1.selectbox('perp market:', list(range(23)))
     user_map_settings = s11.radio('user map settings:', ['all', 'active', 'idle', 'whales'], index=1)
     mode = s2.radio('mode:', ['oracle_distort', 'margin_cat'])
     mr_var = None
@@ -457,8 +457,10 @@ def usermap_page(drift_client: DriftClient, env):
                                 }).sort_values('authority', ascending=False)
         
         st.dataframe(name_res)
-
-        st.header('DLP users')
         dlp_df = df[df.name=='Drift Liquidity Provider']
         st.write(dlp_df)
         st.write(dlp_df.describe())
+
+        perp_market_inspect_dlp = st.selectbox('perp market:', list(range(23)), key='tab-5')
+        st.write('dlp with positions in perp market=', perp_market_inspect_dlp)
+        st.write(dlp_df[dlp_df.net_p.apply(lambda x: x[perp_market_inspect_dlp]!=0)])

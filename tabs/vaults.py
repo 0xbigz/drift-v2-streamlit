@@ -123,7 +123,7 @@ async def vaults(ch: DriftClient, env):
                 ch, 
                 user_public_key=Pubkey.from_string(user_keys[0]),
                 # authority=fuser., 
-                sub_account_id=fuser.sub_account_id, 
+                # sub_account_id=fuser.sub_account_id, 
                 # use_cache=True
                 account_subscription=AccountSubscriptionConfig('cached')
             )

@@ -45,7 +45,6 @@ def load_s3_data(markets, START=None, END=None):
     # markets = ['SOL', 'SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP']
     url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
 
-
     assert(START >= '2022-11-04')
     if START is None:
         START = (datetime.datetime.now(tzInfo)-datetime.timedelta(days=1)).strftime("%Y-%m-%d")

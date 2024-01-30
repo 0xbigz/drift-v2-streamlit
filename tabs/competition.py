@@ -218,10 +218,17 @@ async def competitions(ch: DriftClient, env):
                 max_prize = np.round((pol_vault - comp_acct.sponsor_info.min_sponsor_amount/1e6) * comp_acct.sponsor_info.max_sponsor_fraction/1e6, 2)
                 
                 max_prize = max(0, max_prize)
-                prizes = [np.round(min(10000, max_prize/25),2),
-                          np.round(min(50000, max_prize/12),2),
-                           max_prize
-                           ]
+                TENK = 10000
+                FIFTYK = 50000
+                FIVEK = 5000
+                ONEK = 1000
+                prizes = [
+                    np.round(max(min(ONEK, max_prize / 10), min(max_prize / 25, TENK)), 2),
+                    np.round(max(min(FIVEK, max_prize / 2), min(max_prize / 12, FIFTYK)), 2),
+                    max_prize
+                ]
+                
+                # prizes = [np.round(min(1000, max_prize/10),2), np.round(min(5000, max_prize/2),2), max_prize]
                 # prize_ev = 2000
 
                 odds = [sum(prizes)/x for x in prizes]

@@ -673,7 +673,7 @@ async def show_user_volume(clearing_house: DriftClient):
                             1e6
                             # 0.005/4 * 100
                             )
-        s1.write('50-50 taker/maker. maker: 75/25 pct split between volume/liquidity score')
+        s1.write('50-50 taker/maker. maker: 70/30 pct split between volume/liquidity score')
 
         N /= 2 #half for maker
 
@@ -728,10 +728,10 @@ async def show_user_volume(clearing_house: DriftClient):
 
  
 
-        # Multiply each row in dfs2 by the applicable ScorePercentage/100 * N * 0.75 * 1/volumeScore1
+        # Multiply each row in dfs2 by the applicable ScorePercentage/100 * N * 0.7 * 1/volumeScore1
         dfs2['multiplied_score'] = dfs2.apply(lambda row: row['volumeScore1'] * \
                                               (market_groupings.loc[(row['marketType'], row['marketIndex']), 'ScorePercentage'] / 100) \
-                                                * N * 0.75 
+                                                * N * 0.7
                                                 * (1 / market_groupings.loc[(row['marketType'], row['marketIndex']), 'volumeScore1']), axis=1)
 
         # Display the multiplied_score column in dfs2
@@ -832,7 +832,7 @@ async def show_user_volume(clearing_house: DriftClient):
                 t1 = row['score'] / total_score_by_market.loc[idx]
 
                 if idx in market_groupings.index:
-                    t2 = t1 * (market_groupings.loc[idx, 'ScorePercentage'] / 100) * N * 0.25 
+                    t2 = t1 * (market_groupings.loc[idx, 'ScorePercentage'] / 100) * N * 0.3 
                     return t2
                 else:
                     # not in market grouping

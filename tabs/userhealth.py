@@ -126,7 +126,6 @@ async def show_user_health(clearing_house: DriftClient):
                 chu_sub = DriftUser(
                     ch, 
                     user_public_key=user_account_pk, 
-                    sub_account_id=sub_id, 
                     account_subscription=AccountSubscriptionConfig("cached")
                     # use_cache=True
                 )

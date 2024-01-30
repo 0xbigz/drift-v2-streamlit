@@ -53,7 +53,11 @@ from tabs.vaults import vaults
 from tabs.competition import competitions
 from tabs.openbookv2 import tab_openbookv2
 from tabs.usermap import usermap_page
-from tabs.backtester import backtester_page
+try:
+    from tabs.backtester import backtester_page
+except:
+    pass
+
 def main():
     current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
     if st.sidebar.button('Clear Cache'):
@@ -284,7 +288,10 @@ def main():
         # loop = asyncio.new_event_loop()
         usermap_page(clearing_house, env)  
     elif tab.lower() == 'backtester':
-        backtester_page(clearing_house, env)         
+        try:
+            backtester_page(clearing_house, env)         
+        except:
+            pass
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}

@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
+from driftpy.addresses import get_user_account_public_key
+
 import asyncio
 import matplotlib.pyplot as plt 
 from driftpy.drift_user import get_token_amount
@@ -87,10 +89,13 @@ async def show_pid_positions(clearing_house: DriftClient):
 
     if all_users is not None:
         fuser: DriftUser = all_users[0].account
+        user_account_pk = get_user_account_public_key(
+                    clearing_house.program_id,
+                    fuser.authority,
+                    fuser.sub_account_id)
         chu = DriftUser(
             ch, 
-            authority=fuser.authority, 
-            sub_account_id=fuser.sub_account_id, 
+            user_account_pk
             # use_cache=True
         )
         await chu.drift_client.account_subscriber.update_cache()
@@ -98,8 +103,13 @@ async def show_pid_positions(clearing_house: DriftClient):
         for x in all_users:
             key = str(x.public_key)
             account: DriftUser = x.account
-            
-            chu = DriftUser(ch, authority=account.authority, sub_account_id=account.sub_account_id,
+
+            user_account_pk = get_user_account_public_key(
+                    clearing_house.program_id,
+                    account.authority,
+                    account.sub_account_id)
+
+            chu = DriftUser(ch, user_account_pk,
                             account_subscription=AccountSubscriptionConfig("cached"))
                             # use_cache=True
                             
