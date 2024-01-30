@@ -259,10 +259,12 @@ def get_data_by_market_index(market_type, market_index, source):
     return df
 
 async def mm_page(clearing_house: DriftClient):    
-
+    st.warning('historical data only. this data source for snapshot is in the process of being migrated')
     ss1, ss2, ss3 = st.columns([3,1,1])
-    source = ss1.text_input('source:', 'https://github.com/0xbigz/drift-v2-orderbook-scored/raw/main/data/')
-
+    best_default_source = 'https://github.com/0xbigz/drift-v2-orderbook-scored/raw/main/data/'
+    # best_default_source = 'https://github.com/ansatz-research/drift-v2-orderbook-scored/raw/main/data/data/'
+    source = ss1.text_input('source:', best_default_source)
+    
     ss = json.loads((await clearing_house.program.provider.connection.get_slot()).to_json())['result']
     tt = json.loads((await clearing_house.program.provider.connection.get_block_time(ss)).to_json())['result']
     SLOT1 = ss2.number_input('slot ref:', min_value=0, value=ss)

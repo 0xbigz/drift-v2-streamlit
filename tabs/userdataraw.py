@@ -22,7 +22,7 @@ from driftpy.drift_user import get_token_amount
 import os
 import json
 import streamlit as st
-from driftpy.types import MarginRequirementType, SpotPosition, PerpPosition
+from driftpy.types import MarginRequirementType, SpotPosition, PerpPosition, UserAccount
 from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
 from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from driftpy.addresses import *
@@ -55,7 +55,7 @@ async def userdataraw(clearing_house: DriftClient):
             # st.write(str(type(obj)))
             if 'Position' in str(type(obj)) or 'Order' in str(type(obj)):
                 return obj.__dict__
-            elif isinstance(obj, PublicKey):
+            elif isinstance(obj, Pubkey):
                 return str(obj)
             else:
                 return str(obj)
@@ -86,8 +86,87 @@ async def userdataraw(clearing_house: DriftClient):
         st.write(Pubkey.from_string(str(inp)))
 
         if mode == 'live':
-            user = (await clearing_house.program.account["User"].fetch(Pubkey.from_string(str(inp))))
+
+
+            user: UserAccount = (await clearing_house.program.account["User"].fetch(Pubkey.from_string(str(inp))))
             st.json(json.dumps(user.__dict__, cls=UserAccountEncoder))
+
+            st.header('perp positions')
+            dff = pd.concat([pd.DataFrame(pos.__dict__, index=[0]) 
+                                for i,pos in enumerate(user.perp_positions)],axis=0)
+            # print(dff.columns)
+            dff = dff[[
+                # 'authority', 'name', 
+                'lp_shares',
+                
+            #     'last_active_slot', 'public_key',
+            # 'last_add_perp_lp_shares_ts', 
+            'market_index', 
+            #    'position_index',
+            'last_cumulative_funding_rate', 'base_asset_amount',
+            'quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount',
+            
+            'last_base_asset_amount_per_lp', 'last_quote_asset_amount_per_lp',
+            'remainder_base_asset_amount',  
+            'open_orders',
+            ]]
+            for col in ['lp_shares', 'last_base_asset_amount_per_lp', 'base_asset_amount', 'remainder_base_asset_amount']:
+                dff[col] /= 1e9
+            for col in ['quote_asset_amount', 'quote_break_even_amount', 'quote_entry_amount', 'last_quote_asset_amount_per_lp']:
+                dff[col] /= 1e6
+
+            # st.write('perp market lp info:')
+            # a0, a1, a2, a3 = st.columns(4)
+            # mi = a0.selectbox('market index:', range(0, state.number_of_markets), 0)
+
+
+            # st.write(perp_market.amm)
+            # bapl = perp_market.amm.base_asset_amount_per_lp/1e9
+            # qapl = perp_market.amm.quote_asset_amount_per_lp/1e6
+            # baawul = perp_market.amm.base_asset_amount_with_unsettled_lp/1e9
+
+            # a1.metric('base asset amount per lp:', bapl)
+            # a2.metric('quote asset amount per lp:', qapl)
+            # a3.metric('unsettled base asset amount with lp:', baawul)
+
+
+            # cols = (st.multiselect('columns:', ))
+            # dff = dff[cols]
+            st.write('raw lp positions')
+            st.dataframe(dff)
+
+            await clearing_house.account_subscriber.update_cache()
+            def get_wouldbe_lp_settle(row):
+                def standardize_base_amount(amount, step):
+                    remainder = amount % step
+                    standard = amount - remainder
+                    return standard, remainder
+
+                mi = row['market_index']
+                pm = clearing_house.account_subscriber.cache['perp_markets'][int(mi)].data
+                delta_baapl = pm.amm.base_asset_amount_per_lp/1e9 - row['last_base_asset_amount_per_lp']
+                delta_qaapl = pm.amm.quote_asset_amount_per_lp/1e6 - row['last_quote_asset_amount_per_lp']
+
+                delta_baa = delta_baapl * row['lp_shares']
+                delta_qaa = delta_qaapl * row['lp_shares']
+
+                standard_baa, remainder_baa = standardize_base_amount(delta_baa, pm.amm.order_step_size/1e9)
+
+                row['remainder_base_asset_amount'] += remainder_baa
+                row['base_asset_amount'] += standard_baa + row['remainder_base_asset_amount']
+                row['quote_asset_amount'] += delta_qaa
+                row['quote_entry_amount'] += delta_qaa
+                row['quote_break_even_amount'] += delta_qaa
+                row['entry_price'] =  -row['quote_entry_amount']/row['base_asset_amount']
+
+                return row
+
+
+
+            newd = dff.apply(get_wouldbe_lp_settle, axis=1)
+            st.write(newd)
+                    
+
         else:
             user, ff = load_user_snapshot(str(inp), commit_hash)
             st.write(ff)

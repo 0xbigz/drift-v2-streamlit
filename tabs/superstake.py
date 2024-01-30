@@ -15,7 +15,7 @@ from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from driftpy.drift_client import DriftClient
 from driftpy.drift_user import DriftUser
-from driftpy.math.positions import calculate_position_funding_pnl
+from driftpy.math.perp_position import calculate_position_funding_pnl
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import *
 import os

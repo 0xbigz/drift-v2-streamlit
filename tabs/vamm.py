@@ -2,6 +2,8 @@
 from typing import Tuple
 from driftpy.constants.numeric_constants import *
 from driftpy.types import PerpMarketAccount
+
+from driftpy.math.amm import calculate_spread
 PERCENTAGE_PRECISION = 10**6
 DEFAULT_REVENUE_SINCE_LAST_FUNDING_SPREAD_RETREAT = 100
 
@@ -159,7 +161,7 @@ def calculate_inventory_liquidity_ratio(
 
     return amm_inventory_pct
 
-def calculate_spread(
+def calculate_spread_local(
     base_spread: int,
     last_oracle_reserve_price_spread_pct: int,
     last_oracle_conf_pct: int,
@@ -302,77 +304,203 @@ from driftpy.math.margin import MarginCategory, calculate_asset_weight
 import datetime
 
 
+def calculate_market_open_bid_ask(base_asset_reserve, min_base_asset_reserve, max_base_asset_reserve, step_size=None):
+    # open orders
+    if min_base_asset_reserve < base_asset_reserve:
+        open_asks = (base_asset_reserve - min_base_asset_reserve) * -1
+
+        if step_size and abs(open_asks) // 2 < step_size:
+            open_asks = 0
+    else:
+        open_asks = 0
+
+    if max_base_asset_reserve > base_asset_reserve:
+        open_bids = max_base_asset_reserve - base_asset_reserve
+
+        if step_size and open_bids // 2 < step_size:
+            open_bids = 0
+    else:
+        open_bids = 0
+
+    return open_bids, open_asks
+
+def calculate_inventory_liquidity_ratio(base_asset_amount_with_amm, base_asset_reserve, min_base_asset_reserve, max_base_asset_reserve):
+    # inventory skew
+    open_bids, open_asks = calculate_market_open_bid_ask(base_asset_reserve, min_base_asset_reserve, max_base_asset_reserve)
+
+    min_side_liquidity = min(abs(open_bids), abs(open_asks))
+
+    inventory_scale_bn = min(
+        base_asset_amount_with_amm * PERCENTAGE_PRECISION // max(min_side_liquidity, 1),
+        PERCENTAGE_PRECISION
+    )
+    return inventory_scale_bn
+
+
+def clamp(value, min_value, max_value):
+        return max(min(value, max_value), min_value)
+
+
+
 def calculate_reservation_price_offset(
+    reserve_price,
     last_24h_avg_funding_rate,
-    base_inventory,
-    min_order_size,
-    oracle_twap,
-    mark_twap
+    liquidity_fraction,
+    oracle_twap_fast,
+    mark_twap_fast,
+    oracle_twap_slow,
+    mark_twap_slow,
+    max_offset_pct
 ):
     offset = 0
-    max_offset = (1e6 / 400) 
-    base_inventory_threshold = min_order_size * 5
+    # max_offset_pct = (1e6 / 400) 
+    # base_inventory_threshold = min_order_size * 5
     # calculate quote denominated market premium
-    mark_premium_fast = mark_twap - oracle_twap
+
+    max_offset_in_price = int(max_offset_pct * reserve_price / PERCENTAGE_PRECISION)
+
+    # Calculate quote denominated market premium
+    mark_premium_minute = clamp(mark_twap_fast - oracle_twap_fast, -max_offset_in_price, max_offset_in_price)
+    mark_premium_hour = clamp(mark_twap_slow - oracle_twap_slow, -max_offset_in_price, max_offset_in_price)
 
     # convert last_24h_avg_funding_rate to quote denominated premium
-    mark_premium_slow = last_24h_avg_funding_rate / FUNDING_RATE_BUFFER * 24
+    mark_premium_day = clamp(last_24h_avg_funding_rate / FUNDING_RATE_BUFFER * 24, -max_offset_in_price, max_offset_in_price)
 
-    # only apply when inventory is consistent with recent and 24h market premium
-    if mark_premium_fast > 0 and mark_premium_slow > 0 and base_inventory > base_inventory_threshold:
-        offset = min(mark_premium_fast, mark_premium_slow)
+    mark_premium_avg = (mark_premium_day + mark_premium_hour + mark_premium_minute ) / 3
     
-    if mark_premium_fast < 0 and mark_premium_slow < 0 and base_inventory < -base_inventory_threshold:
-        offset = max(mark_premium_fast,mark_premium_slow)
 
-    # let clamped_offset = offset.clamp(-max_offset, max_offset);
-    return offset
-    # validate!(
-    #     clamped_offset.abs() < max_offset,
-    #     ErrorCode::InvalidAmmDetected
-    # );
+    mark_offset = mark_premium_avg * PRICE_PRECISION / reserve_price
+    inv_offset = liquidity_fraction * max_offset_pct / PERCENTAGE_PRECISION
+    offset = mark_offset + inv_offset
 
-    # Ok(clamped_offset.cast()?)
+    if np.sign(inv_offset) != np.sign(mark_offset):
+        offset = 0
+
+    clamped_offset = clamp(offset, -max_offset_in_price, max_offset_in_price)
+
+    return clamped_offset
 
 
 async def vamm(ch: DriftClient):
-    tabs = st.tabs(['overview', 'per market', 'spread calculator'])
-
+    tabs = st.tabs(['overview', 'vamm fills', 'risks', 'per market', 'spread calculator'])
+    await ch.account_subscriber.update_cache()
     with tabs[0]:
-        num_m = (await get_state_account(ch.program)).number_of_markets
+        curve_override = st.number_input('curve_override', -1, 200, -1)
+        num_m = ch.get_state_account().number_of_markets
         res = []
+        profit_res = []
         for i in range(num_m):
-            market: PerpMarket = await get_perp_market_account(ch.program, i)
+            market: PerpMarketAccount = ch.get_perp_market_account(i)
             spread = (market.amm.long_spread + market.amm.short_spread)/1e6 * 100
             op = market.amm.historical_oracle_data.last_oracle_price/1e6
             bids = (market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9 * op
             asks = (market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9 * op
             amm_owned = (1 - market.amm.user_lp_shares / market.amm.sqrt_k) * 100
-
-            offset = calculate_reservation_price_offset(market.amm.last24h_avg_funding_rate, 
-                                                        market.amm.base_asset_amount_with_amm,
-                                                        market.amm.min_order_size,
+            
+            if curve_override < 0:
+                curve_i = market.amm.curve_update_intensity
+            else:
+                curve_i = curve_override
+            max_offset_pct = max(market.amm.max_spread / 5, PERCENTAGE_PRECISION / 10000 * (curve_i-100))
+            if curve_i <= 100:
+                max_offset_pct = 0
+            liquidity_fraction = calculate_inventory_liquidity_ratio(market.amm.base_asset_amount_with_amm,
+                                                                     market.amm.base_asset_reserve,
+                                                                     market.amm.min_base_asset_reserve,
+                                                                    market.amm.max_base_asset_reserve,
+                                                                     )
+            reserve_price = market.amm.quote_asset_reserve/market.amm.base_asset_reserve * market.amm.peg_multiplier
+            offset = calculate_reservation_price_offset(reserve_price,
+                                                        market.amm.last24h_avg_funding_rate, 
+                                                        liquidity_fraction *np.sign(market.amm.base_asset_amount_with_amm+market.amm.base_asset_amount_with_unsettled_lp),
                                                         market.amm.historical_oracle_data.last_oracle_price_twap5min,
                                                         market.amm.last_mark_price_twap5min,
+                                                        market.amm.historical_oracle_data.last_oracle_price_twap,
+                                                        market.amm.last_mark_price_twap,
+                                                        max_offset_pct
                                                         )
-            offset /= op
+            # offset /= op
             offset *= 100
-            res.append((bytes(market.name).decode('utf-8'), offset/1e6, spread, 
+
+            oi = max(market.amm.base_asset_amount_long, -market.amm.base_asset_amount_short)
+            max_oi = market.amm.max_open_interest
+            res.append((bytes(market.name).decode('utf-8'), 
+                        market.contract_tier,
+                        offset/1e6, spread, 
                         market.amm.base_spread/1e6 * 100, 
                         market.amm.max_spread/1e6 * 100, 
-                         bids, asks, amm_owned))
+                         bids, asks, amm_owned,
+                         oi/1e9,
+                         max_oi/1e9,
+                         oi/max_oi * 100,
+                         market.amm.curve_update_intensity
+                         ))
+            
+            profit_res.append({'market': bytes(market.name).decode('utf-8'), 
+                               'tier': market.contract_tier, 
+                                'ex_fee': market.amm.total_exchange_fee / QUOTE_PRECISION,
+                                'mm_fee': market.amm.total_mm_fee/ QUOTE_PRECISION,
+                                'tfmd': market.amm.total_fee_minus_distributions/ QUOTE_PRECISION,
+                               'liq_fee': market.amm.total_liquidation_fee/ QUOTE_PRECISION,
+                               'withdrawn_fee': market.amm.total_fee_withdrawn/ QUOTE_PRECISION,
+                               'revenue_per_period': market.insurance_claim.revenue_withdraw_since_last_settle/QUOTE_PRECISION,
+                               'max_revenue_withdraw_per_period': market.insurance_claim.max_revenue_withdraw_per_period/QUOTE_PRECISION,
+                               'quote_settled_insurance': market.insurance_claim.quote_settled_insurance/QUOTE_PRECISION,
+                               'quote_max_insurance': market.insurance_claim.quote_max_insurance/QUOTE_PRECISION,
+            })
         
-        df = pd.DataFrame(res, 
-                              columns=['market', 'offset (%)', 'spread (%)', 'base spread (%)', 'max spread (%)', 'bids ($)', 'asks ($)', 'amm owned (%)']
+        df = pd.DataFrame(res,  
+                              columns=['market', 'tier', 'offset (%)', 'spread (%)', 'base spread (%)', 'max spread (%)',
+                                        'bids ($)', 'asks ($)', 'amm owned (%)',
+                                        'OI',
+                                        'Max OI',
+                                        'OI %',
+                                        'curve intensity'
+                                        ]
                               )
         st.write(df)
 
-
+        df = pd.DataFrame(profit_res)
+        st.write(df)  
 
     with tabs[1]:
+        res = []
+        for i in range(num_m):
+            market: PerpMarketAccount = ch.get_perp_market_account(i)
+            op = market.amm.historical_oracle_data.last_oracle_price/1e6
+            bids = (market.amm.max_base_asset_reserve-market.amm.base_asset_reserve) / 1e9
+            asks = (market.amm.base_asset_reserve-market.amm.min_base_asset_reserve) / 1e9 
+            res.append((bytes(market.name).decode('utf-8'), 
+                        market.amm.max_fill_reserve_fraction,
+                        bids / 2,
+                        asks / 2,
+                        market.amm.base_asset_reserve / market.amm.max_fill_reserve_fraction / 1e9,
+                        market.amm.base_asset_reserve / market.amm.max_fill_reserve_fraction / 1e9 * op,
+            ))
+
+
+        df = pd.DataFrame(res,  
+                              columns=['market', 'market.amm.max_fill_reserve_fraction', 
+                                       'max_sell', 'max_buy',
+                                       'max_base_fill', 
+                                       'max_base_fill ($)',
+                                        ]
+                              )
+        st.write(df)
+    with tabs[2]:
+        st.write('risk is important')
+        ff = st.text_input('file source:', '')#'driftv2_user_snap1.csv.gz')
+        try:
+            res = pd.read_csv(ff)
+            st.plotly_chart(res['leverage'].plot(kind='box'))
+        except:
+            st.warning('couldnt load file source')
+
+    with tabs[3]:
         # Create sliders for each variable
-        mi1 = st.selectbox('perp market index:', [0,1,2])
-        market: PerpMarket = await get_perp_market_account(ch.program, mi1)
+        num_m = ch.get_state_account().number_of_markets
+        mi1 = st.selectbox('perp market index:', range(num_m))
+        market: PerpMarketAccount = ch.get_perp_market_account(mi1)
         nom = bytes(market.name).decode('utf-8')
         market_index = market.market_index
         st.write(nom)
@@ -395,7 +523,7 @@ async def vamm(ch: DriftClient):
         price = (ask_price * (1+px_impact/100)) if dir=='buy' else (bid_price * (1-px_impact/100))
         t2.text(f'vAMM stats: \n px={price} \n px_impact={px_impact}%')
 
-    with tabs[2]:
+    with tabs[4]:
         c1,c2,c3 = st.columns(3)
         base_spread = c1.slider("Base Spread", min_value=0.0, max_value=1.0/100, value=market.amm.base_spread/1e6)
         max_spread = c2.slider("Max Spread", min_value=0.0, max_value=1.0, value=market.amm.max_spread /1e6)
@@ -438,7 +566,7 @@ async def vamm(ch: DriftClient):
         volume_24h = s4.slider("Volume 24h", value=market.amm.volume24h/1e6) 
 
         # Call the calculate_spread function with the slider values
-        result = calculate_spread(
+        result = calculate_spread_local(
             base_spread * 1e6,
             last_oracle_reserve_price_spread_pct  * 1e6,
             last_oracle_conf_pct * 1e6,
@@ -462,3 +590,8 @@ async def vamm(ch: DriftClient):
 
         # Display the result
         st.write("Result:", result)
+
+        op = ch.get_oracle_price_data_for_perp_market(0)
+        result2 = calculate_spread(market.amm, oracle_price_data=op)
+        st.write("Result2:", result2)
+

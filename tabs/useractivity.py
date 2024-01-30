@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np 
 from driftpy.accounts.oracle import *
 import datetime
+from anchorpy.provider import Signature
 
 pd.options.plotting.backend = "plotly"
 
@@ -44,8 +45,8 @@ async def show_user_activity(clearing_house: DriftClient):
     connection = AsyncClient(rpc_override)
 
     addy = addycol.text_input('userAccount:', value='CJfc9nPHgrZohPWEsBnvYJeTs3LxBA5j8ZoZuZPugSQb')
-    limit = limcol.number_input('limit:', 0, 1000, 0)
-    MAX_LIMIT = mlimcol.number_input('max limit:', 1, None, value=1000 * 20)
+    limit = limcol.number_input('limit:', 1, 1000, 1000)
+    MAX_LIMIT = mlimcol.number_input('max limit:', 1, None, value=5000)
     before_sig = pagecol.text_input('before sig:', value="")
     before_sig1 = None
     if before_sig != '':
@@ -53,9 +54,11 @@ async def show_user_activity(clearing_house: DriftClient):
     
     tabs = st.tabs(['heatmap', 'dataframe', 'transaction details'])
 
-    res2 = await transaction_history_for_account(connection, addy, before_sig1, limit, MAX_LIMIT)
+    res2 = await transaction_history_for_account(connection, Pubkey.from_string(addy), before_sig1, limit, MAX_LIMIT)
     t = pd.DataFrame(res2)
-    # st.write(t)
+    if 'blockTime' not in t.columns:
+        st.write(t)
+        return 0
 
     t['date'] = pd.to_datetime(t['blockTime']*1e9)
     t['day'] = t['date'].apply(lambda x: x.date())
@@ -81,7 +84,7 @@ async def show_user_activity(clearing_house: DriftClient):
             ff = 'transactions/'+sig+'.json'
 
             if not os.path.exists(ff) or not ra:
-                transaction_got = await connection.get_transaction(sig)
+                transaction_got = await connection.get_transaction(Signature.from_string(sig))
 
                 if ra:
                     os.makedirs('transactions', exist_ok=True)
@@ -105,10 +108,11 @@ async def show_user_activity(clearing_house: DriftClient):
             def call_b(evt): 
                 logs[sig] = logs.get(sig, []) + [evt]
             # likely rate limited
-            if 'result' not in tx: 
-                st.write(tx['error'])
+            tx1 = json.loads(tx.to_json())
+            if 'result' not in tx1:
+                st.write(tx1['error'])
                 break 
-            parser.parse_logs(tx['result']['meta']['logMessages'], call_b)
+            parser.parse_logs(tx1['result']['meta']['logMessages'], call_b)
         st.write(logs)
         # st.write(transaction_got['result']['meta']['logMessages'])
 

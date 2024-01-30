@@ -6,6 +6,7 @@ import numpy as np
 import plotly.express as px
 
 pd.options.plotting.backend = "plotly"
+from driftpy.accounts import DataAndSlot
 
 # from driftpy.constants.config import configs
 from anchorpy import Provider, Wallet
@@ -13,7 +14,7 @@ from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from driftpy.drift_client import DriftClient
 from driftpy.drift_user import DriftUser as DriftUser
-from driftpy.math.positions import calculate_position_funding_pnl
+from driftpy.math.perp_position import calculate_position_funding_pnl
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
 import os
@@ -25,6 +26,8 @@ from dataclasses import dataclass
 from solders.pubkey import Pubkey
 from helpers import serialize_perp_market_2, serialize_spot_market
 from anchorpy import EventParser
+from driftpy.addresses import get_user_account_public_key
+
 import asyncio
 import matplotlib.pyplot as plt 
 from driftpy.drift_user import get_token_amount
@@ -32,8 +35,11 @@ from driftpy.math.margin import MarginCategory
 from driftpy.types import SpotBalanceType
 import plotly.express as px
 from solana.rpc.types import MemcmpOpts
-
+from datafetch.transaction_fetch import load_token_balance
 MARGIN_PRECISION = 1e4
+PERCENTAGE_PRECISION = 10**6
+
+from driftpy.drift_client import AccountSubscriptionConfig
 
 async def show_pid_positions(clearing_house: DriftClient):
     ch = clearing_house
@@ -45,7 +51,7 @@ async def show_pid_positions(clearing_house: DriftClient):
     
     col1, col2, col3, col4 = st.columns(4)
 
-    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', 'SuperStakeSOL', 'SuperStakeJitoSOL', None], 4)
+    see_user_breakdown = col1.radio('see users breakdown:', ['All', 'Active', 'OpenOrder', 'SuperStakeSOL', 'SuperStakeJitoSOL', None], 5)
 
     all_users = None
 
@@ -55,6 +61,8 @@ async def show_pid_positions(clearing_house: DriftClient):
                 all_users = await ch.program.account['User'].all()
             elif see_user_breakdown == 'Active':
                 all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=4350, bytes='1')])
+            elif see_user_breakdown == 'OpenOrder':
+                all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=4352, bytes='2')])          
             elif see_user_breakdown == 'SuperStakeSOL':
                 all_users = await ch.program.account['User'].all(filters=[MemcmpOpts(offset=72, bytes='3LRfP5UkK8aDLdDMsJS3D')])
             elif see_user_breakdown == 'SuperStakeJitoSOL':
@@ -81,30 +89,44 @@ async def show_pid_positions(clearing_house: DriftClient):
 
     if all_users is not None:
         fuser: DriftUser = all_users[0].account
+        user_account_pk = get_user_account_public_key(
+                    clearing_house.program_id,
+                    fuser.authority,
+                    fuser.sub_account_id)
         chu = DriftUser(
             ch, 
-            authority=fuser.authority, 
-            sub_account_id=fuser.sub_account_id, 
+            user_account_pk
             # use_cache=True
         )
-        await chu.set_cache()
-        cache = chu.CACHE
-
+        await chu.drift_client.account_subscriber.update_cache()
+        cache = chu.drift_client.account_subscriber.cache
         for x in all_users:
             key = str(x.public_key)
             account: DriftUser = x.account
 
-            chu = DriftUser(ch, authority=account.authority, sub_account_id=account.sub_account_id, 
+            user_account_pk = get_user_account_public_key(
+                    clearing_house.program_id,
+                    account.authority,
+                    account.sub_account_id)
+
+            chu = DriftUser(ch, user_account_pk,
+                            account_subscription=AccountSubscriptionConfig("cached"))
                             # use_cache=True
-                            )
-            cache['user'] = account # update cache to look at the correct user account
-            await chu.set_cache(cache)
+                            
+            chu.account_subscriber.user_and_slot = DataAndSlot(0, account)
+            chu.drift_client.account_subscriber.cache = cache
+
+            # chu = DriftUser(ch, authority=account.authority, sub_account_id=account.sub_account_id, 
+            #                 # use_cache=True
+            #                 )
+            # cache['user'] = account # update cache to look at the correct user account
+            # await chu.set_cache(cache)
             margin_category = MarginCategory.INITIAL
-            total_liability = await chu.get_margin_requirement(margin_category, None)
-            spot_value = await chu.get_spot_market_asset_value(None, False, None)
-            upnl = await chu.get_unrealized_pnl(False, None, None)
-            total_asset_value = await chu.get_total_collateral(None)
-            leverage = await chu.get_leverage()
+            total_liability = chu.get_margin_requirement(margin_category, None)
+            spot_value = chu.get_spot_market_asset_value(None, False, None)
+            upnl = chu.get_unrealized_pnl(False, None, None)
+            total_asset_value = chu.get_total_collateral(None)
+            leverage = chu.get_leverage()
 
             total_position_size = 0
             pos: PerpPosition
@@ -134,13 +156,13 @@ async def show_pid_positions(clearing_house: DriftClient):
                 dd['total_asset_value'] = total_asset_value / QUOTE_PRECISION
                 dd['leverage'] = leverage / MARGIN_PRECISION
                 if pos.base_asset_amount != 0:
-                    perp_market = await chu.get_perp_market(pos.market_index)
-                    # try:
-                    oracle_price = (await chu.get_perp_oracle_data(perp_market)).price / PRICE_PRECISION
-                    # except:
-                    #     oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
-                    liq_price = await chu.get_perp_liq_price(pos.market_index)
-                    upnl = await chu.get_unrealized_pnl(False, pos.market_index)
+                    perp_market = chu.get_perp_market_account(pos.market_index)
+                    try:
+                        oracle_price = (chu.get_oracle_data_for_perp_market(perp_market)).price / PRICE_PRECISION
+                    except:
+                        oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
+                    liq_price = chu.get_perp_liq_price(pos.market_index)
+                    upnl = chu.get_unrealized_pnl(False, pos.market_index)
                     upnl_funding = calculate_position_funding_pnl(perp_market, pos)
 
                     if liq_price is None: 
@@ -175,12 +197,12 @@ async def show_pid_positions(clearing_house: DriftClient):
                 dd['leverage'] = leverage / MARGIN_PRECISION
 
                 if pos.scaled_balance != 0:
-                    spot_market = await chu.get_spot_market(pos.market_index)
+                    spot_market = ch.get_spot_market_account(pos.market_index)
                     try:
-                        oracle_price = (await chu.get_spot_oracle_data(spot_market)).price / PRICE_PRECISION
+                        oracle_price = (chu.get_oracle_data_for_spot_market(spot_market)).price / PRICE_PRECISION
                     except:
                         oracle_price = spot_market.historical_oracle_data.last_oracle_price / PRICE_PRECISION
-                    liq_price = await chu.get_spot_liq_price(pos.market_index)
+                    liq_price = chu.get_spot_liq_price(pos.market_index)
                     if liq_price is None: 
                         liq_delta = None
                     else:
@@ -228,14 +250,57 @@ async def show_pid_positions(clearing_house: DriftClient):
     else:
         num_markets = state.number_of_spot_markets
 
-    tabs = st.tabs([str(x) for x in range(num_markets)])
+    tabs = st.tabs(['overview'] + [str(x) for x in range(num_markets)])
     usdc_market = ch.get_spot_market_account(0)
 
-    for market_index, tab in enumerate(tabs):
+    with tabs[0]:
+        dd1 = {}
+        dd2 = {}
+        for market_index in range(state.number_of_markets):
+            perp_i = ch.get_perp_market_account(market_index)
+            market_name = ''.join(map(chr, perp_i.name)).strip(" ")
+            
+            otwap = perp_i.amm.historical_oracle_data.last_oracle_price_twap
+            market_price_spread = (perp_i.amm.last_mark_price_twap - otwap)
+            funding_offset = otwap / 5000 # ~ 7% annual premium
+            pred_fund = ((market_price_spread + funding_offset)/otwap) / (3600.0/perp_i.amm.funding_period * 24)
+            
+            fundings = [x* 100 * 365.25 * 24 for x in (pred_fund,
+                        perp_i.amm.last_funding_rate / otwap / FUNDING_RATE_BUFFER,
+                        perp_i.amm.last24h_avg_funding_rate / otwap / FUNDING_RATE_BUFFER,
+                        )]
+
+            dd1[market_name] = fundings
+        for market_index in range(state.number_of_spot_markets):
+            market = ch.get_spot_market_account(market_index)
+            market_name = ''.join(map(chr, market.name)).strip(" ")
+            deposits = market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
+            borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
+            utilization =  borrows/(deposits+1e-12) * 100
+            opt_util = market.optimal_utilization/PERCENTAGE_PRECISION * 100
+            opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION
+            max_borrow = market.max_borrow_rate/PERCENTAGE_PRECISION
+
+            bor_ir_curve = [
+                opt_borrow* (100/opt_util)*x/100 
+                if x <= opt_util
+                else ((max_borrow-opt_borrow) * (100/(100-opt_util)))*(x-opt_util)/100 + opt_borrow
+                for x in [utilization]
+            ]
+
+            dep_ir_curve = [ir*utilization*(1-market.insurance_fund.total_factor/1e6)/100 for idx,ir in enumerate(bor_ir_curve)]
+            
+            dd2[market_name] = (dep_ir_curve[0]*100, bor_ir_curve[0]*100, utilization)
+        s1, s2 = st.columns(2)
+        s1.write(pd.DataFrame(dd1, index=['predicted funding rate', 'last funding rate', '24h avg funding rate']).T)
+        s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate', 'utilization']).T)
+
+
+    for market_index, tab in enumerate(tabs[1:]):
         market_index = int(market_index)
         with tab:
             if markettype == 'Perp':
-                market = await get_perp_market_account(ch.program, market_index)
+                market = ch.get_perp_market_account(market_index)
                 market_name = ''.join(map(chr, market.name)).strip(" ")
 
                 with st.expander(markettype+" market market_index="+str(market_index)+' '+market_name):
@@ -371,9 +436,9 @@ async def show_pid_positions(clearing_house: DriftClient):
                 # visualize perp liquidations 
                 perp_liq_prices_m = perp_liq_prices.get(market_index, None)
                 if perp_liq_prices_m is not None and len(perp_liq_prices_m) > 0:
-                    perp_market = await chu.get_perp_market(market_index)
+                    perp_market = chu.get_perp_market_account(market_index)
                     try:
-                        oracle_price = (await chu.get_perp_oracle_data(perp_market)).price/PRICE_PRECISION
+                        oracle_price = (chu.get_perp_oracle_data(perp_market)).price/PRICE_PRECISION
                     except:
                         oracle_price = perp_market.amm.historical_oracle_data.last_oracle_price / PRICE_PRECISION
 
@@ -427,7 +492,7 @@ async def show_pid_positions(clearing_house: DriftClient):
                     st.write("no liquidations found...")
 
             else:
-                market = await get_spot_market_account(ch.program, market_index)
+                market = ch.get_spot_market_account(market_index)
                 market_name = ''.join(map(chr, market.name)).strip(" ")
 
                 with st.expander(markettype+" market market_index="+str(market_index)+' '+market_name):
@@ -437,16 +502,15 @@ async def show_pid_positions(clearing_house: DriftClient):
                 conn = ch.program.provider.connection
                 ivault_pk = market.insurance_fund.vault
                 svault_pk = market.vault
-                iv_amount = int((await conn.get_token_account_balance(ivault_pk))['result']['value']['amount'])
-                sv_amount = int((await conn.get_token_account_balance(svault_pk))['result']['value']['amount'])
+                iv_amount = await load_token_balance(conn, ivault_pk)
+                sv_amount = await load_token_balance(conn, svault_pk)
 
                 token_scale = (10**market.decimals)
-                if market_index == 0:
+                if market_index % 2 == 0:
                     col3.metric(f'{market_name} vault balance', str(sv_amount/token_scale) , str(iv_amount/token_scale)+' (insurance)')
                 else:
                     col4.metric(f'{market_name} vault balance', str(sv_amount/token_scale) , str(iv_amount/token_scale)+' (insurance)')
                 
-                PERCENTAGE_PRECISION = 10**6
                 df1 = None
                 if all_users is not None:
                     df1 = spots[(spots.scaled_balance!=0) & (spots.market_index==market_index)
@@ -562,9 +626,9 @@ async def show_pid_positions(clearing_house: DriftClient):
                 st.write('## Liquidation Prices')
                 spot_liq_prices_m = spot_liq_prices.get(market_index, None)
                 if spot_liq_prices_m is not None and len(spot_liq_prices_m) > 0 and market_index != 0: # usdc (assumed to always be 1) doesnt really make sense
-                    spot_market = await chu.get_spot_market(market_index)
+                    spot_market = chu.get_spot_market_account(market_index)
                     try:
-                        oracle_price = await chu.get_spot_oracle_data(spot_market).price/PRICE_PRECISION
+                        oracle_price = chu.get_spot_oracle_data(spot_market).price/PRICE_PRECISION
                     except:
                         oracle_price = spot_market.historical_oracle_data.last_oracle_price / PRICE_PRECISION
                         

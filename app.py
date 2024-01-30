@@ -45,13 +45,18 @@ from tabs.useractivity import show_user_activity
 from tabs.superstake import super_stake
 from tabs.vamm import vamm
 from tabs.funding_history import funding_history
-
+from tabs.mm_program import mm_program_page
 # from network import show_network
 from tabs.api import show_api
 from tabs.userdataraw import userdataraw
 from tabs.vaults import vaults
 from tabs.competition import competitions
 from tabs.openbookv2 import tab_openbookv2
+from tabs.usermap import usermap_page
+try:
+    from tabs.backtester import backtester_page
+except:
+    pass
 
 def main():
     current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
@@ -92,7 +97,10 @@ def main():
      'UserDataRaw',
      'Vaults',
      'DriftDraw',
-     'Openbookv2'
+     'Openbookv2',
+     'UserMap',
+     'Backtester',
+     'MM (legacy)',
     #   'Social', 'PlatyPerps'
      )
     query_index = 0
@@ -226,8 +234,10 @@ def main():
 
     elif tab.lower() == 'mm':
         loop = asyncio.new_event_loop()
+        loop.run_until_complete(mm_program_page(clearing_house, env))
+    elif tab.lower() == 'mm (legacy)':
+        loop = asyncio.new_event_loop()
         loop.run_until_complete(mm_page(clearing_house))
-
     elif tab.lower() == 'trade flow':
         trade_flow_analysis()
 
@@ -273,7 +283,15 @@ def main():
         loop.run_until_complete(competitions(clearing_house, env))   
     elif tab.lower() == 'openbookv2':
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(tab_openbookv2(clearing_house, env))              
+        loop.run_until_complete(tab_openbookv2(clearing_house, env))      
+    elif tab.lower() == 'usermap':
+        # loop = asyncio.new_event_loop()
+        usermap_page(clearing_house, env)  
+    elif tab.lower() == 'backtester':
+        try:
+            backtester_page(clearing_house, env)         
+        except:
+            pass
     hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}

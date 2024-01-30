@@ -13,7 +13,7 @@ pd.options.plotting.backend = "plotly"
 from anchorpy import Provider, Wallet
 from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from driftpy.drift_client import DriftClient
+from driftpy.drift_client import DriftClient, AccountSubscriptionConfig
 from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
@@ -307,14 +307,15 @@ async def show_user_perf(clearing_house: DriftClient):
                 if sub_id==int(sub):
                     chu = DriftUser(
                         ch, 
-                        authority=user_authority_pk, 
-                        sub_account_id=sub_id, 
+                        user_public_key=user_account_pk, 
                         # use_cache=True
-                    )
+                        account_subscription=AccountSubscriptionConfig("cached"))
+                    
                     await chu.drift_client.account_subscriber.update_cache()
+                    await chu.account_subscriber.update_cache()
 
                     
-                    user_acct = await chu.get_user()
+                    user_acct = chu.get_user_account()
                     nom = bytes(user_acct.name).decode('utf-8')
 
                     st.write('"'+nom+'"')
@@ -329,9 +330,9 @@ async def show_user_perf(clearing_house: DriftClient):
                         commit_hash = dd[0].text_input(label='commit', value='main')
 
 
-                        df, ff = load_user_snapshot(str(user_account_pk), commit_hash)
-                        dd[-1].write(ff)
-                        st.dataframe(df)
+                        # df, ff = load_user_snapshot(str(user_account_pk), commit_hash)
+                        # dd[-1].write(ff)
+                        # st.dataframe(df)
 
                     with tabs1[1]:
                         df = load_deposit_history(str(user_account_pk))
@@ -350,8 +351,8 @@ async def show_user_perf(clearing_house: DriftClient):
                         for i,c in enumerate(ccs):  
                             # atnd_token_ts_value += net_dep_amounts.iloc[i] * 
                             mi = net_dep_amounts.index[i]
-                            spot_market = await chu.get_spot_market(mi)
-                            current_price = (await chu.get_spot_oracle_data(spot_market)).price/1e6
+                            spot_market = chu.get_spot_market_account(mi)
+                            current_price = (chu.get_oracle_data_for_spot_market(mi)).price / PRICE_PRECISION
                             atnd_token_current_value += net_dep_amounts.iloc[i] * current_price
                             c.metric('net deposit tokens (market_index='+str(mi)+')', net_dep_amounts.iloc[i])
 
@@ -369,7 +370,7 @@ async def show_user_perf(clearing_house: DriftClient):
 
                         atsp =  atpp + atsf
                         s1,s2,s3,s4 = st.columns(4)
-                        tc =(await chu.get_total_collateral())/1e6
+                        tc =(chu.get_total_collateral())/1e6
                         s1.metric(
                             'Account Value:', 
                         f'${tc:,.3f}', 
@@ -410,7 +411,7 @@ async def show_user_perf(clearing_house: DriftClient):
                         # if abs(atsp - (atpp)) > 2e-6:
                         #     st.write('excess settled pnl?:', atsp - (atpp))
 
-                        excess_usdc_gains_since_inception = gains_since_inception[0] - atsp
+                        excess_usdc_gains_since_inception = gains_since_inception.get(0, 0) - atsp
 
                         st.write('excess usdc gains:', excess_usdc_gains_since_inception)
 

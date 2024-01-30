@@ -139,13 +139,16 @@ async def show_user_stats(clearing_house: DriftClient):
         st.plotly_chart(dd.plot(title='# user active over past 24hr = '+str(active_users_past_24hrs)))
     
     with tabs[1]:
+
+
         dfx = df.set_index('authority')
         df2 = dfx[dfx['filler_volume30d']==0]
         dd = df2[['last_filler_volume30d_ts', 'last_taker_volume30d_ts', 'last_maker_volume30d_ts']].min(axis=1)
         tt = (df2[['last_fill_seconds_ago']]/60).round(1)#.sort_values(by='filler_volume30d_calc', ascending=False)
-        res1 = pd.concat([dd, tt], axis=1)
+        totalfee = df2['total_fee_paid']
+        res1 = pd.concat([dd, tt, totalfee], axis=1)
         res1['status'] = 'trader'
-        res1.columns = ['min date', 'minutes_ago', 'status']
+        res1.columns = ['min date', 'minutes_ago', 'total_fee_paid', 'status']
 
 
         df2 = dfx[dfx['filler_volume30d']!=0]
@@ -159,6 +162,8 @@ async def show_user_stats(clearing_house: DriftClient):
         df2 = pd.concat([res1, res2])
 
         df2['min date'] = pd.to_datetime(df2['min date']*1e9)
+        df2 = df2[df2['minutes_ago'] <= 60*24]
+
         df2 = df2.sort_values('min date', ascending=False)
         unumbers = [len(df2) - (x) for x in range(len(df2))]
         df2['number'] = unumbers
@@ -223,8 +228,15 @@ async def show_user_stats(clearing_house: DriftClient):
         ss = setting1.radio('y scale:', ['log', 'linear'], horizontal=True)
         ss2 = setting2.radio('data:', ['by day', 'by hour'], horizontal=True)
         
-        dd = df2.set_index('min date')['minutes_ago'].pipe(np.sign)
+
+        field = ['total_fee_paid']
+        # field = ['minutes_ago']
+
+        dd = df2.set_index('min date')[field]
+        if field == ['minutes_ago']:
+            dd = dd.pipe(np.sign)
         dd.columns = ['new user creations']
+        dd = dd[dd.columns[0]]
 
         if ss2 == 'by day':
             dd2 = dd.resample('1D').sum()
