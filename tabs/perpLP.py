@@ -35,6 +35,8 @@ from driftpy.addresses import *
 import datetime
 import pytz
 
+from datafetch.s3_fetch import load_user_lp, load_volumes
+
 EPSILON = 1e-9
 
 async def perp_lp_page(ch: DriftClient, env):

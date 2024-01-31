@@ -30,7 +30,7 @@ import os
 import json
 import streamlit as st
 from driftpy.types import MarginRequirementType
-from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
+from driftpy.constants.spot_markets import mainnet_spot_market_configs, devnet_spot_market_configs, SpotMarketConfig
 from driftpy.constants.perp_markets import mainnet_perp_market_configs, devnet_perp_market_configs, PerpMarketConfig
 from driftpy.addresses import *
 from dataclasses import dataclass
@@ -107,19 +107,24 @@ async def load_lp_info_async(dates, market_names, with_urls=False):
             dfs.append(df)
             data_urls.append(data_url)
 
-    result_df = pd.concat(dfs)
+    if len(dfs):
+        result_df = pd.concat(dfs)
 
-    if with_urls:
-        return result_df, data_urls
+        if with_urls:
+            return result_df, data_urls
 
-    return result_df
+        return result_df
 
 async def fetch_volume_data(date, market_name):
     if market_name == 'JitoSOL':
         market_name = 'jitoSOL'
 
-    url = f"https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/{market_name}/trades/{date.year}/{date.month}/{date.day}"
-    
+    month_str = ('0'+str(date.month))[-2:]
+
+    # url = f"https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/{market_name}/trades/{date.year}/{date.month}/{date.day}"
+    prefix = 'https://drift-historical-data-v2.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH'
+    url = f"{prefix}/market/{market_name}/tradeRecords/{date.year}/{date.year}{month_str}{date.day}"
+    # st.write(url)
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         if response.status_code == 403:
@@ -150,10 +155,18 @@ async def load_volumes_async(dates, market_names, with_urls=False):
 
 
 async def fetch_liquidity_data(market_name):
-    market_index = [x.market_index for x in mainnet_perp_market_configs if market_name == x.symbol]
+    if market_name == 'JitoSOL':
+        market_name = 'jitoSOL'
+
+    if '-perp' in market_name.lower():
+        market_index = [x.market_index for x in mainnet_perp_market_configs if market_name == x.symbol]
+    else:
+        market_index = [x.market_index for x in mainnet_spot_market_configs if market_name == x.symbol]
+  
     if len(market_index) == 1:
         market_index = market_index[0]
     else:
+        st.warning('failed to find index for '+ market_name)
         return None, ''
     
     market_type = 'spot'
@@ -161,10 +174,10 @@ async def fetch_liquidity_data(market_name):
         market_type = 'perp'
 
     url = f"https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/aggregate-liq-score/{market_type}-{str(market_index)}.csv.gz"
-    
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         if response.status_code == 403:
+            st.warning('failed to get '+ market_name + ' '+ url)
             return None, ''
         response.raise_for_status()
         df = pd.read_csv(StringIO(response.text))
@@ -338,6 +351,9 @@ async def show_user_volume(clearing_house: DriftClient):
 
     subset_dedup = list(set(dfs.columns) - set(['recordKey']))
     dfs = dfs.drop_duplicates(subset=subset_dedup)
+    dfs['maker'] = dfs['maker'].fillna('vAMM')
+    dfs['taker'] = dfs['taker'].fillna('vAMM')
+
     selected = st.radio('', ["Volume", "Referrals"], index=0, horizontal=True)
 
     tabs = st.tabs(['overview', 'user breakdown', 'fill quality', 'score', 'snapshot inspect'])
@@ -683,30 +699,36 @@ async def show_user_volume(clearing_house: DriftClient):
 
 
         # Define lower bounds
-        perp_lower_bound = 0.5
-        other_lower_bound = 0.05
+        perp_lower_bound = 0.52
+        other_lower_bound = 0.052
         # Apply lower bounds based on marketType
         mask_perp = market_groupings.index.get_level_values('marketType').str.contains('perp')
         market_groupings.loc[mask_perp, 'ScorePercentage'] = market_groupings.loc[mask_perp, 'ScorePercentage'].clip(
             lower=perp_lower_bound
         )
-
         market_groupings.loc[~mask_perp, 'ScorePercentage'] = market_groupings.loc[
             ~mask_perp, 'ScorePercentage'].clip(lower=other_lower_bound)
+        attempts = 0
+        while (market_groupings['ScorePercentage'].sum() - 100) > 1e-2 and attempts < 15:
+            # st.write(attempts, market_groupings)
+            # Adjust the remaining values to ensure the total sums to 100
+            market_groupings.loc[mask_perp, 'ScorePercentage'] = market_groupings.loc[mask_perp, 'ScorePercentage'].clip(
+            lower=perp_lower_bound
+            )
+            market_groupings.loc[~mask_perp, 'ScorePercentage'] = market_groupings.loc[
+                ~mask_perp, 'ScorePercentage'].clip(lower=other_lower_bound)
+            
 
-        # Adjust the remaining values to ensure the total sums to 100
-        non_lb_markets = market_groupings['ScorePercentage'] == market_groupings['percentOfVolume']
-        extra_amounts = 1 - (100 - market_groupings[non_lb_markets]['ScorePercentage'] .sum())/100
+            market_groupings['ScorePercentage'] /= (market_groupings['ScorePercentage'].sum() * .01)
 
-        # Subtract the extra amounts from rows that weren't clipped with a lower bound
-        market_groupings.loc[non_lb_markets, 'ScorePercentage'] = market_groupings.loc[non_lb_markets, 'ScorePercentage'] * extra_amounts
-        # Display the result
-
-        # res = dfs2.groupby(['marketType', 'marketIndex', 'maker'])['volumeScore1']
+            attempts +=1
+            
         # Define constant value N
         with subtabs[1]:
             st.header('per market groupings')
             st.write(market_groupings)
+
+            st.write(market_groupings.ScorePercentage.sum())
 
  
 
@@ -718,7 +740,7 @@ async def show_user_volume(clearing_house: DriftClient):
 
         # Display the multiplied_score column in dfs2
         with subtabs[2]:
-            st.metric('total maker volume score distributed', dfs2['multiplied_score'].sum())
+            st.metric('total maker volume score distributed', dfs2['multiplied_score'].sum(), 'vs '+ str(N*.7))
             
             st.header('user scores')
             st.write(dfs2.groupby(['maker'])['multiplied_score'].sum().sort_values(ascending=False))
@@ -827,7 +849,7 @@ async def show_user_volume(clearing_house: DriftClient):
 
             # st.write(ldf3.head(1000))
 
-            st.write(f'ensure it all sums to target { N * 0.25 }')
+            st.write(f'ensure it all sums to target { N * 0.3 }', 'vs', f'{ldf3["multiplied_score"].sum()}')
             st.write(ldf3.groupby(['market_type', 'market_index']).sum())
 
 
@@ -890,6 +912,20 @@ async def show_user_volume(clearing_house: DriftClient):
                 st.metric('maker_score score distributed', f'{fin["maker_score"].sum()}')
                 st.write(fin)
 
+                @st.cache
+                def convert_df(df):
+                    # IMPORTANT: Cache the conversion to prevent computation on every rerun
+                    return df.to_csv().encode('utf-8')
+
+                csv = convert_df(fin)
+
+                st.download_button(
+                    label="Download data as CSV",
+                    data=csv,
+                    file_name='points_mock_'+datetime.datetime.now().strftime("%Y%m%d")+'.csv',
+                    mime='text/csv',
+                )
+
 
     with tabs[4]:
         vvv = st.text_input('source:',
@@ -901,3 +937,4 @@ async def show_user_volume(clearing_house: DriftClient):
             import requests
             r = requests.get(vvv).json()
             st.json(r)
+        # st.write(dfs)
