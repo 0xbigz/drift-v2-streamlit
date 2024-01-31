@@ -18,6 +18,7 @@ from driftpy.drift_client import DriftClient
 from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import *
+from driftpy.addresses import get_user_account_public_key
 import os
 import json
 import streamlit as st
@@ -511,8 +512,17 @@ async def mm_program_page(clearing_house: DriftClient, env):
         # st.write(total_agg_df)
 
     with tabs[1]:
+        o0, o1, o2, o3 = st.columns(4)
+        o0.write('look up your user account address using your authority + subaccount number')
+        authority_l = o1.text_input('wallet address')
+        sub_id_l = o2.number_input('subaccount id')
+        if len(authority_l) > 10:
+            o3.write(get_user_account_public_key(clearing_house.program_id,
+                        Pubkey.from_string(authority_l),
+                        int(sub_id_l)))
+        
         s1, s2 = st.columns(2)
-        user = s1.selectbox('individual maker', all_users, 0)
+        user = s1.selectbox('individual maker', all_users, 0, help='maker address is drift user account address (not wallet address). You can use the above to find your account address.')
         use_ts_est = s2.selectbox('index:', ['slot', 'est_utc_timestamp'], help='est utc uses "slot ref:" and "unix_timestamp_ref" to deduce timestamps')
         
         indiv_maker_df = total_agg_df[total_agg_df.user==user]

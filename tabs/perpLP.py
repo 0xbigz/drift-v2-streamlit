@@ -35,54 +35,9 @@ from driftpy.addresses import *
 import datetime
 import pytz
 
+from datafetch.s3_fetch import load_user_lp, load_volumes
+
 EPSILON = 1e-9
-
-def load_volumes(dates, market_name, with_urls=False, is_devnet=False):
-    url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
-    url = url_market_pp+".amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/"
-    url += "market/%s/trades/%s/%s/%s"
-    dfs = []
-    data_urls = []
-    for date in dates:
-        (year, month, day) = (date.strftime("%Y"), str(date.month), str(date.day))
-        data_url = url % (market_name, year, month, day)
-        data_urls.append(data_url)
-        try:
-            dfs.append(pd.read_csv(data_url))
-        except:
-            pass
-    dfs = pd.concat(dfs)
-
-    if with_urls:
-        return dfs, data_urls
-
-    return dfs
-
-
-def load_user_lp(dates, user_key, with_urls=False, is_devnet=False):
-    url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
-    url_og = url_market_pp+'.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/'
-    url = url_og + 'user/%s/lp-records/%s/%s'
-
-    dfs = []
-    data_urls = []
-    for date in dates:
-        (year, month, _) = (date.strftime("%Y"), str(date.month), str(date.day))
-        data_url = url % (user_key, year, month)
-        if data_url not in data_urls:
-            data_urls.append(data_url)
-            try:
-                dfs.append(pd.read_csv(data_url))
-            except:
-                pass
-    if len(dfs):
-        dfs = pd.concat(dfs)
-    else:
-        dfs = pd.DataFrame()
-    if with_urls:
-        return dfs, data_urls
-
-    return dfs
 
 async def perp_lp_page(ch: DriftClient, env):
     is_devnet = env == 'devnet'

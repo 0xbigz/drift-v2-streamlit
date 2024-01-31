@@ -37,7 +37,7 @@ from driftpy.addresses import *
 import time
 import plotly.express as px
 from datafetch.transaction_fetch import transaction_history_for_account, load_token_balance
-
+from datafetch.s3_fetch import load_if_s3_data
   
 async def insurance_fund_page(ch: DriftClient, env):
     is_devnet = env == 'devnet'
@@ -87,51 +87,7 @@ async def insurance_fund_page(ch: DriftClient, env):
     except:
         st.warning('cannot load spot data: '+s_url)
 
-    url_market_pp = 'https://drift-historical-data.s3.eu-west-1' if not is_devnet else 'https://drift-historical-data.s3.us-east-1'
-    url_market_prefix = url_market_pp+'.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
-    name_rot = {}
-    spot_asts = ['USDC', 'SOL', 'mSOL', 
-                 'wBTC', 'wETH',
-                   'USDT', 'jitoSOL']
-    
-    if dd == 'all time':
-        for name in spot_asts:
-            rots = []
-            for year in ['2022', str(current_year)]:
-                full_if_url = url_market_prefix+name+"/insurance-fund-records/"+str(year)+"/"#+str(current_month)
-                if year == '2022':
-                    mrange = ['11','12']
-                else:
-                    mrange = range(1, current_month+1)
-                for x in mrange:
-                    try:
-                        rot = pd.read_csv(full_if_url+str(x))
-                        rot = rot.set_index('ts')
-                        rot.index = pd.to_datetime((rot.index * 1e9).astype(int))
-                        rots.append(rot)
-                    except:
-                        pass
-                if len(rots):
-                    rot = pd.concat(rots)
-                    name_rot[name] = rot
-    else:
-        for name in spot_asts:
-            year = str(current_year)
-            full_if_url = url_market_prefix+name+"/insurance-fund-records/"+str(year)+"/"#+str(current_month)
-            rots = []
-            x = current_month
-            try:
-                rot = pd.read_csv(full_if_url+str(x))
-                rot = rot.set_index('ts')
-                rot.index = pd.to_datetime((rot.index * 1e9).astype(int))
-                rots.append(rot)
-            except:
-                pass
-            if len(rots):
-                rot = pd.concat(rots)
-                name_rot[name] = rot
-            else:
-                st.warning(name+ ': '+ full_if_url)
+    name_rot, spot_asts = load_if_s3_data()
     # st.dataframe(rot)
     # bankruptcies = rot[rot['amount']<0]
     # st.dataframe(bankruptcies)

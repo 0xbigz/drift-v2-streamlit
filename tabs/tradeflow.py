@@ -5,6 +5,7 @@ import streamlit as st
 import numpy as np
 import pytz
 from constants import ALL_MARKET_NAMES
+from datafetch.s3_fetch import load_s3_trades_data
 
 def dedupdf(all_markets, market_name, lookahead=60):
     df1 = all_markets[market_name].copy()    
@@ -40,39 +41,6 @@ def dedupdf(all_markets, market_name, lookahead=60):
 
     return df1
 
-def load_s3_data(markets, START=None, END=None):
-    tzInfo = pytz.timezone('UTC')
-    # markets = ['SOL', 'SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP']
-    url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
-
-    assert(START >= '2022-11-04')
-    if START is None:
-        START = (datetime.datetime.now(tzInfo)-datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    if END is None:
-        END = (datetime.datetime.now(tzInfo)+datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    dates = [x.strftime("%Y/%m/%d") for x in pd.date_range(
-                                                            # '2022-11-05', 
-                                                        START,
-                                                        END
-                                                        )
-            ]
-    all_markets = {}
-
-    for market in markets:
-        df1 = []
-        for date in dates:
-            date1 = date.replace('/0', '/')
-            try:
-                dd = pd.read_csv(url+market+'/trades/%s' % str(date1))
-                df1.append(dd)
-            except Exception as e:
-                st.warning(f'failed({str(e)}):  {market} {date} -> {date1}')
-                pass
-        all_markets[market] = pd.concat(df1)
-    return all_markets
-
-
-
 @st.cache_data
 def convert_df(df):
     # IMPORTANT: Cache the conversion to prevent computation on every rerun
@@ -92,7 +60,7 @@ def trade_flow_analysis():
     else:
         market_selected = markets
     date = col2.date_input('select date:', min_value=datetime.datetime(2022,11,4), max_value=(datetime.datetime.now(tzInfo)), help='UTC timezone')
-    markets_data = load_s3_data(market_selected, date.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
+    markets_data = load_s3_trades_data(market_selected, date.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
 
     if market is not None:
         csv = convert_df(markets_data[market])
