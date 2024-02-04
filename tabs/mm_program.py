@@ -362,9 +362,9 @@ async def mm_program_page(clearing_house: DriftClient, env):
     ts_for_latest_slot = None
 
     market_type = mol00.selectbox('market type', ['perp', 'spot'])
-    market_indexes = list(range(1,9))
+    market_indexes = list(range(1,12))
     if market_type == 'perp':
-        market_indexes = list(range(0,22))
+        market_indexes = list(range(0,25))
     market_index = mol1.selectbox(market_type+' market index', market_indexes)
     now = datetime.datetime.now()
     current_ts = time.mktime(now.timetuple())
