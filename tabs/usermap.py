@@ -40,6 +40,11 @@ from driftpy.addresses import *
 import time
 from driftpy.user_map.user_map import UserMap, UserMapConfig, PollingConfig
 import datetime
+
+
+NUMBER_OF_SPOT = 12
+NUMBER_OF_PERP = 25
+
 # @st.cache_resource
 async def load_user_map(_drift_client, user_map_settings):
     start_time = time.time()
@@ -76,6 +81,9 @@ def get_perp_liab_composition(x: DriftUser, margin_category, n):
     return net_p 
 
 async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.1, only_one_index=None, cov_matrix=None):
+    perp_n = NUMBER_OF_PERP
+    spot_n = NUMBER_OF_SPOT
+
     def do_dict(x: DriftUser, margin_category: MarginCategory, oracle_cache=None):
         if oracle_cache is not None:
             x.drift_client.account_subscriber.cache = oracle_cache
@@ -86,7 +94,7 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
         'leverage': x.get_leverage() / MARGIN_PRECISION, 
         'perp_liability': x.get_perp_market_liability(None, margin_category) / QUOTE_PRECISION,
         'spot_asset': x.get_spot_market_asset_value(None, margin_category) / QUOTE_PRECISION,
-        'spot_liability': x.get_spot_market_liability_value(None, margin_category) / QUOTE_PRECISION,
+        'spot_liability': x.get_spot_market_liability(None, margin_category) / QUOTE_PRECISION,
         'upnl': x.get_unrealized_pnl(True) / QUOTE_PRECISION,
         'funding_upnl': x.get_unrealized_funding_pnl() / QUOTE_PRECISION,
         'total_collateral': x.get_total_collateral(margin_category or MarginCategory.INITIAL) / QUOTE_PRECISION,
@@ -101,11 +109,10 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
         'has_open_order': user_account.has_open_order,
         'sub_account_id': user_account.sub_account_id,
         'next_liquidation_id': user_account.next_liquidation_id,
+        'unsettled_pnl_perp_x': x.get_unrealized_pnl(True, market_index=24) / QUOTE_PRECISION,
         }
         levs0['net_usd_value'] = levs0['spot_asset'] + levs0['upnl'] - levs0['spot_liability']
         return levs0
-    perp_n = 23
-    spot_n = 11
     user_map_result: UserMap = await load_user_map(_drift_client, user_map_settings)
     
     user_keys = list(user_map_result.user_map.keys())
@@ -242,7 +249,7 @@ def update_drift_cache(drift_client):
 def usermap_page(drift_client: DriftClient, env):
     s1, s11, s2, s3, s4 = st.columns(5)
     # await drift_client.account_subscriber.update_cache();
-    perp_market_inspect = s1.selectbox('perp market:', list(range(23)))
+    perp_market_inspect = s1.selectbox('perp market:', list(range(24)))
     user_map_settings = s11.radio('user map settings:', ['all', 'active', 'idle', 'whales'], index=1)
     mode = s2.radio('mode:', ['oracle_distort', 'margin_cat'])
     mr_var = None
@@ -327,6 +334,7 @@ def usermap_page(drift_client: DriftClient, env):
         bankrupts = df[df["net_usd_value"] < 0]
         s3.metric('bankruptcies:', f'${bankrupts["net_usd_value"].sum():,.2f}', f'{len(bankrupts)} unique accounts')
         s3.dataframe(bankrupts)
+        st.write(df['tokens'])
         recon_tokens = [df['tokens'].apply(lambda x: x[i]).sum()/(10 ** drift_client.get_spot_market_account(i).decimals)
                          for i in range(len(spot_vaults.keys()))]
         net_v2 = [df['net_v'].apply(lambda x: x[i]).sum()
@@ -391,7 +399,7 @@ def usermap_page(drift_client: DriftClient, env):
                                         df["spot_"+str(i)+'_all_perp'].sum() ,
                                         df["spot_"+str(i)+'_perp_'+str(perp_market_inspect)+'_long'].sum(),
                                         df["spot_"+str(i)+'_perp_'+str(perp_market_inspect)+'_short'].sum())
-                                        for i in range(10)},
+                                        for i in range(NUMBER_OF_SPOT)},
                                         
                     
                     index=['all_liabilities', 'all_spot', 'all_perp', 'perp_0_long', 'perp_0_short'])
@@ -426,7 +434,7 @@ def usermap_page(drift_client: DriftClient, env):
         lev_one_market = (df['net_p'].apply(lambda x: abs(x[perp_market_inspect]) if x[perp_market_inspect] != 0 else np.nan)/(df['spot_asset']-df['spot_liability']+df['upnl']))
         st.write(lev_one_market.describe())
     with tabs[3]:
-        spot_market_inspect = st.selectbox('spot market:', list(range(10)))
+        spot_market_inspect = st.selectbox('spot market:', list(range(NUMBER_OF_SPOT)))
         n = 0
         for num,val in enumerate(df.columns):
             if "spot_"+str(spot_market_inspect)+'_all' == val:
@@ -447,6 +455,13 @@ def usermap_page(drift_client: DriftClient, env):
     with tabs[5]:
         st.dataframe(res)
         st.dataframe(df)
+        df2download = df[['index', 'authority']].to_csv(escapechar='"').encode('utf-8')
+        st.download_button(
+            label="share browser statistics [bytes="+str(len(df))+"]",
+            data=df2download,
+            file_name='usermap_snapshot.csv',
+            mime='text/csv',
+        )
 
     with tabs[6]:
         df['ever_liquidated'] = (df['next_liquidation_id']>1)

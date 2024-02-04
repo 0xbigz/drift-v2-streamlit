@@ -120,14 +120,16 @@ async def fetch_volume_data(date, market_name):
         market_name = 'jitoSOL'
 
     month_str = ('0'+str(date.month))[-2:]
+    day_str = ('0'+str(date.day))[-2:]
 
     # url = f"https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/{market_name}/trades/{date.year}/{date.month}/{date.day}"
     prefix = 'https://drift-historical-data-v2.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH'
-    url = f"{prefix}/market/{market_name}/tradeRecords/{date.year}/{date.year}{month_str}{date.day}"
+    url = f"{prefix}/market/{market_name}/tradeRecords/{date.year}/{date.year}{month_str}{day_str}"
     # st.write(url)
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         if response.status_code == 403:
+            st.write(url)
             return None, ''
         response.raise_for_status()
         return pd.read_csv(StringIO(response.text)), url
@@ -145,13 +147,14 @@ async def load_volumes_async(dates, market_names, with_urls=False):
         if df is not None:
             dfs.append(df)
             data_urls.append(data_url)
+    if len(dfs):
+        result_df = pd.concat(dfs)
 
-    result_df = pd.concat(dfs)
+        if with_urls:
+            return result_df, data_urls
 
-    if with_urls:
-        return result_df, data_urls
-
-    return result_df
+        return result_df
+    return pd.DataFrame(), []
 
 
 async def fetch_liquidity_data(market_name):
@@ -349,10 +352,17 @@ async def show_user_volume(clearing_house: DriftClient):
     with dd.expander(f"data sources ({len(data_urls)})"):
         st.write(data_urls)
 
+    if len(dfs) == 0:
+        st.warning('historical data unavailable for this date. ' + str(data_urls))
+        return 0
+
     subset_dedup = list(set(dfs.columns) - set(['recordKey']))
     dfs = dfs.drop_duplicates(subset=subset_dedup)
-    dfs['maker'] = dfs['maker'].fillna('vAMM')
-    dfs['taker'] = dfs['taker'].fillna('vAMM')
+    try:
+        dfs['maker'] = dfs['maker'].fillna('vAMM')
+        dfs['taker'] = dfs['taker'].fillna('vAMM')
+    except:
+        pass
 
     selected = st.radio('', ["Volume", "Referrals"], index=0, horizontal=True)
 
@@ -668,21 +678,31 @@ async def show_user_volume(clearing_house: DriftClient):
         # total score per week is 0.00125
         s1, s2 = st.columns(2)
         N = s1.number_input('score given away each weekly period:', 
-                            1e6
+                            2e6
                             # 0.005/4 * 100
                             )
-        s1.write('50-50 taker/maker. maker: 70/30 pct split between volume/liquidity score')
+        s1.write('37.5-62.5 taker/maker. maker: 70/30 pct split between volume/liquidity score')
 
-        N /= 2 #half for maker
+        N_M = N * 0.625
+        N_T = N * 0.375
 
         dolpeval = s2.radio('do lp eval:', [True, False], index=1)
 
         subtabs = st.tabs(['overview', 'per market alloc', 'volume only', 'liquidity only'])
         dfs2 = dfs
 
+        def get_ticket_multiplier(row):
+            # st.write(row)
+            if row['marketIndex']==24 and row['marketType']=='perp':
+                return 2
+            if row['marketIndex']==11 and row['marketType']=='spot':
+                return 2
+            return 1
+
+
         dfs2['volumeScore1'] = dfs2['quoteAssetAmountFilled'] * \
             dfs2['actionExplanation'].apply(lambda x: {'orderFilledWithMatchJit': 10}.get(x, 1))
-        dfs2['ticketScore1'] = dfs2['takerFee']
+        dfs2['ticketScore1'] = dfs2['takerFee'] * dfs2.apply(get_ticket_multiplier, axis=1)        
         market_groupings = dfs.groupby(['marketType', 'marketIndex'])[['quoteAssetAmountFilled', 'volumeScore1']].sum()\
             .sort_values(by='quoteAssetAmountFilled', ascending=False)
 
@@ -696,6 +716,7 @@ async def show_user_volume(clearing_house: DriftClient):
         # Normalize to sum to 100 and update ScorePercentage
         total_percentage = market_groupings['percentOfVolume'].sum()
         market_groupings['ScorePercentage'] = market_groupings['ScorePercentage'] / total_percentage * 100
+
 
 
         # Define lower bounds
@@ -735,7 +756,7 @@ async def show_user_volume(clearing_house: DriftClient):
         # Multiply each row in dfs2 by the applicable ScorePercentage/100 * N * 0.7 * 1/volumeScore1
         dfs2['multiplied_score'] = dfs2.apply(lambda row: row['volumeScore1'] * \
                                               (market_groupings.loc[(row['marketType'], row['marketIndex']), 'ScorePercentage'] / 100) \
-                                                * N * 0.7
+                                                * N_M * 0.7
                                                 * (1 / market_groupings.loc[(row['marketType'], row['marketIndex']), 'volumeScore1']), axis=1)
 
         # Display the multiplied_score column in dfs2
@@ -755,7 +776,6 @@ async def show_user_volume(clearing_house: DriftClient):
                 lp_result = lp_dfs
                 lp_result['marketIndex'] = lp_result['name'].astype(int)
                 lp_agg_result = lp_dfs[['name', 'slot', 'sqrtK', 'lpShares']].astype(int).groupby(['name', 'slot']).agg({'sqrtK':'mean', 'lpShares':'sum'})
-                # lp_result.to_csv("~/tmp2.csv")
 
                 lp_agg_result['user own %'] = lp_agg_result['lpShares']/lp_agg_result['sqrtK'] * 100
 
@@ -786,11 +806,16 @@ async def show_user_volume(clearing_house: DriftClient):
                                         rrrr.sort_values('lp_snap_slot'), 
                                         by='marketIndex', left_on='slot', right_on='lp_snap_slot', direction='forward')
                 st.write(merged_df.shape)
-                st.write(merged_df)
+                st.write('too big to write')
+                # st.write(merged_df)
 
                 st.write(merged_df['multiplied_score'].sum(), rrrr['multiplied_score'].sum())
 
-                merged_df['dlp_multiplied_score'] = (merged_df['lpShares']/merged_df['sqrtK'])*merged_df['multiplied_score']
+                merged_df['dlp_frac'] = (merged_df['lpShares']/merged_df['sqrtK']).apply(lambda x: min(.4, x))
+                merged_df['dlp_multiplied_score'] = (merged_df['dlp_frac']*merged_df['multiplied_score'])
+
+                # st.write(merged_df[merged_df.user==merged_df.user.unique()[0]])#.pivot_table(index='', column='user')
+                #*merged_df['multiplied_score']
                 dlp_scored = merged_df.groupby(['user', 
                                                 # 'marketIndex', 
                                                 'marketType']).agg({'dlp_multiplied_score':'sum'})
@@ -836,7 +861,7 @@ async def show_user_volume(clearing_house: DriftClient):
                 t1 = row['score'] / total_score_by_market.loc[idx]
 
                 if idx in market_groupings.index:
-                    t2 = t1 * (market_groupings.loc[idx, 'ScorePercentage'] / 100) * N * 0.3 
+                    t2 = t1 * (market_groupings.loc[idx, 'ScorePercentage'] / 100) * N_M * 0.3 
                     return t2
                 else:
                     # not in market grouping
@@ -849,25 +874,13 @@ async def show_user_volume(clearing_house: DriftClient):
 
             # st.write(ldf3.head(1000))
 
-            st.write(f'ensure it all sums to target { N * 0.3 }', 'vs', f'{ldf3["multiplied_score"].sum()}')
+            st.write(f'ensure it all sums to target { N_M * 0.3 }', 'vs', f'{ldf3["multiplied_score"].sum()}')
             st.write(ldf3.groupby(['market_type', 'market_index']).sum())
 
 
         with subtabs[0]:
 
-            if not dolpeval:
-                liq_comp = ldf3.groupby('user')['multiplied_score'].sum()
-                liq_comp.index = [x if x !='vamm' else 'vAMM' for x in liq_comp.index ]
-                liq_comp.index.name = 'maker'
-
-                vol_comp = dfs2.groupby(['maker'])['multiplied_score'].sum().sort_values(ascending=False)
-                
-                fin = pd.concat([vol_comp, liq_comp]).reset_index().groupby('maker').sum()\
-                    .sort_values(by='multiplied_score', ascending=False)
-                st.metric('total score distributed', f'{fin["multiplied_score"].sum()}')
-                st.write(fin)
-            else:
-                #todo
+            if dolpeval:
                 liq_comp = ldf3.groupby('user')[['multiplied_score']].sum()
                 liq_comp.index = [x if x !='vamm' else 'vAMM' for x in liq_comp.index ]
                 liq_comp.index.name = 'user'
@@ -886,9 +899,9 @@ async def show_user_volume(clearing_house: DriftClient):
                 vol_comp.loc['vAMM', 'multiplied_score'] -= vol_comp_dlp['dlp_multiplied_score'].sum()
 
 
-                dfs2['ticketScore1'] = dfs2['ticketScore1'].clip(0, 10_000)
+                dfs2['ticketScore1'] = dfs2['ticketScore1'].clip(0, 200_000)
                 # st.write('N', N)
-                taker_score = (dfs2.groupby(['taker'])['ticketScore1'].sum() / dfs2['ticketScore1'].sum()) * N
+                taker_score = (dfs2.groupby(['taker'])['ticketScore1'].sum() / dfs2['ticketScore1'].sum()) * N_T
                 taker_score.index.name = 'user'
                 taker_score = pd.DataFrame(taker_score)
                 taker_score.columns = ['taker_score']
@@ -903,15 +916,25 @@ async def show_user_volume(clearing_house: DriftClient):
                 # st.write(fin)
                 fin = fin.reset_index().groupby('user').sum()
                 fin['maker_score'] = fin[['dlp_multiplied_score',
-                                            'multiplied_score', 
+                                          'multiplied_score', 
                                           'liq_multiplied_score',
                                           ]].sum(axis=1)
                 
                 
                 # fin = fin.groupby('user').fillna(0).sum()
                 st.metric('maker_score score distributed', f'{fin["maker_score"].sum()}')
-                st.write(fin)
+                
+                
+                fin = fin.reset_index()
+                fin['user'] = fin['user'].astype(str)
+                ums = pd.read_csv('https://gist.githubusercontent.com/0xbigz/be8c5205c41f51d1b131b41b114546ff/raw/c25811ee4f2c2999c72ff5f1e780e470fc4fb0e1/usermap_snapshot_20240201.csv')
+                st.write(ums[['index', 'authority']])
+                fin = fin.merge(ums[['index', 'authority']], left_on='user', right_on='index')
+                fin['total_score'] = fin['maker_score']+fin['taker_score']
 
+                st.write('total user score:', fin['total_score'].sum())
+                st.write(fin)
+                
                 @st.cache
                 def convert_df(df):
                     # IMPORTANT: Cache the conversion to prevent computation on every rerun
@@ -922,11 +945,13 @@ async def show_user_volume(clearing_house: DriftClient):
                 st.download_button(
                     label="Download data as CSV",
                     data=csv,
-                    file_name='points_mock_'+datetime.datetime.now().strftime("%Y%m%d")+'.csv',
+                    file_name='score_mock_'+datetime.datetime.now().strftime("%Y%m%d")+'.csv',
                     mime='text/csv',
                 )
 
-
+                st.write(fin.groupby('authority')['total_score'].sum().sort_values())
+            else:
+                st.write('must turn on do lp eval')
     with tabs[4]:
         vvv = st.text_input('source:',
 
