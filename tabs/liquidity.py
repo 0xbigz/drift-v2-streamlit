@@ -18,6 +18,7 @@ from driftpy.drift_client import DriftClient
 from driftpy.drift_user import DriftUser
 from driftpy.accounts import get_perp_market_account, get_spot_market_account, get_user_account, get_state_account
 from driftpy.constants.numeric_constants import * 
+from driftpy.addresses import get_user_account_public_key
 import os
 import json
 import streamlit as st
@@ -489,8 +490,17 @@ async def mm_page(clearing_house: DriftClient):
     with tabs[2]:
 
         st.title('individual mm lookup')
+
+        o0, o1, o2, o3 = st.columns(4)
+        o0.write('look up your user account address using your authority + subaccount number')
+        authority_l = o1.text_input('wallet address')
+        sub_id_l = o2.number_input('subaccount id')
+        o3.write(get_user_account_public_key(clearing_house.program_id,
+                    authority_l,
+                    sub_id_l))
+        
         s1, s2 = st.columns(2)
-        user = s1.selectbox('individual maker', all_users, 0)
+        user = s1.selectbox('individual maker', all_users, 0, help='maker address is drift user account address (not wallet address)')
         use_ts_est = s2.selectbox('index:', ['snap_slot', 'est_utc_timestamp'], help='est utc uses "slot ref:" and "unix_timestamp_ref" to deduce timestamps')
         bbo_user, bbo_user_stats = get_mm_stats(df, user, oracle, bbo2)
 

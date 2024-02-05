@@ -87,7 +87,7 @@ async def insurance_fund_page(ch: DriftClient, env):
     except:
         st.warning('cannot load spot data: '+s_url)
 
-    name_rot, spot_asts = load_if_s3_data()
+    name_rot, spot_asts = load_if_s3_data(current_year, current_month, dd, is_devnet)
     # st.dataframe(rot)
     # bankruptcies = rot[rot['amount']<0]
     # st.dataframe(bankruptcies)
@@ -207,20 +207,21 @@ async def insurance_fund_page(ch: DriftClient, env):
             tshow.columns = ['settled_insurance', 'max_insurance', 'liq_fees', 'withdrawn_fees']
             st.dataframe(tshow)
         
-        rot = name_rot[cur_spot]
-        apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365.25*24/2).sort_index()#.rolling(24).mean()
-        apr_fig = apr_df.plot(log_y=True)
-        apr_fig.update_layout( 
-                            title=cur_spot+' Revenue Emission',
-                            xaxis_title="date",
-                            yaxis_title="APR %",
-                        )
-        ifperf = ((rot['insuranceVaultAmountBefore']+rot['amount'])/rot['totalIfSharesAfter']).sort_index()
-        ifperf.name = 'ifShare price'
-        st.plotly_chart(apr_fig, True)
-        st.plotly_chart(ifperf.plot(log_y=True))
-        st.plotly_chart((ifperf.resample('1W').last().pct_change()*100).plot(kind='bar'))
-    
+        rot = name_rot.get(cur_spot, None)
+        if rot is not None:
+            apr_df = (rot['amount']/rot['insuranceVaultAmountBefore']*100*365.25*24/2).sort_index()#.rolling(24).mean()
+            apr_fig = apr_df.plot(log_y=True)
+            apr_fig.update_layout( 
+                                title=cur_spot+' Revenue Emission',
+                                xaxis_title="date",
+                                yaxis_title="APR %",
+                            )
+            ifperf = ((rot['insuranceVaultAmountBefore']+rot['amount'])/rot['totalIfSharesAfter']).sort_index()
+            ifperf.name = 'ifShare price'
+            st.plotly_chart(apr_fig, True)
+            st.plotly_chart(ifperf.plot(log_y=True))
+            st.plotly_chart((ifperf.resample('1W').last().pct_change()*100).plot(kind='bar'))
+        
 
         # st.dataframe(perp_df)
 
@@ -277,6 +278,9 @@ async def insurance_fund_page(ch: DriftClient, env):
                      f'{stakers_market_index["last_withdraw_request_value"].sum():,.2f}',
                      f'{(stakers_frac - stakers_market_index["last_withdraw_request_value"]).sum():,.2f} bonus for remaining stakers',
                      )
+        with st.expander('request withdraw ts'):
+            tpl = stakers_market_index.replace(0, np.nan).dropna(subset=['last_withdraw_request_ts']).set_index('last_withdraw_request_ts')
+            st.plotly_chart(tpl['last_withdraw_request_value'].sort_index().cumsum().plot())
 
         selected = st.selectbox('authority:', sorted(stakers.authority.unique()))
         url_market_prefix = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/authority/'

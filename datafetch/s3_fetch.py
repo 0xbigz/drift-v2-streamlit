@@ -14,7 +14,7 @@ def load_if_s3_data(current_year, current_month, dd, is_devnet=False):
     if dd == 'all time':
         for name in spot_asts:
             rots = []
-            for year in ['2022', str(current_year)]:
+            for year in ['2022', '2023', str(current_year)]:
                 full_if_url = url_market_prefix+name+"/insurance-fund-records/"+str(year)+"/"#+str(current_month)
                 if year == '2022':
                     mrange = ['11','12']
