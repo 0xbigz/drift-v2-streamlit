@@ -879,8 +879,12 @@ async def show_user_volume(clearing_house: DriftClient):
 
 
         with subtabs[0]:
-
             if dolpeval:
+
+                ums = pd.read_csv('https://gist.githubusercontent.com/0xbigz/be8c5205c41f51d1b131b41b114546ff/raw/c25811ee4f2c2999c72ff5f1e780e470fc4fb0e1/usermap_snapshot_20240201.csv',
+                         index_col=[0]
+                         )
+                
                 liq_comp = ldf3.groupby('user')[['multiplied_score']].sum()
                 liq_comp.index = [x if x !='vamm' else 'vAMM' for x in liq_comp.index ]
                 liq_comp.index.name = 'user'
@@ -927,9 +931,8 @@ async def show_user_volume(clearing_house: DriftClient):
                 
                 fin = fin.reset_index()
                 fin['user'] = fin['user'].astype(str)
-                ums = pd.read_csv('https://gist.githubusercontent.com/0xbigz/be8c5205c41f51d1b131b41b114546ff/raw/c25811ee4f2c2999c72ff5f1e780e470fc4fb0e1/usermap_snapshot_20240201.csv')
-                st.write(ums[['index', 'authority']])
-                fin = fin.merge(ums[['index', 'authority']], left_on='user', right_on='index')
+                st.write(ums[['userAccount', 'authority']])
+                fin = fin.merge(ums[['userAccount', 'authority']], left_on='user', right_on='userAccount')
                 fin['total_score'] = fin['maker_score']+fin['taker_score']
 
                 st.write('total user score:', fin['total_score'].sum())
