@@ -420,6 +420,20 @@ async def show_user_volume(clearing_house: DriftClient):
             s1.metric('total volume:', f'${df["taker volume"].sum():,.2f}', f'{len(df):,} unique traders')
             st.dataframe(df, use_container_width=True)
 
+            st.plotly_chart(df['total volume']\
+                            .reset_index(drop=True)\
+                                .sort_values().plot(log_y=True))
+            a1, a2 = st.columns(2)
+            a_min = a1.number_input('volume', 1000)
+            a = a2.number_input('volume', 20000)
+
+            st.write(df[(df['total volume']>=a_min) & (df['total volume']<=a)]['taker volume'].sum(), 
+                     df[df['total volume']<=a].sum(), 
+                     df[df['total volume']>=a].sum(), 
+                     len(df[df['total volume']>=a]), 
+                     len(df)
+                     )
+
         if selected == 'Referrals':
             opt = st.radio("users:", ["by trader", "by referrer"])
             if "referrerReward" in dfs.columns:
