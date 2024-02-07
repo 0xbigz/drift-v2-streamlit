@@ -45,29 +45,12 @@ import datetime
 import asyncio
 import httpx
 
-def find_value(df, search_column, search_string, target_column):
-    """
-    Returns the value of a target column in a Pandas DataFrame where a search string is found in a search column.
 
-    Parameters:
-    df (pandas.DataFrame): The DataFrame to search.
-    search_column (str): The name of the column to search for the search string.
-    search_string (str): The string to search for in the search column.
-    target_column (str): The name of the column to return the value from.
-
-    Returns:
-    The value of the target column in the row where the search string is found in the search column. If the search
-    string is not found in the search column, returns None.
-    """
-    # Create a boolean mask for the rows where the search string is found in the search column.
-    mask = df[search_column].str.contains(search_string, na=False)
-
-    # Use the mask to filter the DataFrame and select the target column for the matching row.
-    target_value = df.loc[mask, target_column].values
-
-    # If there are no matching rows, return None. Otherwise, return the first matching value.
-    return target_value[0] if len(target_value) > 0 else None
-
+                
+@st.cache(ttl=1800)
+def convert_df(df):
+    # IMPORTANT: Cache the conversion to prevent computation on every rerun
+    return df.to_csv().encode('utf-8')
 
 async def get_user_stats(clearing_house: DriftClient):
     ch = clearing_house
@@ -87,7 +70,7 @@ async def fetch_lp_data(date, market_name):
     url = f'https://dlob-data.s3.eu-west-1.amazonaws.com/mainnet-beta/{date.strftime("%Y-%m-%d")}/lp-shares-{market_index}.csv.gz'
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
-        if response.status_code == 403:
+        if response.status_code == 403 or response.status_code == 404:
             return None, ''
         response.raise_for_status()
         return pd.read_csv(StringIO(response.text)), url
@@ -139,7 +122,7 @@ async def load_volumes_async(dates, market_names, with_urls=False):
     dfs = []
 
     tasks = [fetch_volume_data(date, market_name) for market_name in market_names for date in dates]
-
+    
     # Use asyncio.gather to run the tasks concurrently
     results = await asyncio.gather(*tasks)
 
@@ -368,7 +351,7 @@ async def show_user_volume(clearing_house: DriftClient):
 
     tabs = st.tabs(['overview', 'user breakdown', 'fill quality', 'score', 'snapshot inspect'])
     
-    df = pd.DataFrame()
+    volume_df = pd.DataFrame()
     if selected == 'Volume':
         'orderFilledWithAmm'
         mapping_dict = {'orderFilledWithAmm': 'vAMM',
@@ -390,15 +373,15 @@ async def show_user_volume(clearing_house: DriftClient):
         taker_volume = dfs.groupby("taker")["quoteAssetAmountFilled"].sum().fillna(0)
         maker_jit_volume = dfs[dfs['actionExplanation']=='orderFilledWithMatchJit'].groupby("maker")["quoteAssetAmountFilled"].sum().fillna(0)
 
-        df = pd.concat(
+        volume_df = pd.concat(
             {"maker volume": maker_volume, 
              "taker volume": taker_volume,
              "maker jit volume": maker_jit_volume,
              }, axis=1
         )
-        df['total volume'] = df[['maker volume', 'taker volume']].sum(axis=1)
-        df = df[['total volume', 'taker volume', 'maker volume', 'maker jit volume']]
-        df = df.sort_values("total volume", ascending=False)
+        volume_df['total volume'] = volume_df[['maker volume', 'taker volume']].sum(axis=1)
+        volume_df = volume_df[['total volume', 'taker volume', 'maker volume', 'maker jit volume']]
+        volume_df = volume_df.sort_values("total volume", ascending=False)
 
     with tabs[0]:
         # st.write(dfs.columns)
@@ -417,21 +400,33 @@ async def show_user_volume(clearing_house: DriftClient):
     with tabs[1]:
         if selected == 'Volume':
             s1,s2,s3 = st.columns(3)
-            s1.metric('total volume:', f'${df["taker volume"].sum():,.2f}', f'{len(df):,} unique traders')
-            st.dataframe(df, use_container_width=True)
+            s1.metric('total volume:', f'${volume_df["taker volume"].sum():,.2f}',
+                       f'{len(volume_df):,} unique traders')
+            st.dataframe(volume_df, use_container_width=True)
 
-            st.plotly_chart(df['total volume']\
+
+            csv = convert_df(volume_df)
+
+            st.download_button(
+                label="Download data as CSV",
+                data=csv,
+                file_name='user_volume_'+datetime.datetime.now().strftime("%Y%m%d")+'.csv',
+                mime='text/csv',
+            )
+
+
+            st.plotly_chart(volume_df['total volume']\
                             .reset_index(drop=True)\
                                 .sort_values().plot(log_y=True))
             a1, a2 = st.columns(2)
             a_min = a1.number_input('volume', 1000)
             a = a2.number_input('volume', 20000)
 
-            st.write(df[(df['total volume']>=a_min) & (df['total volume']<=a)]['taker volume'].sum(), 
-                     df[df['total volume']<=a].sum(), 
-                     df[df['total volume']>=a].sum(), 
-                     len(df[df['total volume']>=a]), 
-                     len(df)
+            st.write(volume_df[(volume_df['total volume']>=a_min) & (volume_df['total volume']<=a)]['taker volume'].sum(), 
+                     volume_df[volume_df['total volume']<=a].sum(), 
+                     volume_df[volume_df['total volume']>=a].sum(), 
+                     len(volume_df[volume_df['total volume']>=a]), 
+                     len(volume_df)
                      )
 
         if selected == 'Referrals':
@@ -930,8 +925,15 @@ async def show_user_volume(clearing_house: DriftClient):
                 # st.write(liq_comp)
                 # st.write(vol_comp_dlp)
                 # st.write(vol_comp)
-                fin = pd.concat([vol_comp, liq_comp, vol_comp_dlp, taker_score]).fillna(0)
-                # st.write(fin)
+                volume_cl = volume_df[['total volume']]
+                volume_cl.index.name = 'user'
+                volume_cl.columns = ['total_order_volume']
+                # st.write(volume_df['total_volume'])
+                fin = pd.concat([vol_comp, liq_comp, vol_comp_dlp, taker_score,
+                volume_df['total volume']
+                
+                ]).fillna(0)
+                st.write(fin)
                 fin = fin.reset_index().groupby('user').sum()
                 fin['maker_score'] = fin[['dlp_multiplied_score',
                                           'multiplied_score', 
@@ -951,11 +953,6 @@ async def show_user_volume(clearing_house: DriftClient):
 
                 st.write('total user score:', fin['total_score'].sum())
                 st.write(fin)
-                
-                @st.cache
-                def convert_df(df):
-                    # IMPORTANT: Cache the conversion to prevent computation on every rerun
-                    return df.to_csv().encode('utf-8')
 
                 csv = convert_df(fin)
 
