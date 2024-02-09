@@ -47,7 +47,7 @@ import httpx
 
 
                 
-@st.cache(ttl=1800)
+@st.cache_data(ttl=1800)
 def convert_df(df):
     # IMPORTANT: Cache the conversion to prevent computation on every rerun
     return df.to_csv().encode('utf-8')
@@ -701,11 +701,21 @@ async def show_user_volume(clearing_house: DriftClient):
         dfs2 = dfs
 
         def get_ticket_multiplier(row):
-            # st.write(row)
-            if row['marketIndex']==24 and row['marketType']=='perp':
-                return 2
-            if row['marketIndex']==11 and row['marketType']=='spot':
-                return 2
+            if int(row['ts']) > 1706677200 and int(row['ts']) <= 1707487200:
+                if row['marketIndex']==24 and row['marketType']=='perp':
+                    return 2
+                if row['marketIndex']==11 and row['marketType']=='spot':
+                    return 2
+            elif int(row['ts']) > 1707487200 and int(row['ts']) <= 1708092000:
+                if row['marketIndex']==1 and row['marketType']=='perp':
+                    return 8
+                if row['marketIndex']==2 and row['marketType']=='perp':
+                    return 8
+                if row['marketIndex']==3 and row['marketType']=='spot':
+                    return 8
+                if row['marketIndex']==4 and row['marketType']=='spot':
+                    return 8
+
             return 1
 
 
@@ -912,7 +922,7 @@ async def show_user_volume(clearing_house: DriftClient):
                 vol_comp.loc['vAMM', 'multiplied_score'] -= vol_comp_dlp['dlp_multiplied_score'].sum()
 
 
-                dfs2['ticketScore1'] = dfs2['ticketScore1'].clip(0, 200_000)
+                dfs2['ticketScore1'] = dfs2['ticketScore1'].clip(0, 8_000)
                 # st.write('N', N)
                 taker_score = (dfs2.groupby(['taker'])['ticketScore1'].sum() / dfs2['ticketScore1'].sum()) * N_T
                 taker_score.index.name = 'user'
@@ -930,8 +940,7 @@ async def show_user_volume(clearing_house: DriftClient):
                 volume_cl.columns = ['total_order_volume']
                 # st.write(volume_df['total_volume'])
                 fin = pd.concat([vol_comp, liq_comp, vol_comp_dlp, taker_score,
-                volume_df['total volume']
-                
+                volume_df
                 ]).fillna(0)
                 st.write(fin)
                 fin = fin.reset_index().groupby('user').sum()
