@@ -40,10 +40,15 @@ from driftpy.addresses import *
 import time
 from driftpy.user_map.user_map import UserMap, UserMapConfig, PollingConfig
 import datetime
-
+import csv
 
 NUMBER_OF_SPOT = 12
 NUMBER_OF_PERP = 25
+
+@st.cache_data(ttl=1800)
+def convert_df(df):
+    # IMPORTANT: Cache the conversion to prevent computation on every rerun
+    return df.to_csv(quoting=csv.QUOTE_NONE).encode('utf-8')
 
 # @st.cache_resource
 async def load_user_map(_drift_client, user_map_settings):
@@ -94,7 +99,7 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
         'leverage': x.get_leverage() / MARGIN_PRECISION, 
         'perp_liability': x.get_perp_market_liability(None, margin_category) / QUOTE_PRECISION,
         'spot_asset': x.get_spot_market_asset_value(None, margin_category) / QUOTE_PRECISION,
-        'spot_liability': x.get_spot_market_liability(None, margin_category) / QUOTE_PRECISION,
+        'spot_liability': x.get_spot_market_liability_value(None, margin_category) / QUOTE_PRECISION,
         'upnl': x.get_unrealized_pnl(True) / QUOTE_PRECISION,
         'funding_upnl': x.get_unrealized_funding_pnl() / QUOTE_PRECISION,
         'total_collateral': x.get_total_collateral(margin_category or MarginCategory.INITIAL) / QUOTE_PRECISION,
@@ -285,7 +290,6 @@ def usermap_page(drift_client: DriftClient, env):
 
 
     levs, user_keys = cached_get_usermap_df(drift_client, user_map_settings, mode, oracle_distort, only_one_index, cov_matrix)
-
     if mode == 'margin':
         mr_var = s3.radio('margin ratio:', [None, 'initial', 'maint'])
         if mr_var is None:
@@ -307,6 +311,24 @@ def usermap_page(drift_client: DriftClient, env):
     df = pd.DataFrame(the_lev)
     df.index = user_keys
     df = df.reset_index()
+
+    csv2 = convert_df(df[['index', 'authority']])
+    st.download_button(
+        label="Download authority/user map data as CSV",
+        data=csv2,
+        file_name='user_authority_map_'+datetime.datetime.now().strftime("%Y%m%d")+'.csv',
+        mime='text/csv',
+    )
+    try:
+        csv = convert_df(df)
+        st.download_button(
+            label="Download snapshot data as CSV",
+            data=csv,
+            file_name='user_snapshot_'+datetime.datetime.now().strftime("%Y%m%d")+'.csv',
+            mime='text/csv',
+        )
+    except Exception as e:
+        st.warning('ERROR, cannot create csv: ' + str(e))
 
     update_drift_cache(drift_client)
     (vamm, vamm_upnl, aa, spot_vaults, spot_states, spot_acct_dep, spot_acct_bor, num_subs) = cached_get_protocol_summary(drift_client)

@@ -244,16 +244,11 @@ async def show_pid_positions(clearing_house: DriftClient):
         spots.index = spots.index.set_names(['public_key', 'idx2'])
         spots = spots.reset_index()
         
-    markettype = col2.radio("MarketType", ('Perp', 'Spot'))
-    if markettype == 'Perp':
-        num_markets = state.number_of_markets
-    else:
-        num_markets = state.number_of_spot_markets
+    num_perp_markets = state.number_of_markets
+    num_spot_markets = state.number_of_spot_markets
 
-    tabs = st.tabs(['overview'] + [str(x) for x in range(num_markets)])
-    usdc_market = ch.get_spot_market_account(0)
-
-    with tabs[0]:
+    cat_tabs = st.tabs(['overview', 'perp (%i)' % num_perp_markets, 'spot (%i)' % num_spot_markets])
+    with cat_tabs[0]:
         dd1 = {}
         dd2 = {}
         for market_index in range(state.number_of_markets):
@@ -296,14 +291,16 @@ async def show_pid_positions(clearing_house: DriftClient):
         s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate', 'utilization']).T)
 
 
-    for market_index, tab in enumerate(tabs[1:]):
-        market_index = int(market_index)
-        with tab:
-            if markettype == 'Perp':
+    with cat_tabs[1]:
+        tabs = st.tabs([str(x) for x in range(num_perp_markets)])
+        usdc_market = ch.get_spot_market_account(0)
+        for market_index, tab in enumerate(tabs):
+            market_index = int(market_index)
+            with tab:
                 market = ch.get_perp_market_account(market_index)
                 market_name = ''.join(map(chr, market.name)).strip(" ")
 
-                with st.expander(markettype+" market market_index="+str(market_index)+' '+market_name):
+                with st.expander('Perp'+" market market_index="+str(market_index)+' '+market_name):
                     mdf = serialize_perp_market_2(market).T
                     st.dataframe(mdf)
                 
@@ -362,18 +359,18 @@ async def show_pid_positions(clearing_house: DriftClient):
 
                 df_flow = pd.DataFrame({
                 'pnl_pool': market.amm.net_revenue_since_last_funding/1e6,
-                 'fee_pool': market.insurance_claim.revenue_withdraw_since_last_settle/1e6, 
-                 'rev_pool': -(market.insurance_claim.revenue_withdraw_since_last_settle/1e6)
-                 }, index=[0]
-                 ).T.reset_index()
+                'fee_pool': market.insurance_claim.revenue_withdraw_since_last_settle/1e6, 
+                'rev_pool': -(market.insurance_claim.revenue_withdraw_since_last_settle/1e6)
+                }, index=[0]
+                ).T.reset_index()
                 df_flow['color'] = 'flows'
 
                 df_flow_max = pd.DataFrame({
                 'pnl_pool': market.unrealized_pnl_max_imbalance/1e6,
-                 'fee_pool': market.insurance_claim.max_revenue_withdraw_per_period/1e6, 
-                 'rev_pool': -(market.insurance_claim.max_revenue_withdraw_per_period/1e6)
-                 }, index=[0]
-                 ).T.reset_index()
+                'fee_pool': market.insurance_claim.max_revenue_withdraw_per_period/1e6, 
+                'rev_pool': -(market.insurance_claim.max_revenue_withdraw_per_period/1e6)
+                }, index=[0]
+                ).T.reset_index()
                 df_flow_max['color'] = 'max_flow'
                 dfff = pd.concat([dfff, df_flow, df_flow_max]).reset_index(drop=True)
                 # print(dfff)
@@ -491,11 +488,16 @@ async def show_pid_positions(clearing_house: DriftClient):
                 else: 
                     st.write("no liquidations found...")
 
-            else:
+
+    with cat_tabs[2]:
+        tabs = st.tabs([str(x) for x in range(num_spot_markets)])
+        for market_index, tab in enumerate(tabs):
+            market_index = int(market_index)
+            with tab:
                 market = ch.get_spot_market_account(market_index)
                 market_name = ''.join(map(chr, market.name)).strip(" ")
-
-                with st.expander(markettype+" market market_index="+str(market_index)+' '+market_name):
+                spot_col1, = st.columns(1)
+                with st.expander('Spot'+" market market_index="+str(market_index)+' '+market_name):
                     mdf = serialize_spot_market(market).T
                     st.table(mdf)
 
@@ -506,11 +508,8 @@ async def show_pid_positions(clearing_house: DriftClient):
                 sv_amount = await load_token_balance(conn, svault_pk)
 
                 token_scale = (10**market.decimals)
-                if market_index % 2 == 0:
-                    col3.metric(f'{market_name} vault balance', str(sv_amount/token_scale) , str(iv_amount/token_scale)+' (insurance)')
-                else:
-                    col4.metric(f'{market_name} vault balance', str(sv_amount/token_scale) , str(iv_amount/token_scale)+' (insurance)')
-                
+                spot_col1.metric(f'{market_name} vault balance', str(sv_amount/token_scale) , str(iv_amount/token_scale)+' (insurance)')
+   
                 df1 = None
                 if all_users is not None:
                     df1 = spots[(spots.scaled_balance!=0) & (spots.market_index==market_index)

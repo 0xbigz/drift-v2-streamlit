@@ -824,8 +824,7 @@ async def show_user_volume(clearing_house: DriftClient):
                 merged_df = pd.merge_asof(lp_result.sort_values('slot'), 
                                         rrrr.sort_values('lp_snap_slot'), 
                                         by='marketIndex', left_on='slot', right_on='lp_snap_slot', direction='forward')
-                st.write(merged_df.shape)
-                st.write('too big to write')
+                st.write(merged_df.shape, 'too big to write')
                 # st.write(merged_df)
 
                 st.write(merged_df['multiplied_score'].sum(), rrrr['multiplied_score'].sum())
@@ -899,10 +898,12 @@ async def show_user_volume(clearing_house: DriftClient):
 
         with subtabs[0]:
             if dolpeval:
-
-                ums = pd.read_csv('https://gist.githubusercontent.com/0xbigz/be8c5205c41f51d1b131b41b114546ff/raw/c25811ee4f2c2999c72ff5f1e780e470fc4fb0e1/usermap_snapshot_20240201.csv',
+                # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/a6d5963a22c85ef854574eb0aec61cfd/raw/e34627b89f53dd607648555fc2827c2c96587a75/user_authority_map_20240209.csv'
+                url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/1a2c15f3b91a71cf91b38e6cf73eea6d/raw/011a9a6b7194b538162092e62456e065e233aed6/user_authority_map_20240215.csv'
+                ums = pd.read_csv(url_user_authority_map,
                          index_col=[0]
                          )
+                ums.columns = ['userAccount', 'authority']
                 
                 liq_comp = ldf3.groupby('user')[['multiplied_score']].sum()
                 liq_comp.index = [x if x !='vamm' else 'vAMM' for x in liq_comp.index ]
@@ -957,7 +958,7 @@ async def show_user_volume(clearing_house: DriftClient):
                 fin = fin.reset_index()
                 fin['user'] = fin['user'].astype(str)
                 st.write(ums[['userAccount', 'authority']])
-                fin = fin.merge(ums[['userAccount', 'authority']], left_on='user', right_on='userAccount')
+                fin = fin.merge(ums[['userAccount', 'authority']], left_on='user', right_on='userAccount', how='left')
                 fin['total_score'] = fin['maker_score']+fin['taker_score']
 
                 st.write('total user score:', fin['total_score'].sum())
