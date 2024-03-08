@@ -715,7 +715,28 @@ async def show_user_volume(clearing_house: DriftClient):
                     return 8
                 if row['marketIndex']==4 and row['marketType']=='spot':
                     return 8
-
+            elif int(row['ts']) > 1708387200 and int(row['ts']) <= 1709164800:
+                if row['marketIndex']==25 and row['marketType']=='perp':
+                    return 2
+            elif int(row['ts']) > 1709118000 and int(row['ts']) <= 1709769540:
+                if row['marketIndex']==26 and row['marketType']=='perp':
+                    return 2
+            elif int(row['ts']) > 1708664400 and int(row['ts']) <= 1709337599:
+                if row['marketIndex']==12 and row['marketType']=='perp':
+                    return 2
+                if row['marketIndex']==12 and row['marketType']=='spot':
+                    return 2
+            elif int(row['ts']) > 1709575200 and int(row['ts']) <= 1709942340:
+                if row['marketIndex']==7 and row['marketType']=='perp':
+                    return 2
+                if row['marketIndex']==4 and row['marketType']=='perp':
+                    return 2
+                if row['marketIndex']==10 and row['marketType']=='perp':
+                    return 2
+                if row['marketIndex']==23 and row['marketType']=='perp':
+                    return 2
+                if row['marketIndex']==10 and row['marketType']=='spot':
+                    return 2
             return 1
 
 
@@ -899,7 +920,10 @@ async def show_user_volume(clearing_house: DriftClient):
         with subtabs[0]:
             if dolpeval:
                 # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/a6d5963a22c85ef854574eb0aec61cfd/raw/e34627b89f53dd607648555fc2827c2c96587a75/user_authority_map_20240209.csv'
-                url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/1a2c15f3b91a71cf91b38e6cf73eea6d/raw/011a9a6b7194b538162092e62456e065e233aed6/user_authority_map_20240215.csv'
+                # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/1a2c15f3b91a71cf91b38e6cf73eea6d/raw/011a9a6b7194b538162092e62456e065e233aed6/user_authority_map_20240215.csv'
+                # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/b3fe444fd36ff7a2cca9c2889a2f7059/raw/9a61f5c2730c39c0be971bd4777724040c73a933/user_authority_map_20240222.csv'
+                # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/8a45e0118a058882da736f8a1a0ac00e/raw/5e7aa70b2f01efa115ea780d02b8faad3819729c/gistfile1.txt'
+                url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/a94c39be11b021fa230093ad2e000ea2/raw/e70e00b9f93af58a3c440c0b170caf1df9f08f00/gistfile1.txt'
                 ums = pd.read_csv(url_user_authority_map,
                          index_col=[0]
                          )
