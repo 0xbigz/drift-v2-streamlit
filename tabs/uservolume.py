@@ -393,9 +393,15 @@ async def show_user_volume(clearing_house: DriftClient):
         s3.metric('total rebates:', f'${dfs[["makerFee"]].sum().sum():,.2f} maker',
                   f'${-dfs[["fillerReward"]].sum().sum():,.2f} filler',
                   )
+        st.write('fill stats')
+        f1,f2 = st.columns(2)
+
         fill_types = dfs.groupby('actionExplanation')['quoteAssetAmountFilled'].sum()\
             .sort_values(ascending=False)
-        st.write(fill_types)
+        f1.write(fill_types)
+
+        f2.write(dfs[dfs.fillerReward>0].groupby('filler').agg({'fillerReward': 'sum',
+                                    'ts': 'count'}).sort_values('ts', ascending=False))
 
     with tabs[1]:
         if selected == 'Volume':

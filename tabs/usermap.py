@@ -42,8 +42,8 @@ from driftpy.user_map.user_map import UserMap, UserMapConfig, PollingConfig
 import datetime
 import csv
 
-NUMBER_OF_SPOT = 12
-NUMBER_OF_PERP = 25
+NUMBER_OF_SPOT = 13
+NUMBER_OF_PERP = 27
 
 @st.cache_data(ttl=1800)
 def convert_df(df):
@@ -85,6 +85,17 @@ def get_perp_liab_composition(x: DriftUser, margin_category, n):
     net_p = {i: x.get_perp_market_liability(i, margin_category, signed=True)/QUOTE_PRECISION for i in range(n)}
     return net_p 
 
+def get_perp_lp_share_composition(x: DriftUser, n):
+    # ua = x.get_user_account()
+    def get_lp_shares(x, i):
+        res = x.get_perp_position(i)
+        if res is not None:
+            return res.lp_shares/1e9
+        else:
+            return 0
+    net_p = {i: get_lp_shares(x, i) for i in range(n)}
+    return net_p 
+
 async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.1, only_one_index=None, cov_matrix=None):
     perp_n = NUMBER_OF_PERP
     spot_n = NUMBER_OF_SPOT
@@ -106,6 +117,7 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
         'margin_req': x.get_margin_requirement(margin_category or MarginCategory.INITIAL) / QUOTE_PRECISION,
         'net_v': get_collateral_composition(x, margin_category, spot_n),
         'net_p': get_perp_liab_composition(x, margin_category, perp_n),
+        'net_lp': get_perp_lp_share_composition(x, perp_n),
         'last_active_slot': user_account.last_active_slot,
         'cumulative_perp_funding': user_account.cumulative_perp_funding/QUOTE_PRECISION,
         'settled_perp_pnl': user_account.settled_perp_pnl/QUOTE_PRECISION,
@@ -114,6 +126,10 @@ async def get_usermap_df(_drift_client, user_map_settings, mode, oracle_distor=.
         'has_open_order': user_account.has_open_order,
         'sub_account_id': user_account.sub_account_id,
         'next_liquidation_id': user_account.next_liquidation_id,
+        'cumulative_spot_fees': user_account.cumulative_spot_fees,
+        'total_deposits': user_account.total_deposits,
+        'total_withdraws': user_account.total_withdraws,
+        'total_social_loss': user_account.total_social_loss,
         'unsettled_pnl_perp_x': x.get_unrealized_pnl(True, market_index=24) / QUOTE_PRECISION,
         }
         levs0['net_usd_value'] = levs0['spot_asset'] + levs0['upnl'] - levs0['spot_liability']
@@ -484,7 +500,21 @@ def usermap_page(drift_client: DriftClient, env):
             file_name='usermap_snapshot.csv',
             mime='text/csv',
         )
+        df2download2 = df.to_csv(escapechar='"').encode('utf-8')
+        st.download_button(
+            label="share more browser statistics [bytes="+str(len(df))+"]",
+            data=df2download2,
+            file_name='usermap_full_snapshot.csv',
+            mime='text/csv',
+        )
 
+        # st.write(df[['index', 'authority', 'cumulative_perp_funding', 'last_active_slot', 'settled_perp_pnl', 'next_liquidation_id', 'total_deposits', 'total_withdraws', 'total_social_loss']])
+        # st.download_button(
+        #     label="share browser statistics [bytes="+str(len(df))+"]",
+        #     data=df2download,
+        #     file_name='usermap_snapshot.csv',
+        #     mime='text/csv',
+        # )
     with tabs[6]:
         df['ever_liquidated'] = (df['next_liquidation_id']>1)
         name_res = df.groupby('name').agg({'leverage':'median', 
@@ -494,10 +524,26 @@ def usermap_page(drift_client: DriftClient, env):
                                 }).sort_values('authority', ascending=False)
         
         st.dataframe(name_res)
-        dlp_df = df[df.name=='Drift Liquidity Provider']
+        # dlp_df = df[df.name=='Drift Liquidity Provider']
+
+        dlp_df = df[df.net_lp.apply(lambda x: sum(list(x.values()))!=0)]
+        st.write(f'current LPers: {len(dlp_df)}/{ len(df)} users')
         st.write(dlp_df)
         st.write(dlp_df.describe())
 
-        perp_market_inspect_dlp = st.selectbox('perp market:', list(range(23)), key='tab-5')
+        perp_market_inspect_dlp = st.selectbox('perp market:', list(range(NUMBER_OF_PERP)), 
+                                               index=10,
+                                               
+                                               key='tab-5')
         st.write('dlp with positions in perp market=', perp_market_inspect_dlp)
-        st.write(dlp_df[dlp_df.net_p.apply(lambda x: x[perp_market_inspect_dlp]!=0)])
+
+        dlp_one_market = dlp_df[dlp_df.net_lp.apply(lambda x: x[perp_market_inspect_dlp]!=0)]
+        st.write(dlp_one_market)
+
+        
+        st.write('total lp users:', dlp_df.net_lp.apply(lambda x: x[perp_market_inspect_dlp]!=0).sum())
+        st.write('total user lp shares:', dlp_df.net_lp.apply(lambda x: x[perp_market_inspect_dlp]).sum())
+
+        dlp_market_account = drift_client.get_perp_market_account(perp_market_inspect_dlp)
+        st.write('total lp shares (market)', dlp_market_account.amm.user_lp_shares/1e9)
+        st.write(dlp_market_account)

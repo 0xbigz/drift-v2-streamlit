@@ -128,7 +128,13 @@ async def show_user_stats(clearing_house: DriftClient):
         str(np.round(net_vamm_maker_volume/1e6, 2))+'M')
 
         st.dataframe(df)
-        
+        df2download2 = df.to_csv(escapechar='"').encode('utf-8')
+        st.download_button(
+            label="user stats full [bytes="+str(len(df))+"]",
+            data=df2download2,
+            file_name='userstats_full.csv',
+            mime='text/csv',
+        )
 
         dd = df.set_index('last_trade_seconds_ago')[[
             'taker_volume30d',

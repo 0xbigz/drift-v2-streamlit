@@ -256,6 +256,14 @@ async def insurance_fund_page(ch: DriftClient, env):
         # z1, z2 = st.columns(2)
         # pie1, z2 = st.columns(2)
 
+        df2download2 = stakers.to_csv(escapechar='"').encode('utf-8')
+        st.download_button(
+            label="share stakers statistics [bytes="+str(len(df))+"]",
+            data=df2download2,
+            file_name='if_stakers_full.csv',
+            mime='text/csv',
+        )
+
         df = df[df.market_index==i]
         df = pd.concat([df, pd.DataFrame([[protocol_balances[i], 'protocol', 100 - df['own %'].sum(), i]], index=[0], columns=df.columns)])
         
