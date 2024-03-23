@@ -43,7 +43,7 @@ import datetime
 import csv
 
 NUMBER_OF_SPOT = 13
-NUMBER_OF_PERP = 27
+NUMBER_OF_PERP = 28
 
 @st.cache_data(ttl=1800)
 def convert_df(df):
@@ -393,6 +393,8 @@ def usermap_page(drift_client: DriftClient, env):
         value_of_users = df[['net_usd_value']].sort_values(by='net_usd_value').reset_index(drop=True)
         value_of_users['cumulative_usd_value'] = value_of_users['net_usd_value'].cumsum()
         st.plotly_chart(value_of_users.plot())
+
+        st.write('unsettled funding pnl:', df['funding_upnl'].sum())
 
 
 

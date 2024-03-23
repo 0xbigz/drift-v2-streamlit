@@ -402,6 +402,10 @@ async def show_user_volume(clearing_house: DriftClient):
 
         f2.write(dfs[dfs.fillerReward>0].groupby('filler').agg({'fillerReward': 'sum',
                                     'ts': 'count'}).sort_values('ts', ascending=False))
+        
+        ttt = dfs.groupby('ts')['takerFee'].count()
+        ttt.index = pd.to_datetime([int(x) for x in ttt.index * 1e9])
+        st.plotly_chart(ttt.plot())
 
     with tabs[1]:
         if selected == 'Volume':
@@ -420,10 +424,13 @@ async def show_user_volume(clearing_house: DriftClient):
                 mime='text/csv',
             )
 
-
-            st.plotly_chart(volume_df['total volume']\
+            volumes_plotted = volume_df[['taker volume']]\
+            .dropna()\
                             .reset_index(drop=True)\
-                                .sort_values().plot(log_y=True))
+                                .sort_values(by='taker volume')
+            volumes_plotted['cumulative'] = (volume_df['taker volume'].reset_index(drop=True).fillna(0).cumsum())
+            st.write(volumes_plotted['cumulative'])
+            st.plotly_chart(volumes_plotted.plot(log_y=True))
             a1, a2 = st.columns(2)
             a_min = a1.number_input('volume', 1000)
             a = a2.number_input('volume', 20000)
@@ -743,6 +750,14 @@ async def show_user_volume(clearing_house: DriftClient):
                     return 2
                 if row['marketIndex']==10 and row['marketType']=='spot':
                     return 2
+            elif int(row['ts']) >= 1710770400 and int(row['ts']) <= 1711324799:
+                if row['marketIndex']==0 and row['marketType']=='perp':
+                    return 5
+                if row['marketIndex']==1 and row['marketType']=='spot':
+                    return 5
+            elif int(row['ts']) >= 1710522000 and int(row['ts']) <= 1711151940:
+                if row['marketIndex']==27 and row['marketType']=='perp':
+                    return 2
             return 1
 
 
@@ -821,7 +836,7 @@ async def show_user_volume(clearing_house: DriftClient):
                     st.write(data_urls)
                 lp_result = lp_dfs
                 lp_result['marketIndex'] = lp_result['name'].astype(int)
-                lp_agg_result = lp_dfs[['name', 'slot', 'sqrtK', 'lpShares']].astype(int).groupby(['name', 'slot']).agg({'sqrtK':'mean', 'lpShares':'sum'})
+                lp_agg_result = lp_dfs[['name', 'slot', 'sqrtK', 'lpShares']].fillna(0).astype(int).groupby(['name', 'slot']).agg({'sqrtK':'mean', 'lpShares':'sum'})
 
                 lp_agg_result['user own %'] = lp_agg_result['lpShares']/lp_agg_result['sqrtK'] * 100
 
@@ -929,7 +944,9 @@ async def show_user_volume(clearing_house: DriftClient):
                 # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/1a2c15f3b91a71cf91b38e6cf73eea6d/raw/011a9a6b7194b538162092e62456e065e233aed6/user_authority_map_20240215.csv'
                 # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/b3fe444fd36ff7a2cca9c2889a2f7059/raw/9a61f5c2730c39c0be971bd4777724040c73a933/user_authority_map_20240222.csv'
                 # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/8a45e0118a058882da736f8a1a0ac00e/raw/5e7aa70b2f01efa115ea780d02b8faad3819729c/gistfile1.txt'
-                url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/a94c39be11b021fa230093ad2e000ea2/raw/e70e00b9f93af58a3c440c0b170caf1df9f08f00/gistfile1.txt'
+                # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/a94c39be11b021fa230093ad2e000ea2/raw/e70e00b9f93af58a3c440c0b170caf1df9f08f00/gistfile1.txt'
+                # url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/244b9a14058e5478903a3827f2e60d46/raw/20c0b092fbb99599df32d5ba4d8f6be65931af76/gistfile1.txt'
+                url_user_authority_map = 'https://gist.githubusercontent.com/0xbigz/359bbe109f22ffb3f710343ae93d35ba/raw/9ed42f536df4f39b72e06cecc5dc63d400b67345/user_authority_map_20240321.csv'
                 ums = pd.read_csv(url_user_authority_map,
                          index_col=[0]
                          )

@@ -22,7 +22,7 @@ from driftpy.drift_user import get_token_amount
 import os
 import json
 import streamlit as st
-from driftpy.types import MarginRequirementType, SpotPosition, PerpPosition, UserAccount
+from driftpy.types import MarginRequirementType, SpotPosition, PerpPosition, UserAccount, UserStatsAccount
 from driftpy.constants.spot_markets import devnet_spot_market_configs, SpotMarketConfig
 from driftpy.constants.perp_markets import devnet_perp_market_configs, PerpMarketConfig
 from driftpy.addresses import *
@@ -87,9 +87,19 @@ async def userdataraw(clearing_house: DriftClient):
 
         if mode == 'live':
 
-
-            user: UserAccount = (await clearing_house.program.account["User"].fetch(Pubkey.from_string(str(inp))))
+            user_pk = Pubkey.from_string(str(inp))
+            st.write(user_pk)
+            user: UserAccount = (await clearing_house.program.account["User"].fetch(user_pk))
             st.json(json.dumps(user.__dict__, cls=UserAccountEncoder))
+
+            user_authority = user.authority
+            st.write('authority:', user_authority)
+
+            user_stats_pk = get_user_stats_account_public_key(clearing_house.program_id, user_authority)
+
+            userstats: UserStatsAccount = (await clearing_house.program.account["UserStats"].fetch(user_stats_pk))
+
+            st.json(json.dumps(userstats.__dict__, cls=UserAccountEncoder))
 
             st.header('perp positions')
             dff = pd.concat([pd.DataFrame(pos.__dict__, index=[0]) 

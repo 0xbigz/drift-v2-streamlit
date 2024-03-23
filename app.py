@@ -53,6 +53,7 @@ from tabs.vaults import vaults
 from tabs.competition import competitions
 from tabs.openbookv2 import tab_openbookv2
 from tabs.usermap import usermap_page
+from tabs.users_in_market import users_in_market_page
 try:
     from tabs.backtester import backtester_page
 except:
@@ -99,6 +100,7 @@ def main():
      'DriftDraw',
      'Openbookv2',
      'UserMap',
+     'UsersInMarket',
      'Backtester',
      'MM (legacy)',
     #   'Social', 'PlatyPerps'
@@ -287,6 +289,10 @@ def main():
     elif tab.lower() == 'usermap':
         # loop = asyncio.new_event_loop()
         usermap_page(clearing_house, env)  
+    elif tab.lower() == 'usersinmarket':
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(users_in_market_page(clearing_house, env))  
+        # users_in_market_page
     elif tab.lower() == 'backtester':
         try:
             backtester_page(clearing_house, env)         
