@@ -80,15 +80,15 @@ def load_user_settlepnl(dates, user_key, with_urls=False):
 def load_s3_trades_data(markets, START=None, END=None):
     tzInfo = pytz.timezone('UTC')
     # markets = ['SOL', 'SOL-PERP', 'BTC-PERP', 'ETH-PERP', 'APT-PERP']
-    url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
+    # url = 'https://drift-historical-data.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
 
-
+    url = 'https://drift-historical-data-v2.s3.eu-west-1.amazonaws.com/program/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH/market/'
     assert(START >= '2022-11-04')
     if START is None:
         START = (datetime.datetime.now(tzInfo)-datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     if END is None:
         END = (datetime.datetime.now(tzInfo)+datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    dates = [x.strftime("%Y/%m/%d") for x in pd.date_range(
+    dates = [x.strftime("%Y%m%d") for x in pd.date_range(
                                                             # '2022-11-05', 
                                                         START,
                                                         END
@@ -100,11 +100,13 @@ def load_s3_trades_data(markets, START=None, END=None):
         df1 = []
         for date in dates:
             date1 = date.replace('/0', '/')
+            ff = url+market+'/tradeRecords/%s/%s' % (str(date1[:4]), str(date1))
             try:
-                dd = pd.read_csv(url+market+'/trades/%s' % str(date1))
+                dd = pd.read_csv(ff)
                 df1.append(dd)
             except Exception as e:
-                st.warning(f'failed({str(e)}):  {market} {date} -> {date1}')
+                # st.warning(f'failed({str(e)}):  {market} {date} -> {date1}')
+                st.warning(f'failed: {ff}')
                 pass
         all_markets[market] = pd.concat(df1)
     return all_markets

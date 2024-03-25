@@ -14,13 +14,17 @@ def dedupdf(all_markets, market_name, lookahead=60):
         df1['maker'] = np.nan
     # st.write(df1.columns)
     df1 = df1.drop_duplicates(['fillerReward', 'baseAssetAmountFilled', 'quoteAssetAmountFilled',
-       'takerPnl', 'makerPnl', 'takerFee', 'makerRebate', 'refereeDiscount',
+    #    'takerPnl', 
+    #    'makerPnl', 
+    #    'takerFee', 'makerRebate', 'refereeDiscount',
        'quoteAssetAmountSurplus', 'takerOrderBaseAssetAmount',
        'takerOrderCumulativeBaseAssetAmountFilled',
-       'takerOrderCumulativeQuoteAssetAmountFilled', 'takerOrderFee',
+       'takerOrderCumulativeQuoteAssetAmountFilled', 
+    #    'takerOrderFee',
        'makerOrderBaseAssetAmount',
        'makerOrderCumulativeBaseAssetAmountFilled',
-       'makerOrderCumulativeQuoteAssetAmountFilled', 'makerOrderFee',
+       'makerOrderCumulativeQuoteAssetAmountFilled', 
+    #    'makerOrderFee',
        'oraclePrice', 'makerFee', 'txSig', 'slot', 'ts', 'action',
        'actionExplanation', 'marketIndex', 'marketType', 'filler',
        'fillRecordId', 'taker', 'takerOrderId', 'takerOrderDirection', 'maker',
@@ -193,7 +197,7 @@ def trade_flow_analysis():
         show_analysis_tables('retail '+user_type+'s:', retail_takers, user_type)      
         show_analysis_tables('bot '+user_type+'s:', bot_takers, user_type)         
     else:
-        vamm_maker_trades = solperp[solperp['maker']=='undefined'] 
+        vamm_maker_trades = solperp[solperp['maker'].isnull()] 
         s1, s2, s3 = st.columns(3)
         unit = s1.radio('unit:', ['$', 'Price'],  horizontal=True)
         field = s2.radio('fields', ['execOnly', 'timeOnly', 'all'], index=2, horizontal=True)

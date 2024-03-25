@@ -69,7 +69,12 @@ async def users_in_market_page(drift_client: DriftClient, env):
             if pos.base_asset_amount != 0 or pos.remainder_base_asset_amount != 0 or pos.open_orders != 0 or pos.quote_asset_amount != 0:
                 ttt = (pos.base_asset_amount + pos.remainder_base_asset_amount)/1e9
                 f_upnl = user.get_unrealized_funding_pnl(i)/1e6
-                res[i].append((k, ttt, f_upnl))
+                upnl = user.get_unrealized_pnl(False, i)/1e6
+
+                be_price = np.nan
+                if ttt != 0:
+                    be_price = (-pos.quote_break_even_amount/1e6)/(ttt)
+                res[i].append((k, ttt, be_price, f_upnl, upnl))
         
         for i in range(num_spots):
             pos = user.get_token_amount(i)
@@ -87,12 +92,48 @@ async def users_in_market_page(drift_client: DriftClient, env):
             df = pd.DataFrame(val, columns=['userAccount', 'token']).sort_values('token', ascending=True)
             df['token'] /= (10 ** sm_i.decimals)
             tabs[key].write(df)
+            
+            dust_thres = .001
+            dust_dep_df = df[((df['token']<dust_thres) & (df['token']>=0))]
+            dust_bor_df = df[((df['token']>-dust_thres) & (df['token']<=0))]
+
+            tabs[key].write(f'dust threshold = {dust_thres} tokens')
+            tabs[key].metric('total dust deposits', 
+                             f'{dust_dep_df["token"].sum():,.4f}', 
+                             f'{len(dust_dep_df)} users')
+            tabs[key].metric('total dust borrows', 
+                             f'{dust_bor_df["token"].sum():,.4f}', 
+                             f'{len(dust_bor_df)} users')
 
     with tab_cat[1]:
+        s1, s2, s3 = st.columns(3)
         tabs = st.tabs([perp_config[key].base_asset_symbol for key in range(num_perps)])
-        
+        usdc_market = drift_client.get_spot_market_account(0)
+
+        total_remaining_upnl = 0
+        total_funding_upnl = 0
         for key,val in res.items():
-            tabs[key].write(f'{perp_config[key].base_asset_symbol} (market index = {key})')
-            df = pd.DataFrame(val, columns=['userAccount', 'base amount', 'funding_upnl']).sort_values('base amount', ascending=True)
+            pm_i = drift_client.get_perp_market_account(key)
+
+            df = pd.DataFrame(val, columns=['userAccount', 'base amount', 'be_price', 'funding_upnl', 'remaining_upnl']).sort_values('base amount', ascending=True)
+            user_with_base = len(df[df['base amount']!=0])
+            user_in_market = len(df)
+            tabs[key].write(f'{user_with_base}/{user_in_market} users in {perp_config[key].base_asset_symbol} (market index = {key})')
             tabs[key].write(df)
-            tabs[key].metric('funding pnl', df['funding_upnl'].sum())
+            funding_upnl_i = df['funding_upnl'].sum()
+            total_funding_upnl += funding_upnl_i
+            remaining_upnl_i = df['remaining_upnl'].sum()
+            total_remaining_upnl += remaining_upnl_i
+
+            market_summary_cols = tabs[key].columns(3)
+            pnl_pool_b = pm_i.pnl_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10/(1e9)
+            fee_pool_b = pm_i.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10/(1e9)
+
+            market_summary_cols[0].metric('pnl pool', f'${pnl_pool_b:,.2f}')
+            market_summary_cols[0].metric('fee pool', f'${fee_pool_b:,.2f}')
+
+            market_summary_cols[1].metric('funding pnl', f'${funding_upnl_i:,.2f}')
+            market_summary_cols[2].metric('remaining pnl', f'${remaining_upnl_i:,.2f}')
+
+        s2.metric('total remaining upnl', f'${total_remaining_upnl:,.2f}')        
+        s3.metric('total funding upnl', f'${total_funding_upnl:,.2f}')
