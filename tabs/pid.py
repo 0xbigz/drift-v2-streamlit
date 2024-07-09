@@ -254,6 +254,7 @@ async def show_pid_positions(clearing_house: DriftClient):
     with cat_tabs[0]:
         po_deposits = 0
         po_position_notional = 0
+        po_position_notional_net = 0
         est_funding_dol = 0
         dd1 = {}
         dd2 = {}
@@ -278,14 +279,18 @@ async def show_pid_positions(clearing_house: DriftClient):
             dd1[market_name] = fundings
 
             po_position_notional_i = (perp_i.amm.base_asset_amount_with_amm+perp_i.amm.base_asset_amount_with_unsettled_lp)/1e9 * otwap/1e6
-            po_position_notional += po_position_notional_i
+            po_position_notional += abs(po_position_notional_i)
+            po_position_notional_net += (po_position_notional_i)
             est_funding_dol += pred_fund * po_position_notional_i
 
+
+        total_borrow_fee_annualized = 0
         for market_index in range(state.number_of_spot_markets):
             market = ch.get_spot_market_account(market_index)
             market_name = ''.join(map(chr, market.name)).strip(" ")
             deposits = market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
             borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
+
             utilization =  borrows/(deposits+1e-12) * 100
             opt_util = market.optimal_utilization/PERCENTAGE_PRECISION * 100
             opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION
@@ -298,20 +303,29 @@ async def show_pid_positions(clearing_house: DriftClient):
                 for x in [utilization]
             ]
 
+            borrow_fee_annualized = borrows * bor_ir_curve[0] * market.insurance_fund.total_factor / 1e6
+            borrow_fee_notional_annualized = borrow_fee_annualized * market.historical_oracle_data.last_oracle_price/1e6
+
+            total_borrow_fee_annualized += borrow_fee_notional_annualized
+
+
             dep_ir_curve = [ir*utilization*(1-market.insurance_fund.total_factor/1e6)/100 for idx,ir in enumerate(bor_ir_curve)]
             if market_index == 0:
                 usdc_dep_rate = dep_ir_curve[0]
-            dd2[market_name] = (dep_ir_curve[0]*100, bor_ir_curve[0]*100, utilization)
+            dd2[market_name] = (dep_ir_curve[0]*100, bor_ir_curve[0]*100, utilization, borrow_fee_notional_annualized)
         s1, s2 = st.columns(2)
         s1.write(pd.DataFrame(dd1, index=['predicted funding rate', 'last funding rate', '24h avg funding rate']).T)
-        s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate', 'utilization']).T)
+        s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate', 'utilization', 'annualized_borrow_revenue']).T)
         
         p1, p2 = st.columns(2)
 
         ann_factor = 365 * 24
 
         p1.metric('protocol-owned position', f'${po_position_notional:,.2f}', f'${est_funding_dol*ann_factor:,.2f} interest per year')
+        p1.metric('protocol-owned net position', f'${po_position_notional_net:,.2f}', f'${abs(po_position_notional_net*.05):,.2f} at risk on 5% move')
+        
         p2.metric('protocol-owned deposits', f'${po_deposits:,.2f}', f'${usdc_dep_rate*po_deposits:,.2f} interest per year')
+        p2.metric('est borrow revenue', f'${total_borrow_fee_annualized:,.2f}', f'${total_borrow_fee_annualized/365:,.2f} interest per day')
 
     with cat_tabs[1]:
         tabs = st.tabs([str(x) for x in range(num_perp_markets)])
