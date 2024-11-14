@@ -251,84 +251,13 @@ async def show_pid_positions(clearing_house: DriftClient):
     usdc_market = ch.get_spot_market_account(0)
     usdc_dep_rate = 0
 
-    with cat_tabs[0]:
-        po_deposits = 0
-        po_position_notional = 0
-        po_position_notional_net = 0
-        est_funding_dol = 0
-        dd1 = {}
-        dd2 = {}
-        for market_index in range(state.number_of_markets):
-            perp_i = ch.get_perp_market_account(market_index)
-            market_name = ''.join(map(chr, perp_i.name)).strip(" ")
-
-            fee_pool = (perp_i.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
-            pnl_pool = (perp_i.pnl_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
-            po_deposits += fee_pool + pnl_pool
-
-            otwap = perp_i.amm.historical_oracle_data.last_oracle_price_twap
-            market_price_spread = (perp_i.amm.last_mark_price_twap - otwap)
-            funding_offset = otwap / 5000 # ~ 7% annual premium
-            pred_fund = ((market_price_spread + funding_offset)/otwap) / (3600.0/perp_i.amm.funding_period * 24)
-            
-            fundings = [x* 100 * 365.25 * 24 for x in (pred_fund,
-                        perp_i.amm.last_funding_rate / otwap / FUNDING_RATE_BUFFER,
-                        perp_i.amm.last24h_avg_funding_rate / otwap / FUNDING_RATE_BUFFER,
-                        )]
-
-            dd1[market_name] = fundings
-
-            po_position_notional_i = (perp_i.amm.base_asset_amount_with_amm+perp_i.amm.base_asset_amount_with_unsettled_lp)/1e9 * otwap/1e6
-            po_position_notional += abs(po_position_notional_i)
-            po_position_notional_net += (po_position_notional_i)
-            est_funding_dol += pred_fund * po_position_notional_i
-
-
-        total_borrow_fee_annualized = 0
-        for market_index in range(state.number_of_spot_markets):
-            market = ch.get_spot_market_account(market_index)
-            market_name = ''.join(map(chr, market.name)).strip(" ")
-            deposits = market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
-            borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
-
-            utilization =  borrows/(deposits+1e-12) * 100
-            opt_util = market.optimal_utilization/PERCENTAGE_PRECISION * 100
-            opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION
-            max_borrow = market.max_borrow_rate/PERCENTAGE_PRECISION
-
-            bor_ir_curve = [
-                opt_borrow* (100/opt_util)*x/100 
-                if x <= opt_util
-                else ((max_borrow-opt_borrow) * (100/(100-opt_util)))*(x-opt_util)/100 + opt_borrow
-                for x in [utilization]
-            ]
-
-            borrow_fee_annualized = borrows * bor_ir_curve[0] * market.insurance_fund.total_factor / 1e6
-            borrow_fee_notional_annualized = borrow_fee_annualized * market.historical_oracle_data.last_oracle_price/1e6
-
-            total_borrow_fee_annualized += borrow_fee_notional_annualized
-
-
-            dep_ir_curve = [ir*utilization*(1-market.insurance_fund.total_factor/1e6)/100 for idx,ir in enumerate(bor_ir_curve)]
-            if market_index == 0:
-                usdc_dep_rate = dep_ir_curve[0]
-            dd2[market_name] = (dep_ir_curve[0]*100, bor_ir_curve[0]*100, utilization, borrow_fee_notional_annualized)
-        s1, s2 = st.columns(2)
-        s1.write(pd.DataFrame(dd1, index=['predicted funding rate', 'last funding rate', '24h avg funding rate']).T)
-        s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate', 'utilization', 'annualized_borrow_revenue']).T)
-        
-        p1, p2 = st.columns(2)
-
-        ann_factor = 365 * 24
-
-        p1.metric('protocol-owned position', f'${po_position_notional:,.2f}', f'${est_funding_dol*ann_factor:,.2f} interest per year')
-        p1.metric('protocol-owned net position', f'${po_position_notional_net:,.2f}', f'${abs(po_position_notional_net*.05):,.2f} at risk on 5% move')
-        
-        p2.metric('protocol-owned deposits', f'${po_deposits:,.2f}', f'${usdc_dep_rate*po_deposits:,.2f} interest per year')
-        p2.metric('est borrow revenue', f'${total_borrow_fee_annualized:,.2f}', f'${total_borrow_fee_annualized/365:,.2f} interest per day')
 
     with cat_tabs[1]:
         tabs = st.tabs([str(x) for x in range(num_perp_markets)])
+
+        total_net_user_pnl = 0
+        total_excess_pnl = 0
+
         for market_index, tab in enumerate(tabs):
             market_index = int(market_index)
             with tab:
@@ -387,7 +316,7 @@ async def show_pid_positions(clearing_house: DriftClient):
 
                 fee_pool = (market.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
                 pnl_pool = (market.pnl_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
-                excess_pnl = fee_pool+pnl_pool - market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm + market.amm.base_asset_amount_with_unsettled_lp)/1e9  * market.amm.historical_oracle_data.last_oracle_price/1e6
+                excess_pnl = fee_pool+pnl_pool - (market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm + market.amm.base_asset_amount_with_unsettled_lp)/1e9  * market.amm.historical_oracle_data.last_oracle_price/1e6)
                 
                 dfff = pd.DataFrame({'pnl_pool': pnl_pool, 'fee_pool': fee_pool, 'rev_pool': rev_pool}, index=[0]).T.reset_index()
                 dfff['color'] = 'balance'
@@ -423,7 +352,17 @@ async def show_pid_positions(clearing_house: DriftClient):
                 st.text(f'Int. Insurance: {fee_pool}')
                 st.text(f'PnL Pool: {pnl_pool}')
                 st.text(f'Excess PnL: {excess_pnl} ({fee_pool+pnl_pool} - {market.amm.quote_asset_amount/1e6 + (market.amm.base_asset_amount_with_amm/1e9 * market.amm.historical_oracle_data.last_oracle_price/1e6)})')
+                
+                
+                net_user_cb = (market.amm.quote_asset_amount_with_unsettled_lp + market.amm.net_unsettled_funding_pnl + market.amm.quote_asset_amount)/1e6
+                net_user_v = (market.amm.base_asset_amount_with_amm/1e9 * market.amm.historical_oracle_data.last_oracle_price/1e6)
 
+                excess_pnl2 = fee_pool + pnl_pool - (net_user_cb + net_user_v)
+                st.text(f'Excess PnL2: {excess_pnl2} ({fee_pool+pnl_pool} - {net_user_cb + net_user_v})')
+
+                total_net_user_pnl += (net_user_cb + net_user_v)
+
+                total_excess_pnl += excess_pnl2
                 if df1 is not None:
                     df1['base_asset_amount'] /= 1e9
                     df1['remainder_base_asset_amount'] /= 1e9
@@ -623,6 +562,19 @@ async def show_pid_positions(clearing_house: DriftClient):
                         ax1.axis('equal')  
                         st.pyplot(fig1)
 
+
+
+                rev_pool_tokens = get_token_amount(
+                            market.revenue_pool.scaled_balance,
+                            market, 
+                            'SpotBalanceType.Deposit()'
+                        )
+                spot_fee_pool_tokens = get_token_amount(
+                            market.spot_fee_pool.scaled_balance,
+                            market, 
+                            'SpotBalanceType.Deposit()'
+                        )
+                
                 opt_util = market.optimal_utilization/PERCENTAGE_PRECISION * 100
                 opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION
                 max_borrow = market.max_borrow_rate/PERCENTAGE_PRECISION
@@ -688,7 +640,85 @@ async def show_pid_positions(clearing_house: DriftClient):
                 else: 
                     st.write("no liquidations found...")
 
+    with cat_tabs[0]:
+        po_deposits = 0
+        po_position_notional = 0
+        po_position_notional_net = 0
+        est_funding_dol = 0
+        dd1 = {}
+        dd2 = {}
+        for market_index in range(state.number_of_markets):
+            perp_i = ch.get_perp_market_account(market_index)
+            market_name = ''.join(map(chr, perp_i.name)).strip(" ")
 
+            fee_pool = (perp_i.amm.fee_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
+            pnl_pool = (perp_i.pnl_pool.scaled_balance * usdc_market.cumulative_deposit_interest/1e10)/(1e9)
+            po_deposits += fee_pool + pnl_pool
+
+            otwap = max(perp_i.amm.historical_oracle_data.last_oracle_price_twap, 1)
+            market_price_spread = (perp_i.amm.last_mark_price_twap - otwap)
+            funding_offset = otwap / 5000 # ~ 7% annual premium
+            pred_fund = ((market_price_spread + funding_offset)/otwap) / (3600.0/max(perp_i.amm.funding_period, 1) * 24)
+            
+            fundings = [x* 100 * 365.25 * 24 for x in (pred_fund,
+                        perp_i.amm.last_funding_rate / otwap / FUNDING_RATE_BUFFER,
+                        perp_i.amm.last24h_avg_funding_rate / otwap / FUNDING_RATE_BUFFER,
+                        )]
+
+            dd1[market_name] = fundings
+
+            po_position_notional_i = (perp_i.amm.base_asset_amount_with_amm+perp_i.amm.base_asset_amount_with_unsettled_lp)/1e9 * otwap/1e6
+            po_position_notional += abs(po_position_notional_i)
+            po_position_notional_net += (po_position_notional_i)
+            est_funding_dol += pred_fund * po_position_notional_i
+
+
+        total_borrow_fee_annualized = 0
+        for market_index in range(state.number_of_spot_markets):
+            market = ch.get_spot_market_account(market_index)
+            market_name = ''.join(map(chr, market.name)).strip(" ")
+            deposits = market.deposit_balance * market.cumulative_deposit_interest/1e10/(1e9)
+            borrows = market.borrow_balance * market.cumulative_borrow_interest/1e10/(1e9)
+
+            utilization =  borrows/(deposits+1e-12) * 100
+            opt_util = market.optimal_utilization/PERCENTAGE_PRECISION * 100
+            opt_borrow = market.optimal_borrow_rate/PERCENTAGE_PRECISION
+            max_borrow = market.max_borrow_rate/PERCENTAGE_PRECISION
+
+            bor_ir_curve = [
+                opt_borrow* (100/opt_util)*x/100 
+                if x <= opt_util
+                else ((max_borrow-opt_borrow) * (100/(100-opt_util)))*(x-opt_util)/100 + opt_borrow
+                for x in [utilization]
+            ]
+
+            borrow_fee_annualized = borrows * bor_ir_curve[0] * market.insurance_fund.total_factor / 1e6
+            borrow_fee_notional_annualized = borrow_fee_annualized * market.historical_oracle_data.last_oracle_price/1e6
+
+            total_borrow_fee_annualized += borrow_fee_notional_annualized
+
+
+            dep_ir_curve = [ir*utilization*(1-market.insurance_fund.total_factor/1e6)/100 for idx,ir in enumerate(bor_ir_curve)]
+            if market_index == 0:
+                usdc_dep_rate = dep_ir_curve[0]
+            dd2[market_name] = (dep_ir_curve[0]*100, bor_ir_curve[0]*100, utilization, borrow_fee_notional_annualized)
+        s1, s2 = st.columns(2)
+        s1.write(pd.DataFrame(dd1, index=['predicted funding rate', 'last funding rate', '24h avg funding rate']).T)
+        s2.write(pd.DataFrame(dd2, index=['deposit rate', 'borrow rate', 'utilization', 'annualized_borrow_revenue']).T)
+        
+        p1, p2 = st.columns(2)
+
+        ann_factor = 365 * 24
+
+        p1.metric('protocol-owned position', f'${po_position_notional:,.2f}', f'${est_funding_dol*ann_factor:,.2f} interest per year')
+        p1.metric('protocol-owned net position', f'${po_position_notional_net:,.2f}', f'${abs(po_position_notional_net*.05):,.2f} at risk on 5% move')
+        
+        p2.metric('protocol-owned deposits', f'${po_deposits:,.2f}', f'${usdc_dep_rate*po_deposits:,.2f} interest per year')
+        p2.metric('est borrow revenue', f'${total_borrow_fee_annualized:,.2f}', f'${total_borrow_fee_annualized/365:,.2f} interest per day')
+
+
+        p2.metric('total net user pnl:', f'${total_net_user_pnl:,.2f}',)
+        p2.metric('total excess pnl:', f'${total_excess_pnl:,.2f}',)
 
     if df1 is not None:
         authority = st.text_input('public_key:') 
